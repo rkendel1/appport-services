@@ -11,6 +11,10 @@ import {
   FeltDbWebhookAuditSink,
   WebhookService,
   EncryptedWebhookSecretStore,
+  FeltDbJobStore,
+  FeltDbJobScheduleStore,
+  FeltDbJobAuditSink,
+  JobService,
 } from './index.js';
 
 interface CommandIo {
@@ -29,10 +33,12 @@ export async function runCli(
       return handleApiKeyCommand(action, rest, io, service);
     } else if (group === 'webhook') {
       return handleWebhookCommand(action, rest, io);
+    } else if (group === 'job') {
+      return handleJobCommand(action, rest, io);
     } else {
       writeLine(
         io.stderr,
-        'Usage: appport api-key <create|list|revoke> | appport webhook <create|list|disable>',
+        'Usage: appport <api-key|webhook|job> <command>',
       );
       return 1;
     }
@@ -215,6 +221,212 @@ async function handleWebhookCommand(
   } finally {
     await runtime.db.close();
   }
+}
+
+async function handleJobCommand(
+  action: string,
+  rest: readonly string[],
+  io: CommandIo,
+): Promise<number> {
+  const runtime = createFeltDbRuntime();
+  const jobService = new JobService({
+    jobStore: new FeltDbJobStore(runtime.db),
+    scheduleStore: new FeltDbJobScheduleStore(runtime.db),
+    auditSink: new FeltDbJobAuditSink(runtime.db),
+  });
+
+  try {
+    if (action === 'enqueue') {
+      const options = parseOptions(rest);
+      const tenantId = required(options, 'tenant');
+      const type = required(options, 'type');
+      const payload = firstOption(options, 'payload') ? JSON.parse(firstOption(options, 'payload')!) : {};
+
+      const job = await jobService.enqueue({
+        tenantId,
+        type,
+        payload,
+      });
+
+      writeLine(io.stdout, `id: ${job.id}`);
+      writeLine(io.stdout, `type: ${job.type}`);
+      writeLine(io.stdout, `status: ${job.status}`);
+      writeLine(io.stdout, `runAt: ${job.runAt}`);
+      return 0;
+    }
+
+    if (action === 'schedule') {
+      const options = parseOptions(rest);
+      const tenantId = required(options, 'tenant');
+      const type = required(options, 'type');
+      const runAt = required(options, 'run-at');
+      const payload = firstOption(options, 'payload') ? JSON.parse(firstOption(options, 'payload')!) : {};
+
+      const job = await jobService.schedule({
+        tenantId,
+        type,
+        payload,
+        runAt,
+      });
+
+      writeLine(io.stdout, `id: ${job.id}`);
+      writeLine(io.stdout, `type: ${job.type}`);
+      writeLine(io.stdout, `status: ${job.status}`);
+      writeLine(io.stdout, `runAt: ${job.runAt}`);
+      return 0;
+    }
+
+    if (action === 'schedule-recurring') {
+      const options = parseOptions(rest);
+      const tenantId = required(options, 'tenant');
+      const type = required(options, 'type');
+      const interval = required(options, 'interval');
+      const createdBy = required(options, 'created-by');
+      const payload = firstOption(options, 'payload') ? JSON.parse(firstOption(options, 'payload')!) : {};
+
+      const schedule = await jobService.scheduleRecurring({
+        tenantId,
+        type,
+        payload,
+        interval,
+        createdBy,
+      });
+
+      writeLine(io.stdout, `id: ${schedule.id}`);
+      writeLine(io.stdout, `type: ${schedule.type}`);
+      writeLine(io.stdout, `interval: ${schedule.interval}`);
+      writeLine(io.stdout, `nextRunAt: ${schedule.nextRunAt}`);
+      return 0;
+    }
+
+    if (action === 'list') {
+      const options = parseOptions(rest);
+      const tenantId = required(options, 'tenant');
+      const jobs = await jobService.listJobs(tenantId);
+
+      for (const job of jobs) {
+        const status = job.status;
+        const runIn = job.status === 'running'
+          ? 'now'
+          : job.status === 'retrying' && job.nextAttemptAt
+          ? getTimeRemaining(job.nextAttemptAt)
+          : getTimeRemaining(job.runAt);
+        writeLine(
+          io.stdout,
+          `${job.id}\t${job.type}\t${status}\t${runIn}\tattempt=${job.attemptCount}/${job.maxAttempts}`,
+        );
+      }
+      return 0;
+    }
+
+    if (action === 'get') {
+      const [jobId, ...optionTokens] = rest;
+      if (!jobId) {
+        throw new Error('Missing job id.');
+      }
+      const options = parseOptions(optionTokens);
+      const tenantId = required(options, 'tenant');
+      const job = await jobService.getJob(tenantId, jobId);
+
+      if (!job) {
+        writeLine(io.stderr, 'Job not found.');
+        return 1;
+      }
+
+      writeLine(io.stdout, `id: ${job.id}`);
+      writeLine(io.stdout, `type: ${job.type}`);
+      writeLine(io.stdout, `status: ${job.status}`);
+      writeLine(io.stdout, `runAt: ${job.runAt}`);
+      writeLine(io.stdout, `attemptCount: ${job.attemptCount}`);
+      writeLine(io.stdout, `maxAttempts: ${job.maxAttempts}`);
+      if (job.lastError) {
+        writeLine(io.stdout, `lastError: ${job.lastError}`);
+      }
+      return 0;
+    }
+
+    if (action === 'retry') {
+      const [jobId, ...optionTokens] = rest;
+      if (!jobId) {
+        throw new Error('Missing job id.');
+      }
+      const options = parseOptions(optionTokens);
+      const tenantId = required(options, 'tenant');
+      const retried = await jobService.retry(tenantId, jobId);
+
+      if (!retried) {
+        writeLine(io.stderr, 'Job not found.');
+        return 1;
+      }
+
+      writeLine(io.stdout, `retried: ${retried.id}`);
+      return 0;
+    }
+
+    if (action === 'schedules') {
+      const options = parseOptions(rest);
+      const tenantId = required(options, 'tenant');
+      const schedules = await jobService.listSchedules(tenantId);
+
+      for (const schedule of schedules) {
+        const status = schedule.enabled ? 'enabled' : 'disabled';
+        writeLine(
+          io.stdout,
+          `${schedule.id}\t${schedule.type}\t${status}\t${schedule.interval}\tnext=${getTimeRemaining(schedule.nextRunAt)}`,
+        );
+      }
+      return 0;
+    }
+
+    if (action === 'disable-schedule') {
+      const [scheduleId, ...optionTokens] = rest;
+      if (!scheduleId) {
+        throw new Error('Missing schedule id.');
+      }
+      const options = parseOptions(optionTokens);
+      const tenantId = required(options, 'tenant');
+      const disabled = await jobService.disableSchedule(tenantId, scheduleId);
+
+      if (!disabled) {
+        writeLine(io.stderr, 'Schedule not found.');
+        return 1;
+      }
+
+      writeLine(io.stdout, `disabled: ${disabled.id}`);
+      return 0;
+    }
+
+    writeLine(io.stderr, 'Usage: appport job <enqueue|schedule|schedule-recurring|list|get|retry|schedules|disable-schedule>');
+    return 1;
+  } finally {
+    await runtime.db.close();
+  }
+}
+
+function getTimeRemaining(targetTime: string): string {
+  const now = new Date();
+  const target = new Date(targetTime);
+  const diffMs = target.getTime() - now.getTime();
+
+  if (diffMs < 0) {
+    return '-';
+  }
+
+  const seconds = Math.floor(diffMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) {
+    return `${days}d`;
+  }
+  if (hours > 0) {
+    return `${hours}h`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+  return `${seconds}s`;
 }
 
 async function closeQuietly(service: ApiKeyService): Promise<void> {
