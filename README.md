@@ -2,110 +2,33 @@
 
 AppPort Services provides operational application capabilities that sit beside AuthPort.
 
-Today that means **tenant-scoped API keys** for machine-to-machine access.
-
-AuthPort remains responsible for identity, authentication, and authorization policy. AppPort Services authenticates API-key credentials into a machine principal that AuthPort can authorize.
+Today the repository implements one complete vertical slice: **tenant-scoped API keys** backed by **`@feltdb/core@0.10.0`**.
 
 ```text
-                Application
-                     │
-         ┌───────────┴───────────┐
-         │                       │
-      AuthPort             AppPort Services
-         │                       │
-   identity/authz             API Keys
-         │                       │
-         └───────────┬───────────┘
-                     │
-                   FeltDB
+            Application
+                 │
+     ┌───────────┴───────────┐
+     │                       │
+  AuthPort             AppPort Services
+     │                       │
+identity/authz             API Keys
+     │                       │
+     └───────────┬───────────┘
+                 │
+              FeltDB
 ```
 
-## What is in this repository?
-
-- `src/appport_services/api_keys/` — API-key contract and semantic service
-- `src/appport_services/contract/` — AuthPort-facing principal contract
-- `src/appport_services/storage/` — storage and audit boundaries
-- `src/appport_services/runtime/` — CLI and Bearer-token runtime adapter
-- `tests/` — focused unit tests for API-key semantics
-- `docs/` — architecture and API-key documentation
-
-## Why is API Keys separate from AuthPort?
-
-AuthPort answers:
-
-> Who is this principal, and what are they authorized to do?
+## What is AppPort Services?
 
 AppPort Services answers:
 
 > What operational capabilities does this application expose?
 
-API keys authenticate a machine principal. They do **not** replace authorization and they do **not** introduce a second identity or policy system.
+AuthPort still answers identity, authentication, and authorization questions.
 
-## How do I enable API keys?
+## Why is API Keys separate from AuthPort?
 
-Use the library surface with an injected durable store and audit sink:
-
-```python
-from appport_services.api_keys.service import ApiKeyService
-
-service = ApiKeyService(store=real_feltdb_store, audit_sink=real_audit_sink)
-```
-
-Optional application-level contract:
-
-```python
-from appport_services.runtime.config import ApiKeysConfig
-
-config = ApiKeysConfig(enabled=True, scopes=("invoices.read", "invoices.write"))
-```
-
-## How do I create one?
-
-Library:
-
-```python
-created = service.create_api_key(
-    tenant_id="tenant-123",
-    name="production",
-    scopes=("invoices.read",),
-    expires_at=None,
-    created_by="ops-user-1",
-)
-print(created.secret)  # display once and store safely
-```
-
-CLI (when an application injects a configured service):
-
-```text
-appport api-key create --tenant tenant-123 --name production --scope invoices.read --created-by ops-user-1
-```
-
-Creation warns that the secret is displayed exactly once.
-
-## How does an application authenticate?
-
-Use the runtime adapter:
-
-```python
-from appport_services.runtime.api_keys import authenticate_bearer_token
-
-principal = authenticate_bearer_token(
-    "Bearer " + created.secret,
-    service,
-)
-```
-
-That returns an `AuthenticatedPrincipal` with:
-
-- `principal_id`
-- `principal_type="api_key"`
-- `tenant_id`
-- `scopes`
-- `credential_id`
-
-## How does authorization happen?
-
-Authentication produces a machine principal. Authorization remains a separate AuthPort decision:
+API keys authenticate machine principals. They do **not** replace AuthPort authorization.
 
 ```text
 API key
@@ -117,33 +40,118 @@ AuthPort authorization
 resource/action decision
 ```
 
-No local policy engine is implemented in this repository.
+## Installation
+
+```bash
+npm install
+npm run build
+```
+
+Dependencies are pinned, including:
+
+```json
+{
+  "dependencies": {
+    "@feltdb/core": "0.10.0"
+  }
+}
+```
+
+## How do I enable API keys?
+
+Create the service with FeltDB’s real deployment model:
+
+```ts
+import { createApiKeyService } from '@appport/services';
+
+const service = createApiKeyService({
+  mode: 'local',
+  namespace: 'appport-services',
+  path: './.feltdb/appport-services'
+});
+```
+
+Remote FeltDB deployments can use the same exported deployment fields that `resolveFeltDBDeployment()` understands.
+
+## How do I create one?
+
+```ts
+const created = await service.createApiKey({
+  tenantId: 'tenant-123',
+  name: 'production',
+  scopes: ['invoices.read'],
+  createdBy: 'ops-user-1'
+});
+
+console.log(created.secret); // only returned once
+```
+
+CLI:
+
+```bash
+appport api-key create --tenant tenant-123 --name production --scope invoices.read --created-by ops-user-1
+```
+
+## How does an application authenticate?
+
+```ts
+import { authenticateBearerToken } from '@appport/services';
+
+const principal = await authenticateBearerToken(
+  'Bearer ' + created.secret,
+  service,
+);
+```
+
+That returns:
+
+```ts
+interface AuthenticatedPrincipal {
+  principalId: string;
+  principalType: 'api_key';
+  tenantId: string;
+  scopes: readonly string[];
+  credentialId: string;
+}
+```
+
+## How does authorization happen?
+
+Authentication returns a machine principal plus scopes. Authorization still belongs to AuthPort.
 
 ## Where does durable state live?
 
-Durable state belongs behind `ApiKeyStore`, with FeltDB intended as the first/reference durable adapter:
+AppPort Services stores API-key state directly in FeltDB collections through `@feltdb/core@0.10.0`.
 
 ```text
 AppPort Services
       │
       ▼
- ApiKeyStore
+ ApiKey semantic contract
       │
       ▼
- FeltDB adapter
+ FeltDbApiKeyStore
+      │
+      ▼
+ @feltdb/core@0.10.0
       │
       ▼
  real FeltDB
 ```
 
-This repository intentionally does **not** provide a shadow JSON store, local database, or in-memory production fallback.
-
 ## What happens to the secret?
 
-- raw API-key secrets are generated with cryptographic randomness
-- the raw secret is returned **once**, at creation time
-- only a salted hash is persisted
-- `get` and `list` never return the raw secret
-- audit metadata excludes the raw secret
+- generated with cryptographic randomness
+- returned exactly once at creation time
+- hashed with scrypt before persistence
+- never stored in the durable API-key record
+- excluded from audit records
 
-See `/docs/architecture.md` and `/docs/api-keys.md` for more detail.
+## Repository layout
+
+- `/src/api-keys` — API-key models and semantic service
+- `/src/storage` — FeltDB-backed store and audit sink
+- `/src/runtime` — Bearer-token runtime adapter
+- `/src/contract` — AuthPort-facing principal contract
+- `/tests` — Node/TypeScript tests, including real restart durability tests
+- `/docs` — architecture and API-key notes

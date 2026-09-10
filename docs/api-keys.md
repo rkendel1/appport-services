@@ -1,14 +1,14 @@
 # API Keys
 
-## Secret format
+## Secret model
 
-Created secrets use a recognizable prefix plus a high-entropy secret:
+API keys use a recognizable public prefix and a high-entropy secret:
 
 ```text
 app_live_<public-prefix>_<secret>
 ```
 
-The public prefix identifies the candidate credential record without exposing the secret material.
+The prefix is stored separately so authentication can locate the candidate credential without scanning raw secrets.
 
 ## Lifecycle
 
@@ -27,41 +27,26 @@ Creation returns:
 - `prefix`
 - `secret`
 
-The secret is only returned once.
+The secret is not returned again.
 
 ## Authentication flow
 
-Authentication:
+1. parse the public prefix from the presented credential
+2. load the authoritative prefix record from FeltDB
+3. load the corresponding API-key record
+4. verify the secret hash with constant-time comparison
+5. reject revoked keys
+6. reject expired keys
+7. derive tenant ownership from the credential
+8. update `lastUsedAt` with FeltDB version-checked state
+9. return an `AuthenticatedPrincipal`
 
-1. parses the public prefix from the presented secret
-2. loads the candidate credential with `ApiKeyStore.find_by_prefix`
-3. verifies the secret against the stored salted hash
-4. rejects revoked credentials
-5. rejects expired credentials
-6. establishes tenant ownership from the credential
-7. returns an authenticated machine principal
-8. exposes granted scopes
-9. records `last_used_at`
+## Durable audit model
 
-## Storage contract
-
-`ApiKeyService` depends on `ApiKeyStore`:
-
-- `create`
-- `get`
-- `find_by_prefix`
-- `list`
-- `revoke`
-- `record_last_used`
-
-No service-layer code reaches around this boundary.
-
-## Audit boundary
-
-`AuditSink` is the semantic audit boundary for:
+Custom audit records are stored durably in FeltDB with event types:
 
 - `api_key.created`
 - `api_key.revoked`
 - `api_key.authenticated`
 
-Authentication metadata excludes raw credentials.
+Audit records exclude raw secrets, presented credential values, and Authorization headers.

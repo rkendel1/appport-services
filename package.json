@@ -1,5 +1,32 @@
 {
+  "name": "@appport/services",
+  "version": "0.1.0",
+  "description": "AppPort Services API keys backed by FeltDB",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "bin": {
+    "appport": "./dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/tests/**/*.test.js"
+  },
+  "keywords": [
+    "appport",
+    "feltdb",
+    "api-keys"
+  ],
+  "license": "ISC",
   "dependencies": {
-    "@feltdb/core": "^0.10.0"
+    "@feltdb/core": "0.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "typescript": "5.6.3"
   }
 }
