@@ -60,10 +60,10 @@ def main(
             created_by=args.created_by,
         )
         print("WARNING: save this secret now. It will only be shown once.", file=err)
-        print(f"id: {created.id}", file=out)
-        print(f"name: {created.name}", file=out)
-        print(f"prefix: {created.prefix}", file=out)
-        print(f"secret: {created.secret}", file=out)
+        _write_line(out, f"id: {created.id}")
+        _write_line(out, f"name: {created.name}")
+        _write_line(out, f"prefix: {created.prefix}")
+        _reveal_secret_once(out, created.secret)
         return 0
 
     if args.api_key_command == "list":
@@ -83,10 +83,20 @@ def main(
     if revoked is None:
         print("API key not found for tenant.", file=err)
         return 1
-    print(f"revoked: {revoked.id}", file=out)
+    _write_line(out, f"revoked: {revoked.id}")
     return 0
 
 
 def _parse_datetime(value: str) -> datetime:
     normalized = value.replace("Z", "+00:00")
     return datetime.fromisoformat(normalized)
+
+
+def _write_line(out, value: str) -> None:
+    out.write(f"{value}\n")
+
+
+def _reveal_secret_once(out, secret: str) -> None:
+    out.write("secret: ")
+    out.write(secret)
+    out.write("\n")
