@@ -15,6 +15,16 @@ export type { AuthenticatedPrincipal } from './contract/principals.js';
 export type { ApiKeysConfig } from './runtime/config.js';
 export { authenticateBearerToken } from './runtime/api-keys.js';
 export {
+  createApiKeyAuth,
+  assertTenant,
+  AuthenticationError,
+  TenantMismatchError,
+  RequestContext,
+  type HttpRequest,
+  type AuthenticationResult,
+} from './runtime/http-adapter.js';
+export { apiKeyAuth, requireApiKeyAuth } from './runtime/express-middleware.js';
+export {
   createFeltDbRuntime,
   FeltDbApiKeyStore,
   FeltDbAuditSink,

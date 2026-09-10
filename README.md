@@ -94,16 +94,23 @@ appport api-key create --tenant tenant-123 --name production --scope invoices.re
 
 ## How does an application authenticate?
 
-```ts
-import { authenticateBearerToken } from '@appport/services';
+### Option 1: Framework-neutral HTTP adapter
 
-const principal = await authenticateBearerToken(
-  'Bearer ' + created.secret,
-  service,
-);
+For applications using ordinary Node HTTP request/response semantics:
+
+```ts
+import { createApiKeyAuth } from '@appport/services';
+
+const auth = createApiKeyAuth({ service });
+
+// Optional authentication (returns null if missing/invalid)
+const principal = await auth.authenticate(request);
+
+// Required authentication (throws if missing/invalid)
+const principal = await auth.require(request);
 ```
 
-That returns:
+The adapter extracts the `Authorization: Bearer <api-key>` header and returns an `AuthenticatedPrincipal`:
 
 ```ts
 interface AuthenticatedPrincipal {
@@ -113,6 +120,60 @@ interface AuthenticatedPrincipal {
   scopes: readonly string[];
   credentialId: string;
 }
+```
+
+### Option 2: Express middleware
+
+For Express applications:
+
+```ts
+import { apiKeyAuth, requireApiKeyAuth } from '@appport/services';
+
+const app = express();
+
+// Optional authentication
+app.use(apiKeyAuth(service));
+
+app.get('/invoices', async (req, res) => {
+  const principal = req.auth; // null if missing/invalid
+  if (!principal) {
+    return res.status(401).json({ error: 'Unauthenticated' });
+  }
+  // Handle request with principal
+});
+
+// Or, require authentication
+app.use(requireApiKeyAuth(service));
+
+app.get('/protected', async (req, res) => {
+  const principal = req.auth; // guaranteed, or middleware rejects
+  // Handle request with principal
+});
+```
+
+The middleware attaches the principal to `req.auth` and provides request-scoped context via `req.authContext`.
+
+### Tenant safety
+
+If your application accepts tenant context independently, validate it against the principal:
+
+```ts
+import { assertTenant } from '@appport/services';
+
+assertTenant(principal, tenantIdFromRequest); // throws if mismatch
+```
+
+### Low-level Bearer token extraction
+
+For custom frameworks:
+
+```ts
+import { authenticateBearerToken } from '@appport/services';
+
+const principal = await authenticateBearerToken(
+  authorizationHeader,
+  service,
+);
 ```
 
 ## How does authorization happen?
@@ -151,7 +212,14 @@ AppPort Services
 
 - `/src/api-keys` — API-key models and semantic service
 - `/src/storage` — FeltDB-backed store and audit sink
-- `/src/runtime` — Bearer-token runtime adapter
+- `/src/runtime` — HTTP/Express authentication adapters and Bearer-token extraction
+  - `api-keys.ts` — Bearer token extraction
+  - `http-adapter.ts` — Framework-neutral HTTP adapter
+  - `express-middleware.ts` — Express middleware
 - `/src/contract` — AuthPort-facing principal contract
-- `/tests` — Node/TypeScript tests, including real restart durability tests
+- `/tests` — Node/TypeScript tests
+  - `api-keys.test.ts` — Core service tests
+  - `http-adapter.test.ts` — HTTP adapter tests (security, isolation, tenant safety)
+  - `integration-app.test.ts` — Real HTTP application fixture
+  - `express-integration.test.ts` — Express middleware integration tests
 - `/docs` — architecture and API-key notes
