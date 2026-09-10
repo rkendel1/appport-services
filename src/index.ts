@@ -1,6 +1,8 @@
 import type { CreateFeltDbRuntimeOptions } from './storage/api-keys.js';
 import { createFeltDbRuntime, FeltDbApiKeyStore, FeltDbAuditSink } from './storage/api-keys.js';
 import { ApiKeyService } from './api-keys/service.js';
+import { WebhookService } from './webhooks/service.js';
+import { FeltDbWebhookEndpointStore, FeltDbWebhookDeliveryStore, FeltDbWebhookAuditSink } from './storage/webhooks.js';
 
 export { ApiKeyService } from './api-keys/service.js';
 export type {
@@ -11,6 +13,20 @@ export type {
   CreatedApiKey,
   RevokeApiKeyInput,
 } from './api-keys/models.js';
+export { WebhookService } from './webhooks/service.js';
+export type {
+  WebhookEndpoint,
+  WebhookEndpointView,
+  CreateWebhookEndpointInput,
+  DisableWebhookEndpointInput,
+  WebhookDelivery,
+  WebhookDeliveryView,
+  WebhookDeliveryStatus,
+  WebhookEvent,
+  EmitWebhookEventInput,
+  WebhookAuditEvent,
+  WebhookDeliveryResult,
+} from './webhooks/models.js';
 export type { AuthenticatedPrincipal } from './contract/principals.js';
 export type { ApiKeysConfig } from './runtime/config.js';
 export { authenticateBearerToken } from './runtime/api-keys.js';
@@ -40,3 +56,17 @@ export function createApiKeyService(options: CreateFeltDbRuntimeOptions = {}): A
     runtime,
   });
 }
+
+export {
+  FeltDbWebhookEndpointStore,
+  FeltDbWebhookDeliveryStore,
+  FeltDbWebhookAuditSink,
+  webhookAuditCollectionName,
+} from './storage/webhooks.js';
+export type {
+  WebhookEndpointStore,
+  WebhookDeliveryStore,
+  WebhookAuditSink,
+} from './storage/webhooks.js';
+export { EncryptedWebhookSecretStore, InMemoryWebhookSecretStore } from './webhooks/secrets.js';
+export type { WebhookSecretStore } from './webhooks/secrets.js';
