@@ -70,3 +70,24 @@ export type {
 } from './storage/webhooks.js';
 export { EncryptedWebhookSecretStore, InMemoryWebhookSecretStore } from './webhooks/secrets.js';
 export type { WebhookSecretStore } from './webhooks/secrets.js';
+
+export { JobService, JobWorker } from './jobs/index.js';
+export type {
+  Job,
+  JobStatus,
+  JobSchedule,
+  JobAuditEvent,
+  CreateJobInput,
+  ScheduleRecurringInput,
+} from './jobs/index.js';
+export {
+  FeltDbJobStore,
+  FeltDbJobScheduleStore,
+  FeltDbJobAuditSink,
+  jobAuditCollectionName,
+} from './jobs/index.js';
+export type {
+  JobStore,
+  JobScheduleStore,
+  JobAuditSink,
+} from './jobs/index.js';
