@@ -2,7 +2,7 @@
 
 AppPort Services provides operational application capabilities that sit beside AuthPort.
 
-Today the repository implements one complete vertical slice: **tenant-scoped API keys** backed by **`@feltdb/core@0.10.0`**.
+The repository implements three complete vertical slices: **tenant-scoped API keys**, **durable webhooks**, and **durable job execution** backed by **`@feltdb/core@0.10.0`**.
 
 ```text
             Application
@@ -11,7 +11,7 @@ Today the repository implements one complete vertical slice: **tenant-scoped API
      │                       │
   AuthPort             AppPort Services
      │                       │
-identity/authz             API Keys
+identity/authz        API Keys, Webhooks, Jobs
      │                       │
      └───────────┬───────────┘
                  │
@@ -25,6 +25,39 @@ AppPort Services answers:
 > What operational capabilities does this application expose?
 
 AuthPort still answers identity, authentication, and authorization questions.
+
+## Architecture
+
+AppPort Services uses Flow (the `@feltdb/core` contract language) as the authoritative durable schema. `appport.flow` describes all collections:
+
+**API Keys vertical:**
+- `ApiKeys` — API key credentials (secret stored as scrypt hash only)
+- `ApiKeyPrefixes` — Prefix lookup for efficient secret validation
+- `ApiKeyAuditEvents` — Access audit trail
+
+**Webhooks vertical:**
+- `WebhookEndpoints` — Registered webhook receivers
+- `WebhookDeliveries` — Outbound delivery records with retry state
+- `WebhookAuditEvents` — Webhook lifecycle audit trail
+
+**Jobs vertical:**
+- `Jobs` — Individual jobs with execution status and lease tracking
+- `JobSchedules` — Recurring job definitions
+- `JobAuditEvents` — Job execution audit trail
+
+All collections are tenant-scoped via `tenant_id` field with `tenant_idx` for efficient queries.
+
+### Dependency direction
+
+```
+appport.flow (authoritative contract)
+       ↓
+TypeScript implementation
+       ↓
+FeltDB (@feltdb/core@0.10.0)
+```
+
+The Flow contract is parsed and validated at test time. The TypeScript stores (FeltDbApiKeyStore, FeltDbWebhookEndpointStore, etc.) implement the contract semantics directly against FeltDB collections.
 
 ## Why is API Keys separate from AuthPort?
 
@@ -288,18 +321,88 @@ await service.disableWebhookEndpoint({
 
 Webhooks are **at-least-once delivery**. Consumers should treat `eventId` / `deliveryId` as idempotency identifiers.
 
+## How do I use durable jobs?
+
+Jobs provide reliable background task execution with retry support, concurrency control via leases, and automatic recovery from worker failure.
+
+### Setup
+
+```ts
+import { createFeltDbRuntime, FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink, JobService } from '@appport/services';
+
+const runtime = createFeltDbRuntime({ mode: 'local', namespace: 'jobs', path: './.feltdb' });
+const service = new JobService({
+  jobStore: new FeltDbJobStore(runtime.db),
+  scheduleStore: new FeltDbJobScheduleStore(runtime.db),
+  auditSink: new FeltDbJobAuditSink(runtime.db),
+});
+```
+
+### Register handler
+
+```ts
+service.register('invoice.process', async (job) => {
+  const { invoiceId } = job.payload as { invoiceId: string };
+  // Process the invoice
+});
+```
+
+### Enqueue job
+
+```ts
+const job = await service.enqueue({
+  tenantId: 'tenant-123',
+  type: 'invoice.process',
+  payload: { invoiceId: 'inv-456' },
+  maxAttempts: 3
+});
+```
+
+### Execute job (worker)
+
+```ts
+const result = await service.executeJob(tenantId, jobId, 'worker-1');
+if (result) {
+  // Job completed successfully
+}
+```
+
+### Schedule recurring job
+
+```ts
+const schedule = await service.scheduleRecurring({
+  tenantId: 'tenant-123',
+  type: 'invoice.reconcile',
+  payload: { batchSize: 100 },
+  interval: '1h',
+  createdBy: 'ops-user-1'
+});
+```
+
+### Retry policy
+
+- **Success** → job marked completed
+- **Failure** → retry with exponential backoff (2^attemptCount)
+- **Max attempts exceeded** → job marked failed
+- **Worker lease expired** → job eligible for recovery by another worker
+- **Manual retry** → reset failed job to pending state
+
+Jobs are **durable and idempotent**. Job state survives process restarts; workers claim jobs via version-based optimistic locking.
+
 ## Where does durable state live?
 
-AppPort Services stores API-key state directly in FeltDB collections through `@feltdb/core@0.10.0`.
+AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.10.0`.
 
 ```text
+appport.flow (Flow contract)
+      │
+      ▼
 AppPort Services
       │
-      ▼
- ApiKey semantic contract
-      │
-      ▼
- FeltDbApiKeyStore
+      ├─→ FeltDbApiKeyStore (ApiKeys, ApiKeyPrefixes, ApiKeyAuditEvents)
+      ├─→ FeltDbWebhookEndpointStore (WebhookEndpoints, WebhookAuditEvents)
+      ├─→ FeltDbWebhookDeliveryStore (WebhookDeliveries)
+      └─→ FeltDbJobStore (Jobs, JobSchedules, JobAuditEvents)
       │
       ▼
  @feltdb/core@0.10.0
@@ -318,11 +421,17 @@ AppPort Services
 
 ## Repository layout
 
+- `appport.flow` — Authoritative Flow DSL contract describing all collections
 - `/src/api-keys` — API-key models and semantic service
 - `/src/webhooks` — Webhook models, service, and secret handling
   - `models.ts` — Endpoint, delivery, event contracts
   - `service.ts` — Webhook lifecycle and delivery orchestration
   - `secrets.ts` — Secret generation, encryption, HMAC signing
+- `/src/jobs` — Job models, service, and execution
+  - `models.ts` — Job and schedule contracts
+  - `service.ts` — Job lifecycle, retry, and scheduling
+  - `store.ts` — FeltDB-backed storage with optimistic locking
+  - `worker.ts` — Concurrent job execution with polling
 - `/src/storage` — FeltDB-backed store and audit sink
   - `api-keys.ts` — API key storage
   - `webhooks.ts` — Webhook endpoint/delivery storage
@@ -332,10 +441,13 @@ AppPort Services
   - `express-middleware.ts` — Express middleware
 - `/src/contract` — AuthPort-facing principal contract
 - `/tests` — Node/TypeScript tests
+  - `contract.test.ts` — Flow DSL validation and collection verification
   - `api-keys.test.ts` — Core service tests
   - `http-adapter.test.ts` — HTTP adapter tests (security, isolation, tenant safety)
   - `integration-app.test.ts` — Real HTTP application fixture
   - `express-integration.test.ts` — Express middleware integration tests
   - `webhooks.test.ts` — Webhook lifecycle and durability tests
   - `webhooks-delivery.test.ts` — HTTP delivery, signing, retry, and concurrency tests
+  - `jobs.test.ts` — Job lifecycle, scheduling, and durability tests
+  - `jobs-execution.test.ts` — Concurrent execution, leasing, and recovery tests
 - `/docs` — architecture notes
