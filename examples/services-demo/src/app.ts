@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import {
   createApiKeyService,
   apiKeyAuth,
@@ -13,26 +14,27 @@ import {
   FeltDbJobAuditSink,
   JobService,
 } from '@appport/services';
-import { FeltDbInvoiceStore } from './invoice-store.js';
-import { InvoiceService } from './invoice-service.js';
+import type { StateFirstDB } from '@feltdb/core';
+import type { Invoice } from './models.js';
 
 const app = express();
 app.use(express.json());
 
-// Initialize FeltDB runtime (shared storage)
+// Initialize FeltDB runtime
 const runtime = createFeltDbRuntime({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
 
-// Initialize AppPort Services
-const apiKeyService = createApiKeyService({
+// Initialize API Key service
+const apiKeysService = createApiKeyService({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
 
+// Initialize webhook service
 const webhookService = new WebhookService({
   endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
   deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
@@ -40,18 +42,18 @@ const webhookService = new WebhookService({
   secretStore: new EncryptedWebhookSecretStore(),
 });
 
+// Initialize job service
 const jobService = new JobService({
   jobStore: new FeltDbJobStore(runtime.db),
   scheduleStore: new FeltDbJobScheduleStore(runtime.db),
   auditSink: new FeltDbJobAuditSink(runtime.db),
 });
 
-// Initialize application-specific services
-const invoiceStore = new FeltDbInvoiceStore(runtime.db);
-const invoiceService = new InvoiceService(invoiceStore, webhookService, jobService);
+// Invoice store using FeltDB
+const invoices = runtime.db.collection<Invoice>('invoices');
 
-// API Key authentication middleware
-app.use(apiKeyAuth(apiKeyService));
+// Middleware: API Key authentication
+app.use(apiKeyAuth(apiKeysService));
 
 // POST /invoices - Create invoice with authenticated tenant context
 app.post('/invoices', async (req, res) => {
@@ -68,18 +70,46 @@ app.post('/invoices', async (req, res) => {
   }
 
   try {
-    const invoice = await invoiceService.createInvoice(
-      principal,
+    const invoiceId = randomUUID();
+    const now = new Date().toISOString();
+
+    const invoice: Invoice = {
+      id: invoiceId,
+      tenant_id: principal.tenantId,
       customer,
       amount,
-    );
+      status: 'pending',
+      created_at: now,
+      created_by: principal.principalId,
+    };
+
+    // Create invoice
+    await invoices.insert(invoice, invoiceId);
+
+    // Establish webhook delivery intent
+    await webhookService.emitWebhookEvent({
+      tenantId: principal.tenantId,
+      type: 'invoice.created',
+      payload: {
+        id: invoiceId,
+        customer,
+        amount,
+      },
+    });
+
+    // Establish job intent
+    await jobService.enqueue({
+      tenantId: principal.tenantId,
+      type: 'invoice.process',
+      payload: { invoiceId },
+      maxAttempts: 3,
+    });
 
     res.status(201).json({
       id: invoice.id,
       customer: invoice.customer,
       amount: invoice.amount,
       status: invoice.status,
-      created_at: invoice.created_at,
     });
   } catch (error) {
     console.error('Error creating invoice:', error);
@@ -96,15 +126,14 @@ app.get('/invoices', async (req, res) => {
   }
 
   try {
-    const invoices = await invoiceService.listInvoices(principal);
+    const tenantInvoices = await invoices.find({ tenant_id: principal.tenantId });
 
     res.json({
-      invoices: invoices.map((inv) => ({
+      invoices: tenantInvoices.map((inv) => ({
         id: inv.id,
         customer: inv.customer,
         amount: inv.amount,
         status: inv.status,
-        created_at: inv.created_at,
       })),
     });
   } catch (error) {
@@ -118,19 +147,13 @@ app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
-// Global error handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`✓ Application listening on http://localhost:${PORT}`);
   console.log(`  POST /invoices       Create invoice (requires API key)`);
   console.log(`  GET  /invoices       List invoices (requires API key)`);
-  console.log(`  GET  /health        Health check`);
+  console.log(`  GET  /health         Health check`);
 });
 
-export { app, apiKeyService, webhookService, jobService, invoiceService };
+export { app, apiKeysService, webhookService, jobService };
