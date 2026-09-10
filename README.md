@@ -26,6 +26,18 @@ AppPort Services answers:
 
 AuthPort still answers identity, authentication, and authorization questions.
 
+## See It In Action
+
+A complete example application is available under `examples/services-demo/`. It demonstrates:
+
+- API key authentication with tenant-scoped principals
+- Durable invoice creation with automatic webhook and job intent
+- Webhook delivery with retry and replay
+- Background job processing with lease-based concurrency control
+- Tenant isolation and durability across process restart
+
+See [`examples/services-demo/README.md`](./examples/services-demo/README.md) for a five-minute quickstart.
+
 ## Architecture
 
 AppPort Services uses Flow (the `@feltdb/core` contract language) as the authoritative durable schema. `appport.flow` describes all collections:
