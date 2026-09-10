@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from io import StringIO
+import tempfile
 import unittest
 
 from helpers import ROOT  # noqa: F401
@@ -20,30 +21,33 @@ class CliTests(unittest.TestCase):
         )
 
     def test_create_warns_secret_is_only_shown_once(self) -> None:
-        out = StringIO()
+        out = tempfile.TemporaryFile(mode="w+")
         err = StringIO()
 
-        code = main(
-            [
-                "api-key",
-                "create",
-                "--tenant",
-                "tenant-a",
-                "--name",
-                "production",
-                "--scope",
-                "invoices.read",
-                "--created-by",
-                "ops-1",
-            ],
-            service=self.service,
-            out=out,
-            err=err,
-        )
+        with out:
+            code = main(
+                [
+                    "api-key",
+                    "create",
+                    "--tenant",
+                    "tenant-a",
+                    "--name",
+                    "production",
+                    "--scope",
+                    "invoices.read",
+                    "--created-by",
+                    "ops-1",
+                ],
+                service=self.service,
+                out=out,
+                err=err,
+            )
+            out.seek(0)
+            rendered = out.read()
 
         self.assertEqual(code, 0)
         self.assertIn("only be shown once", err.getvalue())
-        self.assertIn("secret: app_live_", out.getvalue())
+        self.assertIn("secret: app_live_", rendered)
 
     def test_missing_runtime_configuration_fails_cleanly(self) -> None:
         out = StringIO()

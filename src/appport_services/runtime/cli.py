@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import os
 import sys
 from typing import Sequence
 
@@ -97,6 +98,5 @@ def _write_line(out, value: str) -> None:
 
 
 def _reveal_secret_once(out, secret: str) -> None:
-    out.write("secret: ")
-    out.write(secret)
-    out.write("\n")
+    out.flush()
+    os.write(out.fileno(), f"secret: {secret}\n".encode("utf-8"))
