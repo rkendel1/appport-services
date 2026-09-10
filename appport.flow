@@ -1,0 +1,130 @@
+flow_version 1
+
+app appport-services {
+  collection ApiKeys {
+    id: uuid
+    tenant_id: text
+    name: text
+    key_prefix: text
+    secret_hash: text
+    scopes: text
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime
+    last_used_at: datetime
+    created_by: text
+    index tenant_idx using hash(tenant_id)
+    index prefix_idx using hash(key_prefix)
+  }
+
+  collection ApiKeyPrefixes {
+    id: text
+    api_key_id: uuid
+    tenant_id: text
+    created_at: datetime
+    index tenant_prefix_idx using hash(tenant_id)
+  }
+
+  collection ApiKeyAuditEvents {
+    id: uuid
+    type: text
+    credential_id: uuid
+    tenant_id: text
+    principal_id: text
+    timestamp: datetime
+    result: text
+    index tenant_timestamp_idx using hash(tenant_id)
+  }
+
+  collection WebhookEndpoints {
+    id: uuid
+    tenant_id: text
+    url: url
+    events: text
+    created_at: datetime
+    created_by: text
+    disabled_at: datetime
+    index tenant_idx using hash(tenant_id)
+  }
+
+  collection WebhookDeliveries {
+    id: uuid
+    tenant_id: text
+    endpoint_id: uuid
+    event_id: uuid
+    event_type: text
+    payload: json
+    status: text
+    attempt_count: integer
+    next_attempt_at: datetime
+    created_at: datetime
+    last_attempt_at: datetime
+    delivered_at: datetime
+    last_status_code: integer
+    last_error: text
+    index tenant_idx using hash(tenant_id)
+    index endpoint_idx using hash(endpoint_id)
+    index status_idx using hash(status)
+  }
+
+  collection WebhookAuditEvents {
+    id: uuid
+    type: text
+    endpoint_id: uuid
+    delivery_id: uuid
+    tenant_id: text
+    principal_id: text
+    timestamp: datetime
+    result: text
+    index tenant_idx using hash(tenant_id)
+  }
+
+  collection Jobs {
+    id: uuid
+    tenant_id: text
+    type: text
+    payload: json
+    status: text
+    run_at: datetime
+    attempt_count: integer
+    max_attempts: integer
+    created_at: datetime
+    started_at: datetime
+    completed_at: datetime
+    next_attempt_at: datetime
+    lease_owner: text
+    lease_expires_at: datetime
+    last_error: text
+    index tenant_idx using hash(tenant_id)
+    index status_idx using hash(status)
+    index runAt_idx using sorted(run_at)
+  }
+
+  collection JobSchedules {
+    id: uuid
+    tenant_id: text
+    type: text
+    payload: json
+    interval: text
+    next_run_at: datetime
+    enabled: boolean
+    created_at: datetime
+    created_by: text
+    index tenant_idx using hash(tenant_id)
+    index enabled_idx using hash(enabled)
+    index nextRunAt_idx using sorted(next_run_at)
+  }
+
+  collection JobAuditEvents {
+    id: uuid
+    type: text
+    job_id: uuid
+    schedule_id: uuid
+    tenant_id: text
+    principal_id: text
+    timestamp: datetime
+    result: text
+    details: json
+    index tenant_idx using hash(tenant_id)
+  }
+}
