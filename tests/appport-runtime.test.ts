@@ -6,6 +6,8 @@ import test from 'node:test';
 import { formatFlowSpec, parseFlowSpec } from '@feltdb/core';
 
 import { appport, CapabilityNotDeclaredError, createCapabilityPlan, parseAppPortConfig } from '../src/index.js';
+import { runCli } from '../src/cli.js';
+import { Writable } from 'node:stream';
 
 async function writeApiFlow(path: string): Promise<void> {
   const template = await readFile(new URL('../../appport.flow', import.meta.url), 'utf8');
@@ -98,4 +100,39 @@ test('appport rejects disagreement between appport.toml and feltdb.flow', async 
   await writeFile(join(path, 'feltdb.flow'), 'flow_version 1\n\napp mismatch {}\n');
 
   await assert.rejects(appport({ config, memory: true }), /missing collections required by "use api"/);
+});
+
+test('generated contract materializes HTTP, state, events, identity, and lifecycle defaults', async () => {
+  const path = await mkdtemp(join(tmpdir(), 'appport-runtime-generated-'));
+  const sink = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+  await runCli(['init', '--use', 'api,jobs,webhooks'], { stdout: sink, stderr: sink }, undefined, path);
+  const configPath = join(path, 'appport.toml');
+  const source = (await readFile(configPath, 'utf8'))
+    .replace('port = 8787', 'port = 0')
+    .replace('[authorization]\nenabled = true', '[authorization]\nenabled = false');
+  await writeFile(configPath, source);
+  const application = await appport({
+    config: configPath,
+    path: join(path, '.state'),
+    routes: { 'POST /echo': ({ body, tenantId }) => ({ body, tenantId }) },
+    jobHandlers: { 'example.process': async () => undefined },
+  });
+
+  assert.ok(application.http);
+  assert.equal(application.contract.state.namespace, application.contract.application.name);
+  assert.equal(Object.isFrozen(application.contract), true);
+  const health = await fetch(`${application.http?.url}/_appport/health`).then((response) => response.json()) as { ok: boolean };
+  assert.equal(health.ok, true);
+  const echo = await fetch(`${application.http?.url}/echo`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: 1 }) }).then((response) => response.json()) as { tenantId: string; body: unknown };
+  assert.equal(echo.tenantId, 'development');
+  assert.deepEqual(echo.body, { value: 1 });
+  const received: number[] = [];
+  const subscription = application.events.subscribe((event) => received.push(event.id), { tenantId: 'development' });
+  application.events.publish('example.created', { id: 'one' }, 'development');
+  application.events.publish('example.created', { id: 'two' }, 'development');
+  subscription.close();
+  assert.deepEqual(received, [1, 2]);
+  await application.state.collection<{ id: string; value: number }>('Example').insert({ id: 'one', value: 1 }, 'one');
+  assert.equal((await application.state.collection<{ id: string; value: number }>('Example').get('one'))?.value, 1);
+  await application.close();
 });

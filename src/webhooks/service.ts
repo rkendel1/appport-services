@@ -28,6 +28,8 @@ interface WebhookServiceOptions {
   readonly secretStore: WebhookSecretStore;
   readonly now?: () => Date;
   readonly maxRetryAttempts?: number;
+  readonly requestTimeoutMs?: number;
+  readonly allowedEvents?: readonly string[];
 }
 
 export class WebhookService {
@@ -37,6 +39,8 @@ export class WebhookService {
   private readonly secretStore: WebhookSecretStore;
   private readonly now: () => Date;
   private readonly maxRetryAttempts: number;
+  private readonly requestTimeoutMs: number;
+  private readonly allowedEvents?: ReadonlySet<string>;
 
   constructor(options: WebhookServiceOptions) {
     this.endpointStore = options.endpointStore;
@@ -45,6 +49,8 @@ export class WebhookService {
     this.secretStore = options.secretStore;
     this.now = options.now ?? (() => new Date());
     this.maxRetryAttempts = options.maxRetryAttempts ?? MAX_RETRY_ATTEMPTS;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 30000;
+    this.allowedEvents = options.allowedEvents?.length ? new Set(options.allowedEvents) : undefined;
   }
 
   async createWebhookEndpoint(
@@ -125,6 +131,9 @@ export class WebhookService {
   }
 
   async emitWebhookEvent(input: EmitWebhookEventInput): Promise<readonly WebhookDelivery[]> {
+    if (this.allowedEvents && !this.allowedEvents.has(input.type)) {
+      throw new Error(`Webhook event "${input.type}" is not declared in appport.toml`);
+    }
     const endpoints = await this.endpointStore.list(input.tenantId);
     const matchingEndpoints = endpoints.filter(
       (e) => !e.disabledAt && e.events.includes(input.type),
@@ -374,7 +383,7 @@ export class WebhookService {
             'X-AppPort-Signature': signature,
             'Content-Length': Buffer.byteLength(payload),
           },
-          timeout: 30000,
+          timeout: this.requestTimeoutMs,
         },
         (res) => {
           let responseBody = '';

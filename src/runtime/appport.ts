@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
-import { parseFlowSpec, validateFlowSpec, type FeltDBOptions, type FlowSpec, type StateFirstDB } from '@feltdb/core';
+import { parseFlowSpec, validateFlowSpec, type Collection, type FeltDBOptions, type FlowSpec, type StateFirstDB } from '@feltdb/core';
+import type { IncomingMessage } from 'node:http';
 
 import { ApiKeyService } from '../api-keys/service.js';
 import { JobService } from '../jobs/service.js';
@@ -10,7 +11,8 @@ import { FeltDbApiKeyStore, FeltDbAuditSink, createFeltDbRuntime } from '../stor
 import { FeltDbWebhookAuditSink, FeltDbWebhookDeliveryStore, FeltDbWebhookEndpointStore } from '../storage/webhooks.js';
 import { EncryptedWebhookSecretStore } from '../webhooks/secrets.js';
 import { WebhookService } from '../webhooks/service.js';
-import { parseAppPortConfig, type AppPortConfig } from './dsl.js';
+import { parseAppPortConfig, type AppPortConfig, type AppPortContractSnapshot } from './dsl.js';
+import { AppPortEvents, AppPortTenantContext, startHttpRuntime, type AppPortHttpRuntime } from './platform.js';
 import { TransactionContextImpl } from './transaction-services.js';
 import { TransactionBuilder } from './transaction.js';
 
@@ -27,6 +29,33 @@ export interface AppPortOptions extends FeltDBOptions {
   readonly config?: string;
   /** Authoritative FeltDB contract. Defaults to feltdb.flow beside appport.toml. */
   readonly flow?: string;
+  readonly routes?: Readonly<Record<string, AppPortRouteHandler>>;
+  readonly jobHandlers?: Readonly<Record<string, (job: import('../jobs/models.js').Job) => Promise<void>>>;
+}
+
+export interface AppPortRouteContext { readonly application: AppPortApplication; readonly services: AppPortTenantServices; readonly request: IncomingMessage; readonly body: unknown; readonly tenantId: string; readonly principal: import('../contract/principals.js').AuthenticatedPrincipal | null }
+export type AppPortRouteHandler = (context: AppPortRouteContext) => unknown | Promise<unknown>;
+export interface AppPortTenantServices {
+  readonly api: { readonly keys: {
+    createApiKey(input: Omit<import('../api-keys/models.js').CreateApiKeyInput, 'tenantId'>): ReturnType<ApiKeyService['createApiKey']>;
+    listApiKeys(): ReturnType<ApiKeyService['listApiKeys']>;
+    getApiKey(id: string): ReturnType<ApiKeyService['getApiKey']>;
+    revokeApiKey(input: Omit<import('../api-keys/models.js').RevokeApiKeyInput, 'tenantId'>): ReturnType<ApiKeyService['revokeApiKey']>;
+  } };
+  readonly webhooks: {
+    createWebhookEndpoint(input: Omit<import('../webhooks/models.js').CreateWebhookEndpointInput, 'tenantId'>): ReturnType<WebhookService['createWebhookEndpoint']>;
+    listWebhookEndpoints(): ReturnType<WebhookService['listWebhookEndpoints']>;
+    emitWebhookEvent(input: Omit<import('../webhooks/models.js').EmitWebhookEventInput, 'tenantId'>): ReturnType<WebhookService['emitWebhookEvent']>;
+  };
+  readonly jobs: {
+    enqueue(input: Omit<import('../jobs/models.js').CreateJobInput, 'tenantId'>): ReturnType<JobService['enqueue']>;
+    listJobs(): ReturnType<JobService['listJobs']>;
+  };
+  publish<T extends Record<string, unknown>>(type: string, data: T): Promise<import('./platform.js').AppPortEvent<T>>;
+}
+export interface AppPortState {
+  collection<T>(name: string): Pick<Collection<T>, 'get' | 'list' | 'find' | 'insert' | 'update' | 'delete' | 'subscribe'>;
+  subscribe<T>(collection: string, handler: (items: T[]) => void): () => void;
 }
 
 export interface AppPortApiCapability {
@@ -35,9 +64,17 @@ export interface AppPortApiCapability {
 
 export interface AppPortApplication {
   readonly plan: CapabilityPlan;
+  readonly contract: AppPortContractSnapshot;
   readonly api: AppPortApiCapability;
   readonly webhooks: WebhookService;
   readonly jobs: JobService;
+  readonly events: AppPortEvents;
+  readonly state: AppPortState;
+  readonly tenant: AppPortTenantContext;
+  readonly http?: AppPortHttpRuntime;
+  forTenant(tenantId: string): AppPortTenantServices;
+  publish<T extends Record<string, unknown>>(type: string, data: T, tenantId?: string): Promise<import('./platform.js').AppPortEvent<T>>;
+  overview(): Record<string, unknown>;
   transaction<T>(callback: (tx: TransactionContextImpl) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
@@ -70,26 +107,32 @@ type CapabilityFactory = (
 
 export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, CapabilityFactory>> = {
   api(db, config, services, runtime) {
-    if (config.api?.keys === false) return;
+    if (!config.api.keys.enabled) return;
     services.apiKeys = new ApiKeyService({
       store: new FeltDbApiKeyStore(db),
       auditSink: new FeltDbAuditSink(db),
       runtime,
+      allowedScopes: config.api.keys.scopes,
     });
   },
-  webhooks(db, _config, services) {
+  webhooks(db, config, services) {
     services.webhooks = new WebhookService({
       endpointStore: new FeltDbWebhookEndpointStore(db),
       deliveryStore: new FeltDbWebhookDeliveryStore(db),
       auditSink: new FeltDbWebhookAuditSink(db),
       secretStore: new EncryptedWebhookSecretStore(),
+      maxRetryAttempts: config.webhooks.delivery.retries,
+      requestTimeoutMs: config.webhooks.delivery.timeout_ms,
+      allowedEvents: config.webhooks.events.allowed,
     });
   },
-  jobs(db, _config, services) {
+  jobs(db, config, services) {
     services.jobs = new JobService({
       jobStore: new FeltDbJobStore(db),
       scheduleStore: new FeltDbJobScheduleStore(db),
       auditSink: new FeltDbJobAuditSink(db),
+      maxRetryAttempts: config.jobs.execution.max_attempts,
+      allowedTypes: Object.keys(config.jobs.types),
     });
   },
 };
@@ -101,7 +144,8 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const flowPath = resolve(options.flow ?? dirname(configPath), options.flow ? '' : 'feltdb.flow');
   const flow = await loadAuthoritativeFlow(flowPath, config);
   const plan = createCapabilityPlan(config, flow);
-  const { config: _config, flow: _flow, ...feltDbOptions } = options;
+  const { config: _config, flow: _flow, routes = {}, jobHandlers = {}, ...explicitFeltDbOptions } = options;
+  const feltDbOptions = runtimeOptionsFromContract(config, explicitFeltDbOptions, dirname(configPath));
   const runtime = createFeltDbRuntime(feltDbOptions);
   const services: InitializedCapabilities = {};
 
@@ -109,8 +153,27 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
     capabilityRegistry[capability](runtime.db, config, services, runtime);
   }
 
+  await runtime.db.deployFlowSpec(flow);
+  for (const [type, handler] of Object.entries(jobHandlers)) services.jobs?.register(type, handler);
+
+  const events = new AppPortEvents();
+  const tenant = new AppPortTenantContext(config.tenant.default);
+  const state: AppPortState = {
+    collection: <T>(name: string) => runtime.db.collection<T>(name),
+    subscribe: <T>(name: string, handler: (items: T[]) => void) => runtime.db.collection<T>(name).subscribe(handler),
+  };
+  let http: AppPortHttpRuntime | undefined;
+  let closed = false;
+  const workerTimers: NodeJS.Timeout[] = [];
+  const shutdown = () => void application.close();
+
   const application = {
     plan,
+    contract: config,
+    events,
+    state,
+    tenant,
+    get http(): AppPortHttpRuntime | undefined { return http; },
     get api(): AppPortApiCapability {
       if (!config.capabilities.api) throw new CapabilityNotDeclaredError('api');
       return {
@@ -128,6 +191,37 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
       if (!services.jobs) throw new CapabilityNotDeclaredError('jobs');
       return services.jobs;
     },
+    overview(): Record<string, unknown> {
+      return { application: config.application, deployment: config.deployment, capabilities: plan.capabilities, tenant: config.tenant, state: { ...config.state, runtime: runtime.deployment }, api: config.api, webhooks: config.webhooks, jobs: config.jobs, events: events.overview(), health: { ok: !closed } };
+    },
+    forTenant(tenantId: string): AppPortTenantServices {
+      return {
+        api: { keys: {
+          createApiKey: (input) => application.api.keys.createApiKey({ ...input, tenantId }),
+          listApiKeys: () => application.api.keys.listApiKeys(tenantId),
+          getApiKey: (id) => application.api.keys.getApiKey(tenantId, id),
+          revokeApiKey: (input) => application.api.keys.revokeApiKey({ ...input, tenantId }),
+        } },
+        webhooks: {
+          createWebhookEndpoint: (input) => application.webhooks.createWebhookEndpoint({ ...input, tenantId }),
+          listWebhookEndpoints: () => application.webhooks.listWebhookEndpoints(tenantId),
+          emitWebhookEvent: (input) => application.webhooks.emitWebhookEvent({ ...input, tenantId }),
+        },
+        jobs: {
+          enqueue: (input) => application.jobs.enqueue({ ...input, tenantId }),
+          listJobs: () => application.jobs.listJobs(tenantId),
+        },
+        publish: (type, data) => application.publish(type, data, tenantId),
+      };
+    },
+    async publish<T extends Record<string, unknown>>(type: string, data: T, tenantId = tenant.current()): Promise<import('./platform.js').AppPortEvent<T>> {
+      const event = events.publish(type, data, tenantId);
+      if (services.webhooks) {
+        const deliveries = await services.webhooks.emitWebhookEvent({ tenantId, type, payload: data });
+        await Promise.all(deliveries.map((delivery) => services.webhooks?.deliverWebhook(tenantId, delivery.id)));
+      }
+      return event;
+    },
     async transaction<T>(callback: (tx: TransactionContextImpl) => Promise<T>): Promise<T> {
       const builder = new TransactionBuilder();
       const context = capabilityAwareTransactionContext(new TransactionContextImpl(builder), config);
@@ -136,11 +230,58 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
       return result;
     },
     async close(): Promise<void> {
+      if (closed) return;
+      closed = true;
+      process.off('SIGINT', shutdown);
+      process.off('SIGTERM', shutdown);
+      events.close();
+      for (const timer of workerTimers) clearInterval(timer);
+      await http?.close();
       await runtime.db.close();
     },
   } satisfies AppPortApplication;
 
+  if (config.http.enabled) http = await startHttpRuntime(application, routes);
+  if (config.lifecycle.managed && config.tenant.default && services.jobs && config.jobs.execution.enabled) {
+    workerTimers.push(startManagedLoop(async () => {
+      const jobs = await services.jobs?.listJobs(config.tenant.default!);
+      for (const job of jobs ?? []) if (job.status === 'pending' || job.status === 'retrying') await services.jobs?.executeJob(job.tenantId, job.id, `${config.application.name}:runtime`);
+    }));
+  }
+  if (config.lifecycle.managed && config.tenant.default && services.webhooks && config.webhooks.delivery.enabled) {
+    workerTimers.push(startManagedLoop(async () => {
+      const deliveries = await services.webhooks?.listWebhookDeliveries(config.tenant.default!);
+      for (const delivery of deliveries ?? []) if (delivery.status === 'pending' || delivery.status === 'retrying') await services.webhooks?.deliverWebhook(delivery.tenantId, delivery.id);
+    }));
+  }
+  if (config.lifecycle.managed) {
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+  }
+
   return application;
+}
+
+function startManagedLoop(work: () => Promise<void>): NodeJS.Timeout {
+  let running = false;
+  const timer = setInterval(() => {
+    if (running) return;
+    running = true;
+    void work().catch(() => undefined).finally(() => { running = false; });
+  }, 250);
+  timer.unref();
+  return timer;
+}
+
+function runtimeOptionsFromContract(config: AppPortConfig, explicit: FeltDBOptions, applicationRoot: string): FeltDBOptions {
+  if (explicit.server || explicit.browser || explicit.memory || explicit.path || explicit.mode) return explicit;
+  if (config.deployment.mode === 'managed') {
+    const url = process.env.FELTDB_URL;
+    if (!url) throw new Error('appport.toml deployment.mode is "managed" but FELTDB_URL is not configured');
+    return { ...explicit, namespace: config.state.namespace, server: { url, token: process.env.FELTDB_TOKEN, applicationId: config.application.name, environment: process.env.FELTDB_ENVIRONMENT } };
+  }
+  if (config.deployment.storage === 'memory') return { ...explicit, namespace: config.state.namespace, memory: true };
+  return { ...explicit, mode: 'local', namespace: config.state.namespace, path: resolve(applicationRoot, '.appport/state') };
 }
 
 const CAPABILITY_COLLECTIONS: Readonly<Record<AppPortCapabilityName, readonly string[]>> = {

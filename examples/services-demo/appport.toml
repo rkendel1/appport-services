@@ -1,14 +1,62 @@
-# AppPort Services DSL configuration
-# Declares which AppPort capabilities this application uses
-
-# Capability declarations
+version = "1"
+[application]
+name = "services-demo"
+description = "AppPort application"
+runtime = "node"
+[deployment]
+mode = "local"
+storage = "durable"
+distributed = true
+[state]
+enabled = true
+authority = "feltdb"
+namespace = "services-demo"
+[tenant]
+mode = "required"
+default = "development"
+[http]
+enabled = true
+host = "127.0.0.1"
+port = 8787
+[cors]
+enabled = true
+origins = ["*"]
+[api]
+enabled = true
+[api.keys]
+enabled = true
+scopes = ["invoices.read", "invoices.write"]
+[webhooks]
+enabled = true
+[webhooks.delivery]
+enabled = true
+retries = 3
+timeout_ms = 10000
+[webhooks.events]
+allowed = ["invoice.created", "invoice.paid"]
+[jobs]
+enabled = true
+[jobs.execution]
+enabled = true
+max_attempts = 5
+[jobs.types]
+"invoice.process" = { timeout_ms = 30000 }
+[events]
+enabled = true
+[events.streaming]
+enabled = true
+transport = "sse"
+[authorization]
+enabled = true
+default = "deny"
+[observability]
+enabled = true
+[lifecycle]
+managed = true
+[development]
+mail = "local"
+webhooks = "local"
+jobs = "local"
 use api
 use webhooks
 use jobs
-
-# Optional configuration per capability
-[webhooks]
-events = ["invoice.created", "invoice.paid"]
-
-[jobs]
-max_attempts = 5

@@ -24,6 +24,7 @@ interface ApiKeyServiceOptions {
   readonly auditSink: AuditSink;
   readonly runtime?: FeltDbServiceRuntime;
   readonly now?: () => Date;
+  readonly allowedScopes?: readonly string[];
 }
 
 export class ApiKeyService {
@@ -33,10 +34,12 @@ export class ApiKeyService {
   private authenticationQueue: Promise<void> = Promise.resolve();
   private readonly knownPrefixes = new Map<string, string>();
   private readonly locallyCreatedKeys = new Map<string, ApiKey>();
+  private readonly allowedScopes?: ReadonlySet<string>;
 
   constructor(private readonly options: ApiKeyServiceOptions) {
     this.runtime = options.runtime;
     this.now = options.now ?? (() => new Date());
+    this.allowedScopes = options.allowedScopes?.length ? new Set(options.allowedScopes) : undefined;
   }
 
   async createApiKey(input: CreateApiKeyInput): Promise<CreatedApiKey> {
@@ -55,6 +58,8 @@ export class ApiKeyService {
   }
 
   private async createApiKeyWithSideEffects(input: CreateApiKeyInput): Promise<CreatedApiKey> {
+    const undeclaredScopes = this.allowedScopes ? input.scopes.filter((scope) => !this.allowedScopes?.has(scope)) : [];
+    if (undeclaredScopes.length) throw new Error(`API scopes are not declared in appport.toml: ${undeclaredScopes.join(', ')}`);
     for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
       const createdAt = this.now().toISOString();
       const prefix = `${API_KEY_SCHEME}_${randomBytes(3).toString('hex')}`;

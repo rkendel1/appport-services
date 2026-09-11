@@ -4,7 +4,7 @@
 
 // Primary factory for creating unified AppPort Services
 export { appport, capabilityRegistry, createCapabilityPlan, CapabilityNotDeclaredError } from './runtime/appport.js';
-export type { AppPortApplication, AppPortApiCapability, AppPortCapabilityName, AppPortOptions, CapabilityPlan } from './runtime/appport.js';
+export type { AppPortApplication, AppPortApiCapability, AppPortCapabilityName, AppPortOptions, AppPortRouteContext, AppPortRouteHandler, AppPortState, AppPortTenantServices, CapabilityPlan } from './runtime/appport.js';
 export { createServices } from './runtime/unified-services.js';
 export type { AppPortServices, CreateServicesOptions } from './runtime/unified-services.js';
 
@@ -12,8 +12,10 @@ export type { AppPortServices, CreateServicesOptions } from './runtime/unified-s
 export type { AppPortTransactionContext, AppPortTransactionCollection } from './runtime/transaction.js';
 
 // AppPort Services DSL (appport.toml configuration)
-export { parseAppPortConfig } from './runtime/dsl.js';
-export type { AppPortConfig } from './runtime/dsl.js';
+export { parseAppPortConfig, parseAppPortConfigText, AppPortConfigError } from './runtime/dsl.js';
+export type { AppPortConfig, AppPortContractSnapshot, DeploymentMode } from './runtime/dsl.js';
+export { AppPortEvents, AppPortTenantContext } from './runtime/platform.js';
+export type { AppPortEvent, AppPortHttpRuntime, EventSubscription } from './runtime/platform.js';
 
 // Service classes (consumers construct services via createServices)
 export { ApiKeyService } from './api-keys/service.js';

@@ -1,0 +1,14 @@
+{
+  "name": "create-appport",
+  "version": "0.1.0",
+  "description": "Create a contract-driven AppPort application",
+  "type": "module",
+  "bin": {
+    "create-appport": "cli.js"
+  },
+  "files": ["cli.js", "README.md"],
+  "license": "ISC",
+  "dependencies": {
+    "@appport/runtime": "^0.3.0"
+  }
+}

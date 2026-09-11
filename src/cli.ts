@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
-import { access, readFile, writeFile } from 'node:fs/promises';
+import { access, copyFile, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { formatFlowSpec, parseFlowSpec } from '@feltdb/core';
 
-import { createApiKeyService } from './_internal.js';
 import type { ApiKeyService } from './api-keys/service.js';
+import { parseAppPortConfig } from './runtime/dsl.js';
 import {
   createFeltDbRuntime,
   FeltDbWebhookEndpointStore,
@@ -20,6 +21,9 @@ import {
   FeltDbJobScheduleStore,
   FeltDbJobAuditSink,
   JobService,
+  FeltDbApiKeyStore,
+  FeltDbAuditSink,
+  ApiKeyService as ApiKeyServiceImpl,
 } from './_internal.js';
 
 interface CommandIo {
@@ -39,17 +43,19 @@ export async function runCli(
     const [group, action, ...rest] = argv;
     if (group === 'init') {
       return handleInitCommand(argv.slice(1), io, cwd);
+    } else if (group === 'config' && action === 'migrate') {
+      return handleConfigMigrate(io, cwd);
     } else if (group === 'api-key') {
-      activeService ??= createApiKeyService();
+      activeService ??= createConfiguredApiKeyService(cwd);
       return handleApiKeyCommand(action, rest, io, activeService);
     } else if (group === 'webhook') {
-      return handleWebhookCommand(action, rest, io);
+      return handleWebhookCommand(action, rest, io, cwd);
     } else if (group === 'job') {
-      return handleJobCommand(action, rest, io);
+      return handleJobCommand(action, rest, io, cwd);
     } else {
       writeLine(
         io.stderr,
-        'Usage: appport-runtime init [--use api,webhooks,jobs] | appport-runtime <api-key|webhook|job> <command>',
+        'Usage: appport-runtime init [--use api,webhooks,jobs] | appport-runtime config migrate | appport-runtime <api-key|webhook|job> <command>',
       );
       return 1;
     }
@@ -58,6 +64,25 @@ export async function runCli(
       await closeQuietly(activeService);
     }
   }
+}
+
+async function handleConfigMigrate(io: CommandIo, cwd: string): Promise<number> {
+  const path = resolve(cwd, 'appport.toml');
+  const flowPath = resolve(cwd, 'feltdb.flow');
+  const config = parseAppPortConfig(path);
+  const selected = SUPPORTED_CAPABILITIES.filter((capability) => config.capabilities[capability]);
+  await copyFile(path, `${path}.bak`);
+  const applicationName = config.application.name === 'app' ? await detectFlowApplicationName(cwd) : config.application.name;
+  await writeFile(path, canonicalConfig(applicationName, selected), 'utf8');
+  try {
+    await access(flowPath);
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    await writeFlowContract(flowPath, applicationName, selected);
+  }
+  writeLine(io.stdout, `Migrated ${path}`);
+  writeLine(io.stdout, `Backup: ${path}.bak`);
+  return 0;
 }
 
 const SUPPORTED_CAPABILITIES = ['api', 'webhooks', 'jobs'] as const;
@@ -102,28 +127,86 @@ async function handleInitCommand(
   const flowDestination = resolve(cwd, 'feltdb.flow');
   await assertFilesDoNotExist([configDestination, flowDestination]);
 
-  const content = [
-    '# AppPort Services capabilities used by this application',
-    '',
-    ...selected.map((capability) => `use ${capability}`),
-    '',
-  ].join('\n');
-  const templatePath = new URL('../../appport.flow', import.meta.url);
-  const template = parseFlowSpec(await readFile(templatePath, 'utf8'));
-  const includedCollections = new Set(selected.flatMap((capability) => CAPABILITY_COLLECTIONS[capability]));
-  const flowContent = formatFlowSpec({
-    ...template,
-    app: await detectFlowApplicationName(cwd),
-    collections: template.collections.filter((collection) => includedCollections.has(collection.name)),
-  });
-
+  const applicationName = await detectFlowApplicationName(cwd);
+  const content = canonicalConfig(applicationName, selected);
   await writeFile(configDestination, content, { encoding: 'utf8', flag: 'wx' });
-  await writeFile(flowDestination, flowContent, { encoding: 'utf8', flag: 'wx' });
+  await writeFlowContract(flowDestination, applicationName, selected, true);
 
   writeLine(io.stdout, `Created ${configDestination}`);
   writeLine(io.stdout, `Created ${flowDestination}`);
   writeLine(io.stdout, `Enabled: ${selected.join(', ')}`);
   return 0;
+}
+
+async function writeFlowContract(destination: string, applicationName: string, selected: readonly typeof SUPPORTED_CAPABILITIES[number][], exclusive = false): Promise<void> {
+  const template = parseFlowSpec(await readFile(new URL('../../appport.flow', import.meta.url), 'utf8'));
+  const includedCollections = new Set(selected.flatMap((capability) => CAPABILITY_COLLECTIONS[capability]));
+  const flowContent = formatFlowSpec({ ...template, app: applicationName, collections: template.collections.filter((collection) => includedCollections.has(collection.name)) });
+  await writeFile(destination, flowContent, { encoding: 'utf8', ...(exclusive ? { flag: 'wx' } : {}) });
+}
+
+function canonicalConfig(applicationName: string, selected: readonly string[]): string {
+  const has = (capability: string) => selected.includes(capability);
+  const lines = [
+    '# AppPort application contract',
+    'version = "1"',
+    '',
+    '[application]',
+    `name = "${applicationName}"`,
+    'description = "AppPort application"',
+    'runtime = "node"',
+    '',
+    '[deployment]',
+    'mode = "local"',
+    'storage = "durable"',
+    'distributed = true',
+    '',
+    '[state]',
+    'enabled = true',
+    'authority = "feltdb"',
+    `namespace = "${applicationName}"`,
+    '',
+    '[tenant]',
+    'mode = "required"',
+    'default = "development"',
+    '',
+    '[http]',
+    'enabled = true',
+    'host = "127.0.0.1"',
+    'port = 8787',
+    '',
+    '[cors]',
+    'enabled = true',
+    'origins = ["*"]',
+  ];
+  if (has('api')) lines.push('', '[api]', 'enabled = true', '', '[api.keys]', 'enabled = true', 'scopes = ["example.read", "example.write"]');
+  if (has('webhooks')) lines.push('', '[webhooks]', 'enabled = true', '', '[webhooks.delivery]', 'enabled = true', 'retries = 3', 'timeout_ms = 10000', '', '[webhooks.events]', 'allowed = ["example.created"]');
+  if (has('jobs')) lines.push('', '[jobs]', 'enabled = true', '', '[jobs.execution]', 'enabled = true', 'max_attempts = 3', '', '[jobs.types]', '"example.process" = { timeout_ms = 30000 }');
+  lines.push(
+    '', '[events]', 'enabled = true', '', '[events.streaming]', 'enabled = true', 'transport = "sse"',
+    '', '[authorization]', `enabled = ${has('api')}`, 'default = "deny"',
+    '', '[observability]', 'enabled = true',
+    '', '[lifecycle]', 'managed = true',
+    '', '[development]', 'mail = "local"', 'webhooks = "local"', 'jobs = "local"',
+    '', ...selected.map((capability) => `use ${capability}`), '',
+  );
+  return lines.join('\n');
+}
+
+function createConfiguredRuntime(cwd: string): { runtime: ReturnType<typeof createFeltDbRuntime>; config?: ReturnType<typeof parseAppPortConfig> } {
+  const configPath = resolve(cwd, 'appport.toml');
+  if (!existsSync(configPath)) return { runtime: createFeltDbRuntime() };
+  const config = parseAppPortConfig(configPath);
+  if (config.deployment.storage === 'memory') return { runtime: createFeltDbRuntime({ memory: true, namespace: config.state.namespace }), config };
+  if (config.deployment.mode !== 'local' && process.env.FELTDB_URL) {
+    return { runtime: createFeltDbRuntime({ namespace: config.state.namespace, server: { url: process.env.FELTDB_URL, token: process.env.FELTDB_TOKEN, applicationId: config.application.name, environment: process.env.FELTDB_ENVIRONMENT } }), config };
+  }
+  return { runtime: createFeltDbRuntime({ mode: 'local', namespace: config.state.namespace, path: resolve(cwd, '.appport/state') }), config };
+}
+
+function createConfiguredApiKeyService(cwd: string): ApiKeyService {
+  const { runtime, config } = createConfiguredRuntime(cwd);
+  return new ApiKeyServiceImpl({ store: new FeltDbApiKeyStore(runtime.db), auditSink: new FeltDbAuditSink(runtime.db), runtime, allowedScopes: config?.api.keys.scopes });
 }
 
 async function configureCapabilities(io: CommandIo): Promise<string[]> {
@@ -246,13 +329,17 @@ async function handleWebhookCommand(
   action: string,
   rest: readonly string[],
   io: CommandIo,
+  cwd: string,
 ): Promise<number> {
-  const runtime = createFeltDbRuntime();
+  const { runtime, config } = createConfiguredRuntime(cwd);
   const webhookService = new WebhookService({
     endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
     deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
     auditSink: new FeltDbWebhookAuditSink(runtime.db),
     secretStore: new EncryptedWebhookSecretStore(),
+    maxRetryAttempts: config?.webhooks.delivery.retries,
+    requestTimeoutMs: config?.webhooks.delivery.timeout_ms,
+    allowedEvents: config?.webhooks.events.allowed,
   });
 
   try {
@@ -360,12 +447,15 @@ async function handleJobCommand(
   action: string,
   rest: readonly string[],
   io: CommandIo,
+  cwd: string,
 ): Promise<number> {
-  const runtime = createFeltDbRuntime();
+  const { runtime, config } = createConfiguredRuntime(cwd);
   const jobService = new JobService({
     jobStore: new FeltDbJobStore(runtime.db),
     scheduleStore: new FeltDbJobScheduleStore(runtime.db),
     auditSink: new FeltDbJobAuditSink(runtime.db),
+    maxRetryAttempts: config?.jobs.execution.max_attempts,
+    allowedTypes: config ? Object.keys(config.jobs.types) : undefined,
   });
 
   try {

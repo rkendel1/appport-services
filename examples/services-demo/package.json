@@ -6,19 +6,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "npm run build && node dist/src/app.js",
-    "demo:create-key": "npm run build && node dist/src/cli.js api-key create --tenant demo-tenant --name default --scope invoices.write --created-by demo-operator",
-    "demo:create-invoice": "npm run build && node dist/src/cli.js invoice create --tenant demo-tenant --customer acme-corp --amount 1000",
-    "demo:list-invoices": "npm run build && node dist/src/cli.js invoice list --tenant demo-tenant",
-    "demo:worker": "npm run build && node dist/src/worker.js",
     "test": "npm run build && node --test dist/tests/**/*.test.js"
   },
   "dependencies": {
-    "@appport/services": "file:../..",
-    "@feltdb/core": "0.10.0",
-    "express": "^4.21.1"
+    "@appport/runtime": "file:../../packages/runtime"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
     "@types/node": "22.10.2",
     "typescript": "5.6.3"
   }

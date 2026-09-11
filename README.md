@@ -2,7 +2,19 @@
 
 AppPort Services provides operational application capabilities that sit beside AuthPort.
 
-## Install and run
+## Create and run an application
+
+For a new application:
+
+```sh
+npx create-appport my-app
+cd my-app
+npm run dev
+```
+
+The generated source contains business handlers only. It does not create an HTTP server, configure persistence, implement CORS/SSE, run job workers, deliver webhooks, or install signal handlers.
+
+For an existing application:
 
 Install the package in your application:
 
@@ -36,6 +48,33 @@ await app.api.keys.createApiKey(/* ... */);
 ```
 
 `appport()` reads `./appport.toml` by default and owns service construction, persistence, audit infrastructure, and lifecycle. Call `await app.close()` during graceful shutdown. Accessing an undeclared capability throws a `CapabilityNotDeclaredError` with the declaration needed to enable it.
+
+`appport.toml` is the authoritative application contract. It is parsed, validated, normalized, and frozen once at startup. It declares application identity, deployment and state authority, tenancy, HTTP/CORS, API scopes, webhook delivery, job types, events, authorization, observability, lifecycle, and development defaults. The sibling `feltdb.flow` is deployed into FeltDB as the authoritative state contract.
+
+Legacy files containing only `use api`, `use webhooks`, and `use jobs` remain supported. Expand one to the canonical contract with a recoverable backup using:
+
+```sh
+npx @appport/runtime config migrate
+```
+
+Application code supplies behavior:
+
+```javascript
+import { appport } from '@appport/runtime';
+
+const application = await appport({
+  routes: {
+    'POST /invoices': async ({ body, tenantId }) => createInvoice(body, tenantId),
+  },
+  jobHandlers: {
+    'invoice.process': async (job) => processInvoice(job.payload),
+  },
+});
+
+await application.publish('invoice.created', { id: 'inv-123' });
+```
+
+The public `application.state` and `application.events` APIs provide provider-neutral state and subscriptions. Application code never reaches through a capability to access its private database.
 
 `@appport/services` supplies the CLI and capability implementation, but application source imports only `@appport/runtime`. Existing applications may continue using `createServices()` from `@appport/services` as a compatibility API.
 

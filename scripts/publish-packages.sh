@@ -37,7 +37,9 @@ if [ -n "${NPM_TOKEN:-}" ]; then
   export NPM_CONFIG_USERCONFIG="$npm_userconfig"
   publish_package .
   publish_package ./packages/runtime
+  publish_package ./packages/create-appport
 else
   publish_package .
   publish_package ./packages/runtime
+  publish_package ./packages/create-appport
 fi

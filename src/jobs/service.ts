@@ -20,6 +20,7 @@ interface JobServiceOptions {
   readonly now?: () => Date;
   readonly maxRetryAttempts?: number;
   readonly leaseDurationMs?: number;
+  readonly allowedTypes?: readonly string[];
 }
 
 type JobHandler = (job: Job) => Promise<void>;
@@ -32,6 +33,7 @@ export class JobService {
   private readonly maxRetryAttempts: number;
   private readonly leaseDurationMs: number;
   private readonly handlers = new Map<string, JobHandler>();
+  private readonly allowedTypes?: ReadonlySet<string>;
 
   constructor(options: JobServiceOptions) {
     this.jobStore = options.jobStore;
@@ -40,13 +42,16 @@ export class JobService {
     this.now = options.now ?? (() => new Date());
     this.maxRetryAttempts = options.maxRetryAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.leaseDurationMs = options.leaseDurationMs ?? LEASE_DURATION_MS;
+    this.allowedTypes = options.allowedTypes?.length ? new Set(options.allowedTypes) : undefined;
   }
 
   register(type: string, handler: JobHandler): void {
+    if (this.allowedTypes && !this.allowedTypes.has(type)) throw new Error(`Job type "${type}" is not declared in appport.toml`);
     this.handlers.set(type, handler);
   }
 
   async enqueue(input: CreateJobInput): Promise<Job> {
+    if (this.allowedTypes && !this.allowedTypes.has(input.type)) throw new Error(`Job type "${input.type}" is not declared in appport.toml`);
     const id = randomUUID();
     const now = this.now().toISOString();
     const runAt = input.runAt ?? now;
@@ -61,7 +66,7 @@ export class JobService {
       status,
       runAt,
       attemptCount: 0,
-      maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+      maxAttempts: input.maxAttempts ?? this.maxRetryAttempts,
       createdAt: now,
       __version: 1,
     };

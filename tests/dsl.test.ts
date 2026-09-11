@@ -38,7 +38,7 @@ events = ["invoice.created", "invoice.paid"]
 
   const parsed = parseAppPortConfig(configPath);
   assert.equal(parsed.capabilities.webhooks, true);
-  assert.deepEqual(parsed.webhooks?.events, ['invoice.created', 'invoice.paid']);
+  assert.deepEqual(parsed.webhooks.events.allowed, ['invoice.created', 'invoice.paid']);
 });
 
 test('DSL: parse with jobs max_attempts configuration', async () => {
@@ -82,7 +82,7 @@ test('DSL: parses capability block configuration', async () => {
 
   const parsed = parseAppPortConfig(configPath);
   assert.equal(parsed.capabilities.api, true);
-  assert.equal(parsed.api?.keys, true);
+  assert.equal(parsed.api.keys.enabled, true);
   assert.equal(parsed.capabilities.webhooks, false);
 });
 
@@ -114,7 +114,7 @@ use unknown_thing
 
   assert.throws(
     () => parseAppPortConfig(configPath),
-    /Unknown capability/,
+    /invalid use/,
   );
 });
 
@@ -131,7 +131,7 @@ events = "not-an-array"
 
   assert.throws(
     () => parseAppPortConfig(configPath),
-    /webhooks.events must be an array/,
+    /invalid webhooks.events/,
   );
 });
 
@@ -148,7 +148,7 @@ max_attempts = "five"
 
   assert.throws(
     () => parseAppPortConfig(configPath),
-    /jobs.max_attempts must be a positive integer/,
+    /invalid jobs.execution.max_attempts/,
   );
 });
 
@@ -165,7 +165,7 @@ max_attempts = 0
 
   assert.throws(
     () => parseAppPortConfig(configPath),
-    /jobs.max_attempts must be a positive integer/,
+    /invalid jobs.execution.max_attempts/,
   );
 });
 
