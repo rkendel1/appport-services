@@ -148,9 +148,12 @@ After `npm pack`, the tarball includes:
 When ready to publish to the npm public registry:
 
 ```bash
-npm login
-npm publish
+npm run publish:packages
 ```
+
+The release command runs the full test suite, loads `NPM_TOKEN` from
+`.env.local` when present, and publishes the scoped package publicly. The token
+file is excluded from both git and the npm package.
 
 Consumers would then install with:
 ```bash

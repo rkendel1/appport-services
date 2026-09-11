@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .feltdb/
+.env.local
 *.tgz
 __pycache__/
 *.pyc
+.env.local

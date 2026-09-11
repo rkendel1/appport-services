@@ -12,9 +12,14 @@
   "bin": {
     "appport": "./dist/src/cli.js"
   },
+  "files": [
+    "dist/src",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/tests/**/*.test.js"
+    "test": "npm run build && node --test dist/tests/**/*.test.js",
+    "publish:packages": "sh scripts/publish-packages.sh"
   },
   "keywords": [
     "appport",
