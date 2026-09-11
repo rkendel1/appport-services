@@ -1,46 +1,23 @@
 #!/usr/bin/env node
 
 import { randomUUID } from 'node:crypto';
-import {
-  createApiKeyService,
-  createFeltDbRuntime,
-  FeltDbWebhookDeliveryStore,
-  WebhookService,
-  FeltDbWebhookEndpointStore,
-  FeltDbWebhookAuditSink,
-  EncryptedWebhookSecretStore,
-  FeltDbJobStore,
-  FeltDbJobScheduleStore,
-  FeltDbJobAuditSink,
-  JobService,
-} from '@appport/services';
+import { createServices } from '@appport/services';
+import { createFeltDB } from '@feltdb/core';
 
-const runtime = createFeltDbRuntime({
+// Initialize unified AppPort Services
+const services = createServices({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
 
-const apiKeysService = createApiKeyService({
+// Application-owned state: invoices use separate FeltDB instance
+const appDb = createFeltDB({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
-
-const webhookService = new WebhookService({
-  endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
-  deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
-  auditSink: new FeltDbWebhookAuditSink(runtime.db),
-  secretStore: new EncryptedWebhookSecretStore(),
-});
-
-const jobService = new JobService({
-  jobStore: new FeltDbJobStore(runtime.db),
-  scheduleStore: new FeltDbJobScheduleStore(runtime.db),
-  auditSink: new FeltDbJobAuditSink(runtime.db),
-});
-
-const invoices = runtime.db.collection<any>('invoices');
+const invoices = appDb.collection<any>('invoices');
 
 const args = process.argv.slice(2);
 
@@ -50,7 +27,7 @@ async function main() {
 
   try {
     if (command === 'api-key' && subcommand === 'create') {
-      const key = await apiKeysService.createApiKey({
+      const key = await services.apiKeys.createApiKey({
         tenantId: 'demo-tenant',
         name: 'default',
         scopes: ['invoices.write'],
@@ -82,14 +59,14 @@ async function main() {
       );
 
       // Create webhook delivery intent
-      await webhookService.emitWebhookEvent({
+      await services.webhooks.emitWebhookEvent({
         tenantId: 'demo-tenant',
         type: 'invoice.created',
         payload: { id: invoiceId, customer, amount },
       });
 
       // Enqueue job
-      await jobService.enqueue({
+      await services.jobs.enqueue({
         tenantId: 'demo-tenant',
         type: 'invoice.process',
         payload: { invoiceId },
@@ -111,7 +88,7 @@ async function main() {
         });
       }
     } else if (command === 'job' && subcommand === 'list') {
-      const jobs = await jobService.listJobs('demo-tenant');
+      const jobs = await services.jobs.listJobs('demo-tenant');
       if (jobs.length === 0) {
         console.log('No jobs found');
       } else {
@@ -121,7 +98,7 @@ async function main() {
         });
       }
     } else if (command === 'webhook' && subcommand === 'list-deliveries') {
-      const deliveries = await webhookService.listWebhookDeliveries('demo-tenant');
+      const deliveries = await services.webhooks.listWebhookDeliveries('demo-tenant');
       if (deliveries.length === 0) {
         console.log('No deliveries found');
       } else {
@@ -143,7 +120,7 @@ async function main() {
     console.error('❌', error instanceof Error ? error.message : error);
     process.exit(1);
   } finally {
-    await runtime.db.close();
+    await appDb.close();
   }
 }
 

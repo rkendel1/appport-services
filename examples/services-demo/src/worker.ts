@@ -1,41 +1,25 @@
 #!/usr/bin/env node
 
-import {
-  createFeltDbRuntime,
-  FeltDbJobStore,
-  FeltDbJobScheduleStore,
-  FeltDbJobAuditSink,
-  JobService,
-  FeltDbWebhookDeliveryStore,
-  WebhookService,
-  FeltDbWebhookEndpointStore,
-  FeltDbWebhookAuditSink,
-  EncryptedWebhookSecretStore,
-} from '@appport/services';
+import { createServices } from '@appport/services';
+import { createFeltDB } from '@feltdb/core';
 
-const runtime = createFeltDbRuntime({
+// Initialize unified AppPort Services
+const services = createServices({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
 
-const jobService = new JobService({
-  jobStore: new FeltDbJobStore(runtime.db),
-  scheduleStore: new FeltDbJobScheduleStore(runtime.db),
-  auditSink: new FeltDbJobAuditSink(runtime.db),
+// Application-owned state: invoices use separate FeltDB instance
+const appDb = createFeltDB({
+  mode: 'local',
+  namespace: 'demo-services',
+  path: './.feltdb/demo',
 });
-
-const webhookService = new WebhookService({
-  endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
-  deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
-  auditSink: new FeltDbWebhookAuditSink(runtime.db),
-  secretStore: new EncryptedWebhookSecretStore(),
-});
-
-const invoices = runtime.db.collection<any>('invoices');
+const invoices = appDb.collection<any>('invoices');
 
 // Register invoice processing job handler
-jobService.register('invoice.process', async (job: any) => {
+services.jobs.register('invoice.process', async (job: any) => {
   const { invoiceId } = job.payload as { invoiceId: string };
 
   console.log(`[Job] Processing invoice ${invoiceId}`);
@@ -69,14 +53,14 @@ async function runWorker() {
   while (running) {
     try {
       // Process jobs for demo tenant
-      const jobs = await jobService.listJobs('demo-tenant');
+      const jobs = await services.jobs.listJobs('demo-tenant');
       const dueJobs = jobs.filter((j: any) => j.status === 'pending' || j.status === 'retrying');
 
       if (dueJobs.length > 0) {
         console.log(`[Worker] Found ${dueJobs.length} job(s) to process`);
         for (const job of dueJobs) {
           try {
-            const result = await jobService.executeJob('demo-tenant', job.id, WORKER_ID);
+            const result = await services.jobs.executeJob('demo-tenant', job.id, WORKER_ID);
             if (result) {
               console.log(`[Worker] Job ${job.id} completed`);
             }
@@ -87,14 +71,14 @@ async function runWorker() {
       }
 
       // Deliver webhooks for demo tenant
-      const deliveries = await webhookService.listWebhookDeliveries('demo-tenant');
+      const deliveries = await services.webhooks.listWebhookDeliveries('demo-tenant');
       const pending = deliveries.filter((d: any) => d.status === 'pending' || d.status === 'retrying');
 
       if (pending.length > 0) {
         console.log(`[Worker] Found ${pending.length} webhook(s) to deliver`);
         for (const delivery of pending) {
           try {
-            const result = await webhookService.deliverWebhook('demo-tenant', delivery.id);
+            const result = await services.webhooks.deliverWebhook('demo-tenant', delivery.id);
             if (result.success) {
               console.log(`[Webhook] Delivery ${delivery.id} succeeded`);
             }

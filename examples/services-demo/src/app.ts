@@ -1,59 +1,32 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import {
-  createApiKeyService,
-  apiKeyAuth,
-  createFeltDbRuntime,
-  FeltDbWebhookEndpointStore,
-  FeltDbWebhookDeliveryStore,
-  FeltDbWebhookAuditSink,
-  WebhookService,
-  EncryptedWebhookSecretStore,
-  FeltDbJobStore,
-  FeltDbJobScheduleStore,
-  FeltDbJobAuditSink,
-  JobService,
-} from '@appport/services';
-import type { StateFirstDB } from '@feltdb/core';
+import { createServices, apiKeyAuth } from '@appport/services';
+import { createFeltDB } from '@feltdb/core';
 import type { Invoice } from './models.js';
 
 const app = express();
 app.use(express.json());
 
-// Initialize FeltDB runtime
-const runtime = createFeltDbRuntime({
+// Initialize unified AppPort Services (API Keys, Webhooks, Jobs share one durable runtime)
+const services = createServices({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
 
-// Initialize API Key service
-const apiKeysService = createApiKeyService({
+// Application-owned state: invoices use separate FeltDB instance
+// Note: for atomic composition across app state and AppPort services,
+// the application would use FeltDB's transaction API directly.
+// Here we keep them separate for clarity of responsibilities.
+const appDb = createFeltDB({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
-
-// Initialize webhook service
-const webhookService = new WebhookService({
-  endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
-  deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
-  auditSink: new FeltDbWebhookAuditSink(runtime.db),
-  secretStore: new EncryptedWebhookSecretStore(),
-});
-
-// Initialize job service
-const jobService = new JobService({
-  jobStore: new FeltDbJobStore(runtime.db),
-  scheduleStore: new FeltDbJobScheduleStore(runtime.db),
-  auditSink: new FeltDbJobAuditSink(runtime.db),
-});
-
-// Invoice store using FeltDB
-const invoices = runtime.db.collection<Invoice>('invoices');
+const invoices = appDb.collection<Invoice>('invoices');
 
 // Middleware: API Key authentication
-app.use(apiKeyAuth(apiKeysService));
+app.use(apiKeyAuth(services.apiKeys));
 
 // POST /invoices - Create invoice with authenticated tenant context
 app.post('/invoices', async (req, res) => {
@@ -87,7 +60,7 @@ app.post('/invoices', async (req, res) => {
     await invoices.insert(invoice, invoiceId);
 
     // Establish webhook delivery intent
-    await webhookService.emitWebhookEvent({
+    await services.webhooks.emitWebhookEvent({
       tenantId: principal.tenantId,
       type: 'invoice.created',
       payload: {
@@ -98,7 +71,7 @@ app.post('/invoices', async (req, res) => {
     });
 
     // Establish job intent
-    await jobService.enqueue({
+    await services.jobs.enqueue({
       tenantId: principal.tenantId,
       type: 'invoice.process',
       payload: { invoiceId },
@@ -156,4 +129,4 @@ app.listen(PORT, () => {
   console.log(`  GET  /health         Health check`);
 });
 
-export { app, apiKeysService, webhookService, jobService };
+export { app, services };
