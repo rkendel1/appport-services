@@ -4,41 +4,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import {
-  createApiKeyService,
-  createFeltDbRuntime,
-  FeltDbWebhookEndpointStore,
-  FeltDbWebhookDeliveryStore,
-  FeltDbWebhookAuditSink,
-  WebhookService,
-  EncryptedWebhookSecretStore,
-  FeltDbJobStore,
-  FeltDbJobScheduleStore,
-  FeltDbJobAuditSink,
-  JobService,
-} from '@appport/services';
+import { createServices } from '@appport/services';
+import type { StateFirstDB } from '@feltdb/core';
+
+// The test-only `_getDb` handle exposes the shared FeltDB instance for direct
+// verification; it is not part of the supported public API.
+function getDb(services: ReturnType<typeof createServices>): StateFirstDB {
+  return services['_getDb'] as StateFirstDB;
+}
 
 test('Invoice creation establishes durable intents', async () => {
   const path = await mkdtemp(join(tmpdir(), 'demo-test-'));
   const namespace = 'test-' + Math.random().toString(16).slice(2);
 
-  const runtime = createFeltDbRuntime({ mode: 'local', namespace, path });
-  const apiKeysService = createApiKeyService({ mode: 'local', namespace, path });
-  const webhookService = new WebhookService({
-    endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
-    deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
-    auditSink: new FeltDbWebhookAuditSink(runtime.db),
-    secretStore: new EncryptedWebhookSecretStore(),
-  });
-  const jobService = new JobService({
-    jobStore: new FeltDbJobStore(runtime.db),
-    scheduleStore: new FeltDbJobScheduleStore(runtime.db),
-    auditSink: new FeltDbJobAuditSink(runtime.db),
-  });
-  const invoices = runtime.db.collection<any>('invoices');
+  const services = createServices({ mode: 'local', namespace, path });
 
   // Create API key
-  const key = await apiKeysService.createApiKey({
+  const key = await services.apiKeys.createApiKey({
     tenantId: 'tenant-123',
     name: 'test-key',
     scopes: ['invoices.write'],
@@ -49,27 +31,29 @@ test('Invoice creation establishes durable intents', async () => {
   assert.ok(key.secret);
 
   // Authenticate with API key
-  const principal = await apiKeysService.authenticateApiKey(key.secret);
+  const principal = await services.apiKeys.authenticateApiKey(key.secret);
   assert.ok(principal);
   assert.equal(principal.tenantId, 'tenant-123');
 
   // Create invoice (this establishes webhook and job intents)
   const invoiceId = 'inv-123';
-  await invoices.insert(
-    {
-      id: invoiceId,
-      tenant_id: principal.tenantId,
-      customer: 'ACME Corp',
-      amount: 1000,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      created_by: principal.principalId,
-    },
-    invoiceId,
-  );
+  await services.transaction(async (tx) => {
+    await tx.collection<Record<string, unknown>>('invoices').insert(
+      {
+        id: invoiceId,
+        tenant_id: principal.tenantId,
+        customer: 'ACME Corp',
+        amount: 1000,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        created_by: principal.principalId,
+      },
+      invoiceId,
+    );
+  });
 
   // Create a webhook endpoint first
-  await webhookService.createWebhookEndpoint({
+  await services.webhooks.createWebhookEndpoint({
     tenantId: principal.tenantId,
     url: 'https://example.com/webhook',
     events: ['invoice.created'],
@@ -77,38 +61,38 @@ test('Invoice creation establishes durable intents', async () => {
   });
 
   // Emit webhook event
-  await webhookService.emitWebhookEvent({
+  await services.webhooks.emitWebhookEvent({
     tenantId: principal.tenantId,
     type: 'invoice.created',
     payload: { id: invoiceId },
   });
 
   // Enqueue job
-  await jobService.enqueue({
+  await services.jobs.enqueue({
     tenantId: principal.tenantId,
     type: 'invoice.process',
     payload: { invoiceId },
   });
 
   // Verify webhook delivery was created
-  const deliveries = await webhookService.listWebhookDeliveries('tenant-123');
+  const deliveries = await services.webhooks.listWebhookDeliveries('tenant-123');
   assert.equal(deliveries.length, 1);
   assert.equal(deliveries[0].eventType, 'invoice.created');
 
   // Verify job was enqueued
-  const jobs = await jobService.listJobs('tenant-123');
+  const jobs = await services.jobs.listJobs('tenant-123');
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].type, 'invoice.process');
 
-  await runtime.db.close();
+  await getDb(services).close();
 });
 
 test('Tenant isolation prevents cross-tenant access', async () => {
   const path = await mkdtemp(join(tmpdir(), 'demo-test-'));
   const namespace = 'test-' + Math.random().toString(16).slice(2);
 
-  const runtime = createFeltDbRuntime({ mode: 'local', namespace, path });
-  const invoices = runtime.db.collection<any>('invoices');
+  const services = createServices({ mode: 'local', namespace, path });
+  const invoices = getDb(services).collection<any>('invoices');
 
   // Create invoices for different tenants
   const invoiceA = { id: 'inv-a', tenant_id: 'tenant-a', customer: 'A', amount: 100, status: 'pending', created_at: new Date().toISOString(), created_by: 'op' };
@@ -127,7 +111,7 @@ test('Tenant isolation prevents cross-tenant access', async () => {
   assert.equal(tenantBInvoices.length, 1);
   assert.equal(tenantBInvoices[0].id, 'inv-b');
 
-  await runtime.db.close();
+  await getDb(services).close();
 });
 
 test('Process restart preserves durable state', async () => {
@@ -136,13 +120,8 @@ test('Process restart preserves durable state', async () => {
 
   // Process 1: Create data
   {
-    const runtime = createFeltDbRuntime({ mode: 'local', namespace, path });
-    const invoices = runtime.db.collection<any>('invoices');
-    const jobService = new JobService({
-      jobStore: new FeltDbJobStore(runtime.db),
-      scheduleStore: new FeltDbJobScheduleStore(runtime.db),
-      auditSink: new FeltDbJobAuditSink(runtime.db),
-    });
+    const services = createServices({ mode: 'local', namespace, path });
+    const invoices = getDb(services).collection<any>('invoices');
 
     await invoices.insert(
       {
@@ -157,33 +136,28 @@ test('Process restart preserves durable state', async () => {
       'inv-persist',
     );
 
-    await jobService.enqueue({
+    await services.jobs.enqueue({
       tenantId: 'tenant-123',
       type: 'invoice.process',
       payload: { invoiceId: 'inv-persist' },
     });
 
-    await runtime.db.close();
+    await getDb(services).close();
   }
 
   // Process 2: Verify state survives restart
   {
-    const runtime = createFeltDbRuntime({ mode: 'local', namespace, path });
-    const invoices = runtime.db.collection<any>('invoices');
-    const jobService = new JobService({
-      jobStore: new FeltDbJobStore(runtime.db),
-      scheduleStore: new FeltDbJobScheduleStore(runtime.db),
-      auditSink: new FeltDbJobAuditSink(runtime.db),
-    });
+    const services = createServices({ mode: 'local', namespace, path });
+    const invoices = getDb(services).collection<any>('invoices');
 
     const allInvoices = await invoices.find({ tenant_id: 'tenant-123' });
     assert.equal(allInvoices.length, 1);
     assert.equal(allInvoices[0].customer, 'Persistent Corp');
 
-    const jobs = await jobService.listJobs('tenant-123');
+    const jobs = await services.jobs.listJobs('tenant-123');
     assert.equal(jobs.length, 1);
     assert.equal(jobs[0].type, 'invoice.process');
 
-    await runtime.db.close();
+    await getDb(services).close();
   }
 });

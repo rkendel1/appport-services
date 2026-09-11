@@ -23,6 +23,7 @@ export interface InvoiceItem {
 }
 
 export interface Invoice {
+  [key: string]: unknown;
   id: string;
   tenant_id: string;
   customer_id: string;
