@@ -1,49 +1,23 @@
 #!/usr/bin/env node
 
 import { randomUUID } from 'node:crypto';
-import {
-  createApiKeyService,
-  createFeltDbRuntime,
-  FeltDbWebhookEndpointStore,
-  FeltDbWebhookDeliveryStore,
-  FeltDbWebhookAuditSink,
-  WebhookService,
-  EncryptedWebhookSecretStore,
-  FeltDbJobStore,
-  FeltDbJobScheduleStore,
-  FeltDbJobAuditSink,
-  JobService,
-} from '@appport/services';
-import { FeltDbInvoiceStore } from './invoice-store.js';
-import { InvoiceService } from './invoice-service.js';
+import { createServices } from '@appport/services';
+import { createFeltDB } from '@feltdb/core';
 
-const runtime = createFeltDbRuntime({
+// Initialize unified AppPort Services
+const services = createServices({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
 
-const apiKeyService = createApiKeyService({
+// Application-owned state: invoices use separate FeltDB instance
+const appDb = createFeltDB({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
 });
-
-const webhookService = new WebhookService({
-  endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
-  deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
-  auditSink: new FeltDbWebhookAuditSink(runtime.db),
-  secretStore: new EncryptedWebhookSecretStore(),
-});
-
-const jobService = new JobService({
-  jobStore: new FeltDbJobStore(runtime.db),
-  scheduleStore: new FeltDbJobScheduleStore(runtime.db),
-  auditSink: new FeltDbJobAuditSink(runtime.db),
-});
-
-const invoiceStore = new FeltDbInvoiceStore(runtime.db);
-const invoiceService = new InvoiceService(invoiceStore, webhookService, jobService);
+const invoices = appDb.collection<any>('invoices');
 
 const args = process.argv.slice(2);
 
@@ -53,134 +27,100 @@ async function main() {
 
   try {
     if (command === 'api-key' && subcommand === 'create') {
-      const tenantIdx = args.indexOf('--tenant');
-      const nameIdx = args.indexOf('--name');
-      const scopeIdx = args.indexOf('--scope');
-      const createdByIdx = args.indexOf('--created-by');
-
-      const tenant = args[tenantIdx + 1];
-      const name = args[nameIdx + 1];
-      const scope = args[scopeIdx + 1];
-      const createdBy = args[createdByIdx + 1];
-
-      if (!tenant || !name || !scope || !createdBy) {
-        console.error('Usage: appport api-key create --tenant <id> --name <name> --scope <scope> --created-by <user>');
-        process.exit(1);
-      }
-
-      const key = await apiKeyService.createApiKey({
-        tenantId: tenant,
-        name,
-        scopes: [scope],
-        createdBy,
+      const key = await services.apiKeys.createApiKey({
+        tenantId: 'demo-tenant',
+        name: 'default',
+        scopes: ['invoices.write'],
+        createdBy: 'operator',
       });
 
       console.log(`✓ API Key created`);
       console.log(`  ID: ${key.id}`);
-      console.log(`  Name: ${key.name}`);
       console.log(`  Secret: ${key.secret}`);
       console.log(`  ⚠️  Save this secret—it is only returned once`);
     } else if (command === 'invoice' && subcommand === 'create') {
-      const tenantIdx = args.indexOf('--tenant');
-      const customerIdx = args.indexOf('--customer');
-      const amountIdx = args.indexOf('--amount');
+      const customer = args[3] || 'ACME Corp';
+      const amount = parseInt(args[5]) || 1000;
 
-      const tenant = args[tenantIdx + 1];
-      const customer = args[customerIdx + 1];
-      const amount = parseFloat(args[amountIdx + 1]);
+      const invoiceId = randomUUID();
+      const now = new Date().toISOString();
 
-      if (!tenant || !customer || isNaN(amount)) {
-        console.error('Usage: appport invoice create --tenant <id> --customer <name> --amount <number>');
-        process.exit(1);
-      }
+      await invoices.insert(
+        {
+          id: invoiceId,
+          tenant_id: 'demo-tenant',
+          customer,
+          amount,
+          status: 'pending',
+          created_at: now,
+          created_by: 'operator',
+        },
+        invoiceId,
+      );
 
-      // Create a fake principal for demo purposes
-      const principal = {
-        principalId: 'demo-operator',
-        principalType: 'api_key' as const,
-        tenantId: tenant,
-        scopes: ['invoices.write'],
-        credentialId: 'demo-key',
-      };
+      // Create webhook delivery intent
+      await services.webhooks.emitWebhookEvent({
+        tenantId: 'demo-tenant',
+        type: 'invoice.created',
+        payload: { id: invoiceId, customer, amount },
+      });
 
-      const invoice = await invoiceService.createInvoice(principal, customer, amount);
+      // Enqueue job
+      await services.jobs.enqueue({
+        tenantId: 'demo-tenant',
+        type: 'invoice.process',
+        payload: { invoiceId },
+        maxAttempts: 3,
+      });
 
       console.log(`✓ Invoice created`);
-      console.log(`  ID: ${invoice.id}`);
-      console.log(`  Customer: ${invoice.customer}`);
-      console.log(`  Amount: $${invoice.amount}`);
-      console.log(`  Status: ${invoice.status}`);
+      console.log(`  ID: ${invoiceId}`);
+      console.log(`  Customer: ${customer}`);
+      console.log(`  Amount: $${amount}`);
     } else if (command === 'invoice' && subcommand === 'list') {
-      const tenantIdx = args.indexOf('--tenant');
-      const tenant = args[tenantIdx + 1];
-
-      if (!tenant) {
-        console.error('Usage: appport invoice list --tenant <id>');
-        process.exit(1);
-      }
-
-      const invoices = await invoiceStore.list(tenant);
-
-      if (invoices.length === 0) {
+      const allInvoices = await invoices.find({ tenant_id: 'demo-tenant' });
+      if (allInvoices.length === 0) {
         console.log('No invoices found');
       } else {
-        console.log(`${invoices.length} invoice(s):`);
-        invoices.forEach((inv) => {
+        console.log(`${allInvoices.length} invoice(s):`);
+        allInvoices.forEach((inv: any) => {
           console.log(`  ${inv.id} | ${inv.customer} | $${inv.amount} | ${inv.status}`);
         });
       }
     } else if (command === 'job' && subcommand === 'list') {
-      const tenantIdx = args.indexOf('--tenant');
-      const tenant = args[tenantIdx + 1];
-
-      if (!tenant) {
-        console.error('Usage: appport job list --tenant <id>');
-        process.exit(1);
-      }
-
-      const jobs = await jobService.listJobs(tenant);
-
+      const jobs = await services.jobs.listJobs('demo-tenant');
       if (jobs.length === 0) {
         console.log('No jobs found');
       } else {
         console.log(`${jobs.length} job(s):`);
-        jobs.forEach((job) => {
-          console.log(`  ${job.id} | ${job.type} | ${job.status} | attempt ${job.attemptCount}`);
+        jobs.forEach((job: any) => {
+          console.log(`  ${job.id.slice(0, 8)}... | ${job.type} | ${job.status} | attempt ${job.attemptCount}`);
         });
       }
     } else if (command === 'webhook' && subcommand === 'list-deliveries') {
-      const tenantIdx = args.indexOf('--tenant');
-      const tenant = args[tenantIdx + 1];
-
-      if (!tenant) {
-        console.error('Usage: appport webhook list-deliveries --tenant <id>');
-        process.exit(1);
-      }
-
-      const deliveries = await webhookService.listDeliveries(tenant);
-
+      const deliveries = await services.webhooks.listWebhookDeliveries('demo-tenant');
       if (deliveries.length === 0) {
         console.log('No deliveries found');
       } else {
         console.log(`${deliveries.length} delivery(ies):`);
-        deliveries.forEach((del) => {
-          console.log(`  ${del.id} | ${del.eventType} | ${del.status} | attempt ${del.attemptCount}`);
+        deliveries.forEach((del: any) => {
+          console.log(`  ${del.id.slice(0, 8)}... | ${del.eventType} | ${del.status} | attempt ${del.attemptCount}`);
         });
       }
     } else {
-      console.error('Available commands:');
-      console.error('  api-key create           Create API key for tenant');
-      console.error('  invoice create           Create invoice');
-      console.error('  invoice list             List invoices');
-      console.error('  job list                 List jobs');
-      console.error('  webhook list-deliveries  List webhook deliveries');
+      console.error('Commands:');
+      console.error('  api-key create');
+      console.error('  invoice create [customer] [amount]');
+      console.error('  invoice list');
+      console.error('  job list');
+      console.error('  webhook list-deliveries');
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error instanceof Error ? error.message : error);
+    console.error('❌', error instanceof Error ? error.message : error);
     process.exit(1);
   } finally {
-    await runtime.db.close();
+    await appDb.close();
   }
 }
 
