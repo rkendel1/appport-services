@@ -1,0 +1,14 @@
+# AppPort Services DSL configuration
+# Declares which AppPort capabilities this application uses
+
+# Capability declarations
+use api
+use webhooks
+use jobs
+
+# Optional configuration per capability
+[webhooks]
+events = ["invoice.created", "invoice.paid"]
+
+[jobs]
+max_attempts = 5

@@ -4,10 +4,14 @@
 
 // Primary factory for creating unified AppPort Services
 export { createServices } from './runtime/unified-services.js';
-export type { AppPortServices } from './runtime/unified-services.js';
+export type { AppPortServices, CreateServicesOptions } from './runtime/unified-services.js';
 
 // Atomic transaction API
 export type { AppPortTransactionContext, AppPortTransactionCollection } from './runtime/transaction.js';
+
+// AppPort Services DSL (appport.toml configuration)
+export { parseAppPortConfig } from './runtime/dsl.js';
+export type { AppPortConfig } from './runtime/dsl.js';
 
 // Service classes (consumers construct services via createServices)
 export { ApiKeyService } from './api-keys/service.js';
