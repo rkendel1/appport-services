@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createApiKeyService, createFeltDbRuntime, FeltDbAuditSink, FeltDbApiKeyStore, ApiKeyService, authenticateBearerToken, auditCollectionName } from '../src/_internal.js';
+import { createApiKeyService, createFeltDbRuntime, FeltDbAuditSink, FeltDbApiKeyStore, ApiKeyService, authenticateBearerToken, auditCollectionName, parseApiKeyPrefix } from '../src/_internal.js';
+
+test('API key prefix parsing accepts base64url payloads beginning with underscore', () => {
+  assert.equal(parseApiKeyPrefix('app_live_abcdef__payload'), 'app_live_abcdef');
+  assert.equal(parseApiKeyPrefix('app_live_abcdef_payload_with_underscores'), 'app_live_abcdef');
+  assert.equal(parseApiKeyPrefix('app_live_abcdef_'), null);
+});
 
 async function createLocalService(prefix = 'appport-services-test-'): Promise<{ service: ApiKeyService; path: string }> {
   const path = await mkdtemp(join(tmpdir(), prefix));

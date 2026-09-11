@@ -171,7 +171,7 @@ export class ApiKeyService {
   }
 
   private async authenticateApiKeyWithSideEffects(secret: string): Promise<AuthenticatedPrincipal | null> {
-    const prefix = parsePrefix(secret);
+    const prefix = parseApiKeyPrefix(secret);
     if (!prefix) {
       return null;
     }
@@ -260,13 +260,21 @@ export class ApiKeyService {
       const stored = await this.options.store.get(knownId).catch(() => null);
       if (stored) {
         const local = this.locallyCreatedKeys.get(knownId);
+        const canReconcile = local
+          && this.runtime?.deployment.mode === 'local'
+          && stored.id === local.id
+          && stored.tenantId === local.tenantId
+          && stored.keyPrefix === local.keyPrefix
+          && stored.secretHash === local.secretHash;
         const complete = local && this.runtime?.deployment.mode === 'local'
-          ? {
-            ...local,
-            revokedAt: stored.revokedAt ?? local.revokedAt,
-            lastUsedAt: stored.lastUsedAt ?? local.lastUsedAt,
-            __version: Math.max(stored.__version ?? 0, local.__version),
-          }
+          ? canReconcile
+            ? {
+              ...local,
+              revokedAt: stored.revokedAt ?? local.revokedAt,
+              lastUsedAt: stored.lastUsedAt ?? local.lastUsedAt,
+              __version: Math.max(stored.__version ?? 0, local.__version),
+            }
+            : local
           : stored;
         this.locallyCreatedKeys.set(knownId, complete);
         return complete;
@@ -319,15 +327,9 @@ function toView(apiKey: ApiKey): ApiKeyView {
   };
 }
 
-function parsePrefix(secret: string): string | null {
-  const parts = secret.split('_', 4);
-  if (parts.length !== 4) {
-    return null;
-  }
-  if (parts[0] !== 'app' || parts[1] !== 'live' || !parts[2] || !parts[3]) {
-    return null;
-  }
-  return parts.slice(0, 3).join('_');
+export function parseApiKeyPrefix(secret: string): string | null {
+  const match = /^(app_live_[0-9a-f]{6})_(.+)$/.exec(secret);
+  return match?.[1] ?? null;
 }
 
 function hashSecret(secret: string): string {

@@ -12,6 +12,10 @@ if [ -f .env.local ]; then
   set +a
 fi
 
+if [ -n "${NPM_OTP:-}" ]; then
+  publish_args="$publish_args --otp=$NPM_OTP"
+fi
+
 if [ -n "${NPM_TOKEN:-}" ]; then
   npm_userconfig="$(mktemp "${TMPDIR:-/tmp}/appport-npmrc.XXXXXX")"
   trap 'rm -f "$npm_userconfig"' EXIT HUP INT TERM

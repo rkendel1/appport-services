@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { Writable } from 'node:stream';
+import { PassThrough, Writable } from 'node:stream';
 
 import { parseFlowSpec } from '@feltdb/core';
 
@@ -66,6 +66,32 @@ test('init --use creates only selected capabilities in canonical order', async (
     'ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents',
     'Jobs', 'JobSchedules', 'JobAuditEvents',
   ]);
+});
+
+test('interactive init configures capabilities without requiring flags', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'appport-init-interactive-'));
+  const stdout = capture();
+  const stderr = capture();
+  const stdin = new PassThrough() as PassThrough & { isTTY: boolean };
+  stdin.isTTY = true;
+  setTimeout(() => stdin.write('y\n'), 5);
+  setTimeout(() => stdin.write('n\n'), 10);
+  setTimeout(() => stdin.write('y\n'), 15);
+
+  const code = await runCli(
+    ['init'],
+    { stdin, stdout: stdout.stream, stderr: stderr.stream },
+    undefined,
+    cwd,
+  );
+
+  assert.equal(code, 0);
+  assert.equal(
+    await readFile(join(cwd, 'appport.toml'), 'utf8'),
+    '# AppPort Services capabilities used by this application\n\nuse api\nuse jobs\n',
+  );
+  assert.match(stdout.output(), /Enable API keys/);
+  assert.match(stdout.output(), /Enabled: api, jobs/);
 });
 
 test('init rejects unknown capabilities', async () => {

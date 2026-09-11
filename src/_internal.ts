@@ -20,7 +20,7 @@ export type { AppPortServices, CreateServicesOptions } from './runtime/unified-s
 export type { AppPortTransactionContext, AppPortTransactionCollection } from './runtime/transaction.js';
 export { parseAppPortConfig } from './runtime/dsl.js';
 export type { AppPortConfig } from './runtime/dsl.js';
-export { ApiKeyService } from './api-keys/service.js';
+export { ApiKeyService, parseApiKeyPrefix } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
 export { JobService, JobWorker } from './jobs/index.js';
 

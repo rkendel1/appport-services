@@ -3,6 +3,7 @@
 import process from 'node:process';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 
 import { formatFlowSpec, parseFlowSpec } from '@feltdb/core';
 
@@ -22,13 +23,14 @@ import {
 } from './_internal.js';
 
 interface CommandIo {
+  readonly stdin?: NodeJS.ReadableStream;
   readonly stdout: NodeJS.WritableStream;
   readonly stderr: NodeJS.WritableStream;
 }
 
 export async function runCli(
   argv: readonly string[],
-  io: CommandIo = { stdout: process.stdout, stderr: process.stderr },
+  io: CommandIo = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
   service?: ApiKeyService,
   cwd = process.cwd(),
 ): Promise<number> {
@@ -47,7 +49,7 @@ export async function runCli(
     } else {
       writeLine(
         io.stderr,
-        'Usage: appport init [--use api,webhooks,jobs] | appport <api-key|webhook|job> <command>',
+        'Usage: appport-runtime init [--use api,webhooks,jobs] | appport-runtime <api-key|webhook|job> <command>',
       );
       return 1;
     }
@@ -78,9 +80,9 @@ async function handleInitCommand(
   }
 
   const requested = arrayOption(options, 'use').flatMap((value) => value.split(','));
-  const capabilities = requested.length === 0
-    ? [...SUPPORTED_CAPABILITIES]
-    : requested.map((value) => value.trim()).filter(Boolean);
+  const capabilities = requested.length > 0
+    ? requested.map((value) => value.trim()).filter(Boolean)
+    : await configureCapabilities(io);
 
   if (capabilities.length === 0) {
     throw new Error('--use must include at least one capability');
@@ -122,6 +124,33 @@ async function handleInitCommand(
   writeLine(io.stdout, `Created ${flowDestination}`);
   writeLine(io.stdout, `Enabled: ${selected.join(', ')}`);
   return 0;
+}
+
+async function configureCapabilities(io: CommandIo): Promise<string[]> {
+  if (!io.stdin || !('isTTY' in io.stdin) || !io.stdin.isTTY) {
+    return [...SUPPORTED_CAPABILITIES];
+  }
+
+  writeLine(io.stdout, 'Configure AppPort capabilities (press Enter to accept each default):');
+  const prompts: ReadonlyArray<readonly [typeof SUPPORTED_CAPABILITIES[number], string]> = [
+    ['api', 'API keys'],
+    ['webhooks', 'Webhooks'],
+    ['jobs', 'Jobs'],
+  ];
+  const selected: string[] = [];
+  const readline = createInterface({ input: io.stdin, output: io.stdout, terminal: true });
+  try {
+    for (const [capability, label] of prompts) {
+      const answer = (await readline.question(`Enable ${label}? [Y/n] `)).trim().toLowerCase();
+      if (answer === '' || answer === 'y' || answer === 'yes') selected.push(capability);
+      else if (answer !== 'n' && answer !== 'no') {
+        throw new Error(`Invalid answer "${answer}". Enter y or n.`);
+      }
+    }
+  } finally {
+    readline.close();
+  }
+  return selected;
 }
 
 async function assertFilesDoNotExist(paths: readonly string[]): Promise<void> {
@@ -209,7 +238,7 @@ async function handleApiKeyCommand(
     return 0;
   }
 
-  writeLine(io.stderr, 'Usage: appport api-key <create|list|revoke>');
+  writeLine(io.stderr, 'Usage: appport-runtime api-key <create|list|revoke>');
   return 1;
 }
 
@@ -320,7 +349,7 @@ async function handleWebhookCommand(
       return 0;
     }
 
-    writeLine(io.stderr, 'Usage: appport webhook <create|list|disable|deliveries|replay>');
+    writeLine(io.stderr, 'Usage: appport-runtime webhook <create|list|disable|deliveries|replay>');
     return 1;
   } finally {
     await runtime.db.close();
@@ -500,7 +529,7 @@ async function handleJobCommand(
       return 0;
     }
 
-    writeLine(io.stderr, 'Usage: appport job <enqueue|schedule|schedule-recurring|list|get|retry|schedules|disable-schedule>');
+    writeLine(io.stderr, 'Usage: appport-runtime job <enqueue|schedule|schedule-recurring|list|get|retry|schedules|disable-schedule>');
     return 1;
   } finally {
     await runtime.db.close();

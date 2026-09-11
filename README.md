@@ -13,9 +13,11 @@ npm install @appport/runtime
 Initialize AppPort with every capability, or select only what the application uses:
 
 ```sh
-npx appport init
-npx appport init --use api,webhooks,jobs
+npx @appport/runtime init
+npx @appport/runtime init --use api,webhooks,jobs
 ```
+
+With no flags, `init` asks which capabilities to enable and defaults each one to yes. The `--use` form is available for scripts and CI.
 
 This creates two files that should be committed:
 
@@ -40,9 +42,9 @@ await app.api.keys.createApiKey(/* ... */);
 Run your application with its usual command, such as `npm run dev`. Operational CLI commands are available through the installed binary:
 
 ```sh
-npx appport api-key list --tenant acme
-npx appport webhook list --tenant acme
-npx appport job list --tenant acme
+npx @appport/runtime api-key list --tenant acme
+npx @appport/runtime webhook list --tenant acme
+npx @appport/runtime job list --tenant acme
 ```
 
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.

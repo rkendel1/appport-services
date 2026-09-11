@@ -167,7 +167,7 @@ A developer can:
 
 1. ✓ Create empty directory
 2. ✓ `npm install @appport/services`
-3. ✓ Generate `appport.toml` and authoritative `feltdb.flow` with `npx appport init`
+3. ✓ Generate `appport.toml` and authoritative `feltdb.flow` with `npx @appport/runtime init`
 4. ✓ Import createServices and use it
 5. ✓ Build and run application
 6. ✓ Never manage FeltDB runtime internals directly

@@ -1,6 +1,6 @@
 {
   "name": "@appport/runtime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Contract-driven AppPort application runtime",
   "type": "module",
   "exports": {
@@ -10,7 +10,7 @@
     }
   },
   "bin": {
-    "appport": "./cli.js"
+    "appport-runtime": "./cli.js"
   },
   "files": [
     "cli.js",

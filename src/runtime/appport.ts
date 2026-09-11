@@ -1,6 +1,7 @@
-import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 
-import type { FeltDBOptions, StateFirstDB } from '@feltdb/core';
+import { parseFlowSpec, validateFlowSpec, type FeltDBOptions, type FlowSpec, type StateFirstDB } from '@feltdb/core';
 
 import { ApiKeyService } from '../api-keys/service.js';
 import { JobService } from '../jobs/service.js';
@@ -18,11 +19,14 @@ export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs';
 export interface CapabilityPlan {
   readonly capabilities: readonly AppPortCapabilityName[];
   readonly config: AppPortConfig;
+  readonly flow?: FlowSpec;
 }
 
 export interface AppPortOptions extends FeltDBOptions {
   /** Contract path. Defaults to appport.toml in the current working directory. */
   readonly config?: string;
+  /** Authoritative FeltDB contract. Defaults to feltdb.flow beside appport.toml. */
+  readonly flow?: string;
 }
 
 export interface AppPortApiCapability {
@@ -46,9 +50,9 @@ export class CapabilityNotDeclaredError extends Error {
   }
 }
 
-export function createCapabilityPlan(config: AppPortConfig): CapabilityPlan {
+export function createCapabilityPlan(config: AppPortConfig, flow?: FlowSpec): CapabilityPlan {
   const capabilities = (['api', 'webhooks', 'jobs'] as const).filter((name) => config.capabilities[name]);
-  return { capabilities, config };
+  return { capabilities, config, ...(flow ? { flow } : {}) };
 }
 
 interface InitializedCapabilities {
@@ -94,8 +98,10 @@ export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, Capabili
 export async function appport(options: AppPortOptions = {}): Promise<AppPortApplication> {
   const configPath = resolve(options.config ?? 'appport.toml');
   const config = parseAppPortConfig(configPath);
-  const plan = createCapabilityPlan(config);
-  const { config: _config, ...feltDbOptions } = options;
+  const flowPath = resolve(options.flow ?? dirname(configPath), options.flow ? '' : 'feltdb.flow');
+  const flow = await loadAuthoritativeFlow(flowPath, config);
+  const plan = createCapabilityPlan(config, flow);
+  const { config: _config, flow: _flow, ...feltDbOptions } = options;
   const runtime = createFeltDbRuntime(feltDbOptions);
   const services: InitializedCapabilities = {};
 
@@ -135,6 +141,39 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   } satisfies AppPortApplication;
 
   return application;
+}
+
+const CAPABILITY_COLLECTIONS: Readonly<Record<AppPortCapabilityName, readonly string[]>> = {
+  api: ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents'],
+  webhooks: ['WebhookEndpoints', 'WebhookDeliveries', 'WebhookAuditEvents'],
+  jobs: ['Jobs', 'JobSchedules', 'JobAuditEvents'],
+};
+
+async function loadAuthoritativeFlow(path: string, config: AppPortConfig): Promise<FlowSpec> {
+  let source: string;
+  try {
+    source = await readFile(path, 'utf8');
+  } catch (error) {
+    throw new Error(`Cannot read authoritative feltdb.flow at ${path}: ${String(error)}`);
+  }
+  const flow = parseFlowSpec(source);
+  const errors = validateFlowSpec(flow).filter((diagnostic) => diagnostic.severity === 'error');
+  if (errors.length > 0) {
+    throw new Error(`Invalid authoritative feltdb.flow at ${path}: ${errors.map((error) => error.message).join('; ')}`);
+  }
+
+  const collections = new Set(flow.collections.map((collection) => collection.name));
+  for (const capability of ['api', 'webhooks', 'jobs'] as const) {
+    const present = CAPABILITY_COLLECTIONS[capability].filter((name) => collections.has(name));
+    if (config.capabilities[capability] && present.length !== CAPABILITY_COLLECTIONS[capability].length) {
+      const missing = CAPABILITY_COLLECTIONS[capability].filter((name) => !collections.has(name));
+      throw new Error(`feltdb.flow is missing collections required by "use ${capability}": ${missing.join(', ')}`);
+    }
+    if (!config.capabilities[capability] && present.length > 0) {
+      throw new Error(`feltdb.flow declares ${capability} infrastructure but appport.toml does not contain "use ${capability}"`);
+    }
+  }
+  return flow;
 }
 
 function capabilityAwareTransactionContext(context: TransactionContextImpl, config: AppPortConfig): TransactionContextImpl {

@@ -14,7 +14,7 @@
     }
   },
   "bin": {
-    "appport": "./dist/src/cli.js"
+    "appport-services": "./dist/src/cli.js"
   },
   "files": [
     "dist/src",

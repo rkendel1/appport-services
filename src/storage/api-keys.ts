@@ -100,12 +100,18 @@ export class FeltDbApiKeyStore implements ApiKeyStore {
   }
 
   async revoke(id: string, expectedVersion: number, revokedAt: string): Promise<ApiKey | null> {
-    const result = await this.apiKeys.updateIfVersion(id, expectedVersion, { revokedAt });
+    const current = await this.apiKeys.get(id);
+    if (!current) return null;
+    // FeltDB 0.10 local CAS can persist the update object as the whole record.
+    // Submit a complete value so a metadata update cannot erase credential identity.
+    const result = await this.apiKeys.updateIfVersion(id, expectedVersion, { ...current, revokedAt });
     return result.updated ? result.item ?? null : null;
   }
 
   async recordLastUsed(id: string, expectedVersion: number, lastUsedAt: string): Promise<ApiKey | null> {
-    const result = await this.apiKeys.updateIfVersion(id, expectedVersion, { lastUsedAt });
+    const current = await this.apiKeys.get(id);
+    if (!current) return null;
+    const result = await this.apiKeys.updateIfVersion(id, expectedVersion, { ...current, lastUsedAt });
     return result.updated ? result.item ?? null : null;
   }
 }
