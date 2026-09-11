@@ -18,6 +18,46 @@ identity/authz        API Keys, Webhooks, Jobs
               FeltDB
 ```
 
+## Consumer API
+
+An application developer creates a unified AppPort Services instance and uses three services:
+
+```javascript
+import { createServices } from '@appport/services';
+
+const services = createServices({
+  mode: 'local',
+  namespace: 'myapp',
+  path: './.data',
+});
+
+// Machine identity & tenant scoping
+await services.apiKeys.createApiKey({
+  tenantId: 'acme-corp',
+  name: 'server-key',
+  scopes: ['invoices.write'],
+  createdBy: 'operator',
+});
+
+// Durable outbound notifications
+await services.webhooks.createWebhookEndpoint({
+  tenantId: 'acme-corp',
+  url: 'https://acme.example.com/webhooks',
+  events: ['invoice.created'],
+  createdBy: 'operator',
+});
+
+// Durable deferred execution
+await services.jobs.enqueue({
+  tenantId: 'acme-corp',
+  type: 'invoice.process',
+  payload: { invoiceId: 'inv-123' },
+  maxAttempts: 3,
+});
+```
+
+The consumer does not need to know that FeltDB exists underneath. All three services share a single durable runtime.
+
 ## What is AppPort Services?
 
 AppPort Services answers:
