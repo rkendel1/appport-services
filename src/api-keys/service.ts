@@ -128,7 +128,12 @@ export class ApiKeyService {
       }
 
       const revokedAt = this.now().toISOString();
-      const updated = await this.options.store.revoke(current.id, current.__version, revokedAt);
+      const result = await this.options.store.revoke(current.id, current.__version, revokedAt);
+      const updated = result ? {
+        ...current,
+        revokedAt,
+        __version: result.__version ?? current.__version + 1,
+      } : null;
       if (!updated) {
         await waitForUpdateRetry(attempt);
         continue;
@@ -202,6 +207,11 @@ export class ApiKeyService {
         await waitForUpdateRetry(attempt);
         continue;
       }
+      updated = {
+        ...current,
+        lastUsedAt: updated.lastUsedAt ?? now.toISOString(),
+        __version: updated.__version ?? current.__version + 1,
+      };
 
       await this.recordSuccessfulAuthEvent(updated, now.toISOString());
       this.locallyCreatedKeys.set(updated.id, updated);
@@ -249,7 +259,17 @@ export class ApiKeyService {
     if (knownId) {
       const stored = await this.options.store.get(knownId).catch(() => null);
       if (stored) {
-        return stored;
+        const local = this.locallyCreatedKeys.get(knownId);
+        const complete = local && this.runtime?.deployment.mode === 'local'
+          ? {
+            ...local,
+            revokedAt: stored.revokedAt ?? local.revokedAt,
+            lastUsedAt: stored.lastUsedAt ?? local.lastUsedAt,
+            __version: Math.max(stored.__version ?? 0, local.__version),
+          }
+          : stored;
+        this.locallyCreatedKeys.set(knownId, complete);
+        return complete;
       }
       // Embedded local FeltDB can briefly lag its just-committed key reads.
       // Managed deployments remain fail-closed and never use process-local state.

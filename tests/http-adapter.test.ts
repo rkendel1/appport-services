@@ -198,7 +198,11 @@ test('repeated concurrent authentication does not lose valid principals', async 
     }),
   );
 
-  assert.equal(results.every((result) => result.principal !== null), true);
+  assert.equal(
+    results.every((result) => result.principal !== null),
+    true,
+    JSON.stringify(results),
+  );
   assert.deepEqual(
     new Set(results.map((result) => result.principal?.tenantId)),
     new Set(['tenant-a', 'tenant-b']),
