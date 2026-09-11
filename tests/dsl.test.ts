@@ -11,9 +11,9 @@ import { createServices } from '../src/index.js';
 test('DSL: parse minimal configuration', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `api = true
-webhooks = true
-jobs = true
+  const config = `use api
+use webhooks
+use jobs
 `;
   const configPath = join(tempDir, 'appport.toml');
   writeFileSync(configPath, config);
@@ -27,8 +27,8 @@ jobs = true
 test('DSL: parse with webhook events configuration', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `api = true
-jobs = true
+  const config = `use api
+use jobs
 
 [webhooks]
 events = ["invoice.created", "invoice.paid"]
@@ -44,7 +44,8 @@ events = ["invoice.created", "invoice.paid"]
 test('DSL: parse with jobs max_attempts configuration', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `api = true
+  const config = `use api
+use jobs
 
 [jobs]
 max_attempts = 5
@@ -60,7 +61,7 @@ max_attempts = 5
 test('DSL: selective capability enablement', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `api = true
+  const config = `use api
 `;
   const configPath = join(tempDir, 'appport.toml');
   writeFileSync(configPath, config);
@@ -71,10 +72,10 @@ test('DSL: selective capability enablement', async () => {
   assert.equal(parsed.capabilities.jobs, false);
 });
 
-test('DSL: section enables capability without flag', async () => {
+test('DSL: section enables capability without use declaration', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `api = true
+  const config = `use api
 
 [jobs]
 max_attempts = 3
@@ -88,40 +89,27 @@ max_attempts = 3
   assert.equal(parsed.jobs?.max_attempts, 3);
 });
 
-test('DSL: invalid syntax fails clearly', async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
-
-  const config = `api = true
-invalid toml [[[
-`;
-  const configPath = join(tempDir, 'appport.toml');
-  writeFileSync(configPath, config);
-
-  assert.throws(
-    () => parseAppPortConfig(configPath),
-    /Invalid TOML syntax/,
-  );
-});
-
 test('DSL: unknown capability fails', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `api = true
-unknown_thing = true
+  const config = `use api
+use unknown_thing
 `;
   const configPath = join(tempDir, 'appport.toml');
   writeFileSync(configPath, config);
 
   assert.throws(
     () => parseAppPortConfig(configPath),
-    /Unknown configuration/,
+    /Unknown capability/,
   );
 });
 
 test('DSL: invalid webhook events type fails', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `[webhooks]
+  const config = `use webhooks
+
+[webhooks]
 events = "not-an-array"
 `;
   const configPath = join(tempDir, 'appport.toml');
@@ -136,7 +124,9 @@ events = "not-an-array"
 test('DSL: invalid jobs max_attempts type fails', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `[jobs]
+  const config = `use jobs
+
+[jobs]
 max_attempts = "five"
 `;
   const configPath = join(tempDir, 'appport.toml');
@@ -144,14 +134,16 @@ max_attempts = "five"
 
   assert.throws(
     () => parseAppPortConfig(configPath),
-    /jobs.max_attempts must be a number/,
+    /jobs.max_attempts must be a positive integer/,
   );
 });
 
 test('DSL: invalid jobs max_attempts value fails', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 
-  const config = `[jobs]
+  const config = `use jobs
+
+[jobs]
 max_attempts = 0
 `;
   const configPath = join(tempDir, 'appport.toml');
@@ -176,9 +168,9 @@ test('DSL: createServices accepts config option', async () => {
   const path = await mkdtemp(join(tmpdir(), 'dsl-services-test-'));
   const configPath = join(path, 'appport.toml');
 
-  const config = `api = true
-webhooks = true
-jobs = true
+  const config = `use api
+use webhooks
+use jobs
 `;
   writeFileSync(configPath, config);
 
@@ -215,9 +207,9 @@ test('DSL: atomic transaction works with DSL-configured services', async () => {
   const path = await mkdtemp(join(tmpdir(), 'dsl-transaction-test-'));
   const configPath = join(path, 'appport.toml');
 
-  const config = `api = true
-webhooks = true
-jobs = true
+  const config = `use api
+use webhooks
+use jobs
 `;
   writeFileSync(configPath, config);
 

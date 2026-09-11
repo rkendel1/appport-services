@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { parse } from '@iarna/toml';
 
 /**
  * Parsed AppPort Services DSL configuration.
@@ -21,6 +20,7 @@ export interface AppPortConfig {
 
 /**
  * Parse appport.toml and validate configuration.
+ * Expects format with use declarations and optional [section] configuration.
  */
 export function parseAppPortConfig(filePath: string): AppPortConfig {
   let content: string;
@@ -30,111 +30,124 @@ export function parseAppPortConfig(filePath: string): AppPortConfig {
     throw new Error(`Cannot read appport.toml at ${filePath}: ${String(error)}`);
   }
 
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = parse(content);
-  } catch (error) {
-    throw new Error(`Invalid TOML syntax in appport.toml: ${String(error)}`);
-  }
-
-  return validateConfig(parsed);
+  return validateConfig(content);
 }
 
 /**
- * Validate parsed TOML configuration structure.
+ * Validate appport.toml configuration.
+ * Parses "use" declarations and optional [section] configuration.
  */
-function validateConfig(parsed: Record<string, unknown>): AppPortConfig {
+function validateConfig(content: string): AppPortConfig {
   const capabilities = {
     api: false,
     webhooks: false,
     jobs: false,
   };
 
-  // Check for unknown top-level keys (only allow: capability booleans and section headers)
-  const allowedKeys = new Set(['api', 'webhooks', 'jobs']);
-  for (const key of Object.keys(parsed)) {
-    if (!allowedKeys.has(key)) {
-      throw new Error(`Unknown configuration: "${key}". Supported capabilities: api, webhooks, jobs`);
-    }
-  }
-
-  // Parse capability flags (check each capability for truthiness or as a section)
-  if (parsed.api === true) {
-    capabilities.api = true;
-  } else if (parsed.api !== undefined && parsed.api !== false) {
-    throw new Error('Invalid api configuration: must be true or omitted');
-  }
-
-  // webhooks can be true (flag) or an object (configuration section)
-  if (parsed.webhooks === true) {
-    capabilities.webhooks = true;
-  } else if (typeof parsed.webhooks === 'object' && parsed.webhooks !== null) {
-    capabilities.webhooks = true;
-  } else if (parsed.webhooks !== undefined && parsed.webhooks !== false) {
-    throw new Error('Invalid webhooks configuration: must be true, a [webhooks] section, or omitted');
-  }
-
-  // jobs can be true (flag) or an object (configuration section)
-  if (parsed.jobs === true) {
-    capabilities.jobs = true;
-  } else if (typeof parsed.jobs === 'object' && parsed.jobs !== null) {
-    capabilities.jobs = true;
-  } else if (parsed.jobs !== undefined && parsed.jobs !== false) {
-    throw new Error('Invalid jobs configuration: must be true, a [jobs] section, or omitted');
-  }
-
   const config: AppPortConfig = { capabilities };
 
-  // Validate [webhooks] section
-  if (typeof parsed.webhooks === 'object' && parsed.webhooks !== null) {
-    const webhooksSection = parsed.webhooks as Record<string, unknown>;
-    const webhooksConfig: AppPortConfig['webhooks'] = {};
+  // Split into lines for manual parsing
+  const lines = content.split('\n').map((line) => line.trim());
 
-    if (webhooksSection.events !== undefined) {
-      if (!Array.isArray(webhooksSection.events)) {
-        throw new Error('webhooks.events must be an array of strings');
-      }
-      if (!webhooksSection.events.every((e) => typeof e === 'string')) {
-        throw new Error('webhooks.events must be an array of strings');
-      }
-      webhooksConfig.events = webhooksSection.events;
+  // Extract use declarations and configuration sections
+  const webhooksConfig: Record<string, unknown> = {};
+  const jobsConfig: Record<string, unknown> = {};
+  let currentSection: string | null = null;
+
+  for (const line of lines) {
+    // Skip empty lines and comments
+    if (!line || line.startsWith('#')) {
+      continue;
     }
 
-    // Check for unknown keys in webhooks section
-    const validWebhookKeys = new Set(['events']);
-    for (const key of Object.keys(webhooksSection)) {
-      if (!validWebhookKeys.has(key)) {
-        throw new Error(`Unknown webhooks configuration: "${key}". Supported: events`);
+    // Parse use declarations
+    if (line.startsWith('use ')) {
+      const capability = line.substring(4).trim();
+      if (capability === 'api') {
+        capabilities.api = true;
+      } else if (capability === 'webhooks') {
+        capabilities.webhooks = true;
+      } else if (capability === 'jobs') {
+        capabilities.jobs = true;
+      } else {
+        throw new Error(
+          `Unknown capability: "use ${capability}". Supported: use api, use webhooks, use jobs`,
+        );
       }
+      continue;
     }
 
-    config.webhooks = webhooksConfig;
+    // Parse section headers
+    if (line.startsWith('[') && line.endsWith(']')) {
+      const section = line.substring(1, line.length - 1).trim();
+      if (section === 'webhooks') {
+        currentSection = 'webhooks';
+        capabilities.webhooks = true;
+      } else if (section === 'jobs') {
+        currentSection = 'jobs';
+        capabilities.jobs = true;
+      } else {
+        throw new Error(
+          `Unknown section: [${section}]. Supported sections: [webhooks], [jobs]`,
+        );
+      }
+      continue;
+    }
+
+    // Parse key = value within sections
+    if (line.includes('=')) {
+      if (!currentSection) {
+        throw new Error(
+          `Configuration key=value must be within a section ([webhooks] or [jobs]): "${line}"`,
+        );
+      }
+
+      const [key, ...valueParts] = line.split('=');
+      const trimmedKey = key.trim();
+      const trimmedValue = valueParts.join('=').trim();
+
+      if (currentSection === 'webhooks') {
+        if (trimmedKey === 'events') {
+          // Parse array value: events = ["event1", "event2"]
+          if (!trimmedValue.startsWith('[') || !trimmedValue.endsWith(']')) {
+            throw new Error('webhooks.events must be an array');
+          }
+          const arrayContent = trimmedValue.substring(1, trimmedValue.length - 1);
+          const events = arrayContent
+            .split(',')
+            .map((e) => e.trim())
+            .filter((e) => e.length > 0)
+            .map((e) => {
+              // Remove quotes
+              if ((e.startsWith('"') && e.endsWith('"')) || (e.startsWith("'") && e.endsWith("'"))) {
+                return e.substring(1, e.length - 1);
+              }
+              throw new Error('webhooks.events must be an array of strings');
+            });
+          webhooksConfig.events = events;
+        } else {
+          throw new Error(`Unknown webhooks configuration: "${trimmedKey}". Supported: events`);
+        }
+      } else if (currentSection === 'jobs') {
+        if (trimmedKey === 'max_attempts') {
+          const value = parseInt(trimmedValue, 10);
+          if (isNaN(value) || value < 1) {
+            throw new Error('jobs.max_attempts must be a positive integer');
+          }
+          jobsConfig.max_attempts = value;
+        } else {
+          throw new Error(`Unknown jobs configuration: "${trimmedKey}". Supported: max_attempts`);
+        }
+      }
+    }
   }
 
-  // Validate [jobs] section
-  if (typeof parsed.jobs === 'object' && parsed.jobs !== null) {
-    const jobsSection = parsed.jobs as Record<string, unknown>;
-    const jobsConfig: AppPortConfig['jobs'] = {};
-
-    if (jobsSection.max_attempts !== undefined) {
-      if (typeof jobsSection.max_attempts !== 'number') {
-        throw new Error('jobs.max_attempts must be a number');
-      }
-      if (jobsSection.max_attempts < 1 || !Number.isInteger(jobsSection.max_attempts)) {
-        throw new Error('jobs.max_attempts must be a positive integer');
-      }
-      jobsConfig.max_attempts = jobsSection.max_attempts;
-    }
-
-    // Check for unknown keys in jobs section
-    const validJobsKeys = new Set(['max_attempts']);
-    for (const key of Object.keys(jobsSection)) {
-      if (!validJobsKeys.has(key)) {
-        throw new Error(`Unknown jobs configuration: "${key}". Supported: max_attempts`);
-      }
-    }
-
-    config.jobs = jobsConfig;
+  // Add configuration sections if they have values
+  if (Object.keys(webhooksConfig).length > 0) {
+    config.webhooks = webhooksConfig as AppPortConfig['webhooks'];
+  }
+  if (Object.keys(jobsConfig).length > 0) {
+    config.jobs = jobsConfig as AppPortConfig['jobs'];
   }
 
   return config;
