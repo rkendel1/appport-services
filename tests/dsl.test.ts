@@ -72,6 +72,20 @@ test('DSL: selective capability enablement', async () => {
   assert.equal(parsed.capabilities.jobs, false);
 });
 
+test('DSL: parses capability block configuration', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
+  const configPath = join(tempDir, 'appport.toml');
+  writeFileSync(configPath, `use api {
+  keys = true
+}
+`);
+
+  const parsed = parseAppPortConfig(configPath);
+  assert.equal(parsed.capabilities.api, true);
+  assert.equal(parsed.api?.keys, true);
+  assert.equal(parsed.capabilities.webhooks, false);
+});
+
 test('DSL: section enables capability without use declaration', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 

@@ -1,12 +1,16 @@
 {
   "name": "@appport/services",
   "version": "0.2.0",
-  "description": "AppPort Services API keys backed by FeltDB",
+  "description": "API keys, durable webhooks, and background jobs for AppPort applications",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
+    },
+    "./cli": {
+      "types": "./dist/src/cli.d.ts",
+      "import": "./dist/src/cli.js"
     }
   },
   "bin": {
@@ -14,6 +18,7 @@
   },
   "files": [
     "dist/src",
+    "appport.flow",
     "README.md"
   ],
   "scripts": {

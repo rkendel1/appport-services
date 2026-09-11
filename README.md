@@ -2,6 +2,51 @@
 
 AppPort Services provides operational application capabilities that sit beside AuthPort.
 
+## Install and run
+
+Install the package in your application:
+
+```sh
+npm install @appport/runtime
+```
+
+Initialize AppPort with every capability, or select only what the application uses:
+
+```sh
+npx appport init
+npx appport init --use api,webhooks,jobs
+```
+
+This creates two files that should be committed:
+
+- `appport.toml` declares the AppPort capabilities your application uses.
+- `feltdb.flow` is your application's authoritative FeltDB contract. AppPort's internal template remains inside the npm package; application developers do not edit or import AppPort storage internals.
+
+Bootstrap AppPort from the contract:
+
+```javascript
+import { appport } from '@appport/runtime';
+
+const app = await appport();
+
+// Only capabilities declared in appport.toml are initialized.
+await app.api.keys.createApiKey(/* ... */);
+```
+
+`appport()` reads `./appport.toml` by default and owns service construction, persistence, audit infrastructure, and lifecycle. Call `await app.close()` during graceful shutdown. Accessing an undeclared capability throws a `CapabilityNotDeclaredError` with the declaration needed to enable it.
+
+`@appport/services` supplies the CLI and capability implementation, but application source imports only `@appport/runtime`. Existing applications may continue using `createServices()` from `@appport/services` as a compatibility API.
+
+Run your application with its usual command, such as `npm run dev`. Operational CLI commands are available through the installed binary:
+
+```sh
+npx appport api-key list --tenant acme
+npx appport webhook list --tenant acme
+npx appport job list --tenant acme
+```
+
+AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
+
 The repository implements three complete vertical slices: **tenant-scoped API keys**, **durable webhooks**, and **durable job execution** backed by **`@feltdb/core@0.10.0`**.
 
 ```text
@@ -20,19 +65,15 @@ identity/authz        API Keys, Webhooks, Jobs
 
 ## Consumer API
 
-An application developer creates a unified AppPort Services instance and uses three services:
+The contract determines which runtime APIs are available:
 
 ```javascript
-import { createServices } from '@appport/services';
+import { appport } from '@appport/runtime';
 
-const services = createServices({
-  mode: 'local',
-  namespace: 'myapp',
-  path: './.data',
-});
+const app = await appport();
 
 // Machine identity & tenant scoping
-await services.apiKeys.createApiKey({
+await app.api.keys.createApiKey({
   tenantId: 'acme-corp',
   name: 'server-key',
   scopes: ['invoices.write'],
@@ -40,7 +81,7 @@ await services.apiKeys.createApiKey({
 });
 
 // Durable outbound notifications
-await services.webhooks.createWebhookEndpoint({
+await app.webhooks.createWebhookEndpoint({
   tenantId: 'acme-corp',
   url: 'https://acme.example.com/webhooks',
   events: ['invoice.created'],
@@ -48,7 +89,7 @@ await services.webhooks.createWebhookEndpoint({
 });
 
 // Durable deferred execution
-await services.jobs.enqueue({
+await app.jobs.enqueue({
   tenantId: 'acme-corp',
   type: 'invoice.process',
   payload: { invoiceId: 'inv-123' },
@@ -56,23 +97,7 @@ await services.jobs.enqueue({
 });
 ```
 
-The consumer does not need to know that FeltDB exists underneath. All three services share a single durable runtime.
-
-## Initialize an application
-
-After installing the package, generate an `appport.toml` for all capabilities:
-
-```sh
-npx appport init
-```
-
-Or select only the capabilities the application uses:
-
-```sh
-npx appport init --use api,webhooks,jobs
-```
-
-The command will not overwrite an existing `appport.toml`.
+The consumer does not need to know that FeltDB exists underneath. Only declared capabilities are constructed, and they share one durable runtime.
 
 ## What is AppPort Services?
 
@@ -96,7 +121,7 @@ See [`examples/services-demo/README.md`](./examples/services-demo/README.md) for
 
 ## Architecture
 
-AppPort Services uses Flow (the `@feltdb/core` contract language) as the authoritative durable schema. `appport.flow` describes all collections:
+AppPort Services uses Flow (the `@feltdb/core` contract language) as the authoritative durable schema. The package's internal `appport.flow` is the template from which `appport init` generates the application's authoritative `feltdb.flow`:
 
 **API Keys vertical:**
 - `ApiKeys` — API key credentials (secret stored as scrypt hash only)
@@ -118,7 +143,7 @@ All collections are tenant-scoped via `tenant_id` field with `tenant_idx` for ef
 ### Dependency direction
 
 ```
-appport.flow (authoritative contract)
+feltdb.flow (generated authoritative application contract)
        ↓
 TypeScript implementation
        ↓
@@ -462,7 +487,7 @@ Jobs are **durable and idempotent**. Job state survives process restarts; worker
 AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.10.0`.
 
 ```text
-appport.flow (Flow contract)
+feltdb.flow (generated Flow contract)
       │
       ▼
 AppPort Services
@@ -489,7 +514,7 @@ AppPort Services
 
 ## Repository layout
 
-- `appport.flow` — Authoritative Flow DSL contract describing all collections
+- `appport.flow` — Internal package template used to generate consumer `feltdb.flow` contracts
 - `/src/api-keys` — API-key models and semantic service
 - `/src/webhooks` — Webhook models, service, and secret handling
   - `models.ts` — Endpoint, delivery, event contracts

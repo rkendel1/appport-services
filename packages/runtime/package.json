@@ -1,0 +1,30 @@
+{
+  "name": "@appport/runtime",
+  "version": "0.1.0",
+  "description": "Contract-driven AppPort application runtime",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "bin": {
+    "appport": "./cli.js"
+  },
+  "files": [
+    "cli.js",
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "dependencies": {
+    "@appport/services": "^0.2.0"
+  },
+  "keywords": [
+    "appport",
+    "runtime",
+    "feltdb"
+  ],
+  "license": "ISC"
+}

@@ -29,7 +29,10 @@ interface ApiKeyServiceOptions {
 export class ApiKeyService {
   readonly runtime?: FeltDbServiceRuntime;
   private readonly now: () => Date;
+  private creationQueue: Promise<void> = Promise.resolve();
   private authenticationQueue: Promise<void> = Promise.resolve();
+  private readonly knownPrefixes = new Map<string, string>();
+  private readonly locallyCreatedKeys = new Map<string, ApiKey>();
 
   constructor(private readonly options: ApiKeyServiceOptions) {
     this.runtime = options.runtime;
@@ -37,6 +40,21 @@ export class ApiKeyService {
   }
 
   async createApiKey(input: CreateApiKeyInput): Promise<CreatedApiKey> {
+    const previous = this.creationQueue;
+    let release!: () => void;
+    this.creationQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+    try {
+      return await this.createApiKeyWithSideEffects(input);
+    } finally {
+      release();
+    }
+  }
+
+  private async createApiKeyWithSideEffects(input: CreateApiKeyInput): Promise<CreatedApiKey> {
     for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
       const createdAt = this.now().toISOString();
       const prefix = `${API_KEY_SCHEME}_${randomBytes(3).toString('hex')}`;
@@ -58,6 +76,8 @@ export class ApiKeyService {
 
       try {
         await this.options.store.create(apiKey);
+        this.knownPrefixes.set(apiKey.keyPrefix, apiKey.id);
+        this.locallyCreatedKeys.set(apiKey.id, apiKey);
         await this.options.auditSink.record({
           id: randomUUID(),
           type: 'api_key.created',
@@ -123,6 +143,7 @@ export class ApiKeyService {
         timestamp: revokedAt,
         result: 'success',
       });
+      this.locallyCreatedKeys.set(updated.id, updated);
       return toView(updated);
     }
 
@@ -151,9 +172,16 @@ export class ApiKeyService {
     }
 
     for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt += 1) {
-      const current = await this.options.store.findByPrefix(prefix);
+      let current: ApiKey | null;
+      try {
+        current = await this.findApiKeyByPrefix(prefix);
+      } catch {
+        await waitForUpdateRetry(attempt);
+        continue;
+      }
       if (!current) {
-        return null;
+        await waitForUpdateRetry(attempt);
+        continue;
       }
 
       const now = this.now();
@@ -176,12 +204,13 @@ export class ApiKeyService {
       }
 
       await this.recordSuccessfulAuthEvent(updated, now.toISOString());
+      this.locallyCreatedKeys.set(updated.id, updated);
       return toPrincipal(updated);
     }
 
     // Credential validity is determined by the latest successful read and hash
     // verification, not by availability of usage/audit bookkeeping writes.
-    const current = await this.options.store.findByPrefix(prefix);
+    const current = await this.findApiKeyByPrefix(prefix).catch(() => null);
     if (!current) {
       return null;
     }
@@ -213,6 +242,30 @@ export class ApiKeyService {
 
   private async recordSuccessfulAuthEvent(apiKey: ApiKey, timestamp: string): Promise<void> {
     await this.recordAuthEvent(apiKey, 'success', timestamp).catch(() => undefined);
+  }
+
+  private async findApiKeyByPrefix(prefix: string): Promise<ApiKey | null> {
+    const knownId = this.knownPrefixes.get(prefix);
+    if (knownId) {
+      const stored = await this.options.store.get(knownId).catch(() => null);
+      if (stored) {
+        return stored;
+      }
+      // Embedded local FeltDB can briefly lag its just-committed key reads.
+      // Managed deployments remain fail-closed and never use process-local state.
+      if (this.runtime?.deployment.mode === 'local') {
+        const local = this.locallyCreatedKeys.get(knownId);
+        if (local) {
+          return local;
+        }
+      }
+    }
+
+    const indexed = await this.options.store.findByPrefix(prefix).catch(() => null);
+    if (indexed) {
+      this.knownPrefixes.set(prefix, indexed.id);
+    }
+    return indexed;
   }
 }
 

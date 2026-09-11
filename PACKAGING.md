@@ -48,7 +48,7 @@ export { apiKeyAuth, authenticateBearerToken, createApiKeyAuth } from './runtime
 ```bash
 npm install                 # Install dependencies
 npm run build              # Compile TypeScript → dist/
-npm pack                   # Create appport-services-0.1.0.tgz
+npm pack                   # Create appport-services-0.2.0.tgz
 ```
 
 ## Verifying Consumer Boundary
@@ -73,7 +73,7 @@ npm pack
 
 # 2. Create consumer test environment
 mkdir consumer-test
-cp appport-services-0.1.0.tgz consumer-test/
+cp appport-services-0.2.0.tgz consumer-test/
 cd consumer-test/invoice-app
 
 # 3. Install from tarball
@@ -130,6 +130,7 @@ After `npm pack`, the tarball includes:
 
 - `dist/src/**/*.js` - Compiled consumer-facing code
 - `dist/src/**/*.d.ts` - TypeScript declarations
+- `appport.flow` - Internal template used by `appport init`
 - `package.json` - Package metadata and exports
 - `node_modules/@feltdb/core/` - Runtime dependency (fetched by npm)
 - `examples/invoice-app/` - Working example (optional, for reference)
@@ -138,7 +139,7 @@ After `npm pack`, the tarball includes:
 ## Version and Compatibility
 
 - **Package Name**: @appport/services
-- **Current Version**: 0.1.0
+- **Current Version**: 0.2.0
 - **Module Format**: ESM (type: "module")
 - **Node.js Target**: ES2022 (suitable for Node 16+)
 - **TypeScript**: Full .d.ts declarations included
@@ -166,11 +167,11 @@ A developer can:
 
 1. ✓ Create empty directory
 2. ✓ `npm install @appport/services`
-3. ✓ Create `appport.toml` with DSL configuration
+3. ✓ Generate `appport.toml` and authoritative `feltdb.flow` with `npx appport init`
 4. ✓ Import createServices and use it
 5. ✓ Build and run application
-6. ✗ Never know FeltDB exists
-7. ✗ Never import from @feltdb/core
-8. ✗ Never use workspace paths or file: dependencies
+6. ✓ Never manage FeltDB runtime internals directly
+7. ✓ Never import from @feltdb/core
+8. ✓ Never use workspace paths or file: dependencies
 
 All criteria met and tested.

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
-import { writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { access, readFile, writeFile } from 'node:fs/promises';
+import { basename, resolve } from 'node:path';
+
+import { formatFlowSpec, parseFlowSpec } from '@feltdb/core';
 
 import { createApiKeyService } from './_internal.js';
 import type { ApiKeyService } from './api-keys/service.js';
@@ -57,6 +59,11 @@ export async function runCli(
 }
 
 const SUPPORTED_CAPABILITIES = ['api', 'webhooks', 'jobs'] as const;
+const CAPABILITY_COLLECTIONS: Record<typeof SUPPORTED_CAPABILITIES[number], readonly string[]> = {
+  api: ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents'],
+  webhooks: ['WebhookEndpoints', 'WebhookDeliveries', 'WebhookAuditEvents'],
+  jobs: ['Jobs', 'JobSchedules', 'JobAuditEvents'],
+};
 
 async function handleInitCommand(
   tokens: readonly string[],
@@ -89,30 +96,59 @@ async function handleInitCommand(
   }
 
   const selected = SUPPORTED_CAPABILITIES.filter((capability) => capabilities.includes(capability));
-  const destination = resolve(cwd, 'appport.toml');
+  const configDestination = resolve(cwd, 'appport.toml');
+  const flowDestination = resolve(cwd, 'feltdb.flow');
+  await assertFilesDoNotExist([configDestination, flowDestination]);
+
   const content = [
     '# AppPort Services capabilities used by this application',
     '',
     ...selected.map((capability) => `use ${capability}`),
     '',
   ].join('\n');
+  const templatePath = new URL('../../appport.flow', import.meta.url);
+  const template = parseFlowSpec(await readFile(templatePath, 'utf8'));
+  const includedCollections = new Set(selected.flatMap((capability) => CAPABILITY_COLLECTIONS[capability]));
+  const flowContent = formatFlowSpec({
+    ...template,
+    app: await detectFlowApplicationName(cwd),
+    collections: template.collections.filter((collection) => includedCollections.has(collection.name)),
+  });
 
-  try {
-    await writeFile(destination, content, { encoding: 'utf8', flag: 'wx' });
-  } catch (error) {
-    if (isNodeError(error) && error.code === 'EEXIST') {
-      throw new Error(`appport.toml already exists at ${destination}`);
-    }
-    throw error;
-  }
+  await writeFile(configDestination, content, { encoding: 'utf8', flag: 'wx' });
+  await writeFile(flowDestination, flowContent, { encoding: 'utf8', flag: 'wx' });
 
-  writeLine(io.stdout, `Created ${destination}`);
+  writeLine(io.stdout, `Created ${configDestination}`);
+  writeLine(io.stdout, `Created ${flowDestination}`);
   writeLine(io.stdout, `Enabled: ${selected.join(', ')}`);
   return 0;
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
+async function assertFilesDoNotExist(paths: readonly string[]): Promise<void> {
+  for (const path of paths) {
+    try {
+      await access(path);
+      throw new Error(`${basename(path)} already exists at ${path}`);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+async function detectFlowApplicationName(cwd: string): Promise<string> {
+  let candidate = basename(cwd);
+  try {
+    const manifest = JSON.parse(await readFile(resolve(cwd, 'package.json'), 'utf8')) as { name?: unknown };
+    if (typeof manifest.name === 'string' && manifest.name.trim()) {
+      candidate = manifest.name.replace(/^@[^/]+\//, '');
+    }
+  } catch {
+    // A package manifest is optional during initialization.
+  }
+  return candidate.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
 }
 
 async function handleApiKeyCommand(

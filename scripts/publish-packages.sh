@@ -18,6 +18,8 @@ if [ -n "${NPM_TOKEN:-}" ]; then
   chmod 600 "$npm_userconfig"
   printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$npm_userconfig"
   NPM_CONFIG_USERCONFIG="$npm_userconfig" npm publish $publish_args
+  NPM_CONFIG_USERCONFIG="$npm_userconfig" npm publish ./packages/runtime $publish_args
 else
   npm publish $publish_args
+  npm publish ./packages/runtime $publish_args
 fi
