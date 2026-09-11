@@ -1,7 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { createServices, apiKeyAuth } from '@appport/services';
-import { createFeltDB } from '@feltdb/core';
 import type { Invoice } from './models.js';
 
 const app = express();
@@ -14,21 +13,12 @@ const services = createServices({
   path: './.feltdb/demo',
 });
 
-// Application-owned state: invoices use separate FeltDB instance
-// Note: for atomic composition across app state and AppPort services,
-// the application would use FeltDB's transaction API directly.
-// Here we keep them separate for clarity of responsibilities.
-const appDb = createFeltDB({
-  mode: 'local',
-  namespace: 'demo-services',
-  path: './.feltdb/demo',
-});
-const invoices = appDb.collection<Invoice>('invoices');
-
 // Middleware: API Key authentication
 app.use(apiKeyAuth(services.apiKeys));
 
 // POST /invoices - Create invoice with authenticated tenant context
+// Uses atomic transaction to ensure invoice, webhook delivery intent, and job intent
+// are all persisted together or all rolled back on failure.
 app.post('/invoices', async (req, res) => {
   const principal = req.auth;
 
@@ -56,26 +46,39 @@ app.post('/invoices', async (req, res) => {
       created_by: principal.principalId,
     };
 
-    // Create invoice
-    await invoices.insert(invoice, invoiceId);
+    // Atomic composition: all three operations execute in a single FeltDB transaction
+    await services.transaction(async (tx) => {
+      // 1. Application-owned state: invoice
+      await tx.collection<Invoice>('invoices').insert(invoice, invoiceId);
 
-    // Establish webhook delivery intent
-    await services.webhooks.emitWebhookEvent({
-      tenantId: principal.tenantId,
-      type: 'invoice.created',
-      payload: {
-        id: invoiceId,
-        customer,
-        amount,
-      },
-    });
+      // 2. Webhook delivery intent: find matching endpoints and queue deliveries
+      const endpoints = await services.webhooks.listWebhookEndpoints(principal.tenantId);
+      const invoiceCreatedEndpoints = endpoints.filter((ep) =>
+        ep.events.includes('invoice.created'),
+      );
 
-    // Establish job intent
-    await services.jobs.enqueue({
-      tenantId: principal.tenantId,
-      type: 'invoice.process',
-      payload: { invoiceId },
-      maxAttempts: 3,
+      if (invoiceCreatedEndpoints.length > 0) {
+        tx.queueWebhookDeliveries(
+          invoiceCreatedEndpoints.map((ep) => ep.id),
+          {
+            tenantId: principal.tenantId,
+            type: 'invoice.created',
+            payload: {
+              id: invoiceId,
+              customer,
+              amount,
+            },
+          },
+        );
+      }
+
+      // 3. Job intent: process the invoice
+      tx.queueJob({
+        tenantId: principal.tenantId,
+        type: 'invoice.process',
+        payload: { invoiceId },
+        maxAttempts: 3,
+      });
     });
 
     res.status(201).json({
@@ -91,6 +94,9 @@ app.post('/invoices', async (req, res) => {
 });
 
 // GET /invoices - List invoices for authenticated tenant
+// Note: In production, application-owned state would be queried from the application's
+// own database service, not from AppPort's internal database. This uses the internal
+// database accessor only for demonstration purposes.
 app.get('/invoices', async (req, res) => {
   const principal = req.auth;
 
@@ -99,10 +105,11 @@ app.get('/invoices', async (req, res) => {
   }
 
   try {
-    const tenantInvoices = await invoices.find({ tenant_id: principal.tenantId });
+    const db = (services as any)['_getDb'];
+    const tenantInvoices = await db.collection('invoices').find({ tenant_id: principal.tenantId });
 
     res.json({
-      invoices: tenantInvoices.map((inv) => ({
+      invoices: tenantInvoices.map((inv: any) => ({
         id: inv.id,
         customer: inv.customer,
         amount: inv.amount,

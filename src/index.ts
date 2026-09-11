@@ -6,6 +6,9 @@
 export { createServices } from './runtime/unified-services.js';
 export type { AppPortServices } from './runtime/unified-services.js';
 
+// Atomic transaction API
+export type { AppPortTransactionContext, AppPortTransactionCollection } from './runtime/transaction.js';
+
 // Service classes (consumers construct services via createServices)
 export { ApiKeyService } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
