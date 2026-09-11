@@ -8,6 +8,7 @@ import { JobService } from '../jobs/service.js';
 import { FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink } from '../jobs/store.js';
 import { TransactionBuilder } from './transaction.js';
 import { TransactionContextImpl } from './transaction-services.js';
+import { parseAppPortConfig, type AppPortConfig } from './dsl.js';
 
 /**
  * Unified AppPort Services instance.
@@ -37,18 +38,37 @@ export interface AppPortServices {
 }
 
 /**
+ * Options for creating AppPort Services.
+ */
+export interface CreateServicesOptions extends FeltDBOptions {
+  /**
+   * Optional path to appport.toml DSL configuration.
+   * If provided, configuration values override defaults.
+   */
+  config?: string;
+}
+
+/**
  * Create a unified AppPort Services instance.
  *
  * All services share the same underlying FeltDB runtime and database.
  * This ensures atomic composition: invoice creation, webhook delivery intent,
  * and job enqueue can all happen within one durable transaction.
  *
- * @param options FeltDB runtime configuration (mode, namespace, path, etc.)
+ * @param options FeltDB runtime configuration (mode, namespace, path, etc.) and optional config path
  * @returns AppPortServices with apiKeys, webhooks, and jobs
  */
-export function createServices(options: FeltDBOptions = {}): AppPortServices {
+export function createServices(options: CreateServicesOptions = {}): AppPortServices {
+  // Parse DSL configuration if provided
+  let dslConfig: AppPortConfig | undefined;
+  if (options.config) {
+    dslConfig = parseAppPortConfig(options.config);
+  }
+
   // Create one FeltDB runtime shared by all services
-  const runtime = createFeltDbRuntime(options);
+  // Extract FeltDB options (exclude config)
+  const { config: _unused, ...feltdbOptions } = options;
+  const runtime = createFeltDbRuntime(feltdbOptions);
   const { db } = runtime;
 
   // Initialize API Key service

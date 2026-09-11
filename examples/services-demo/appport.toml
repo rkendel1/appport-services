@@ -1,0 +1,13 @@
+# AppPort Services DSL configuration
+# Declares which AppPort capabilities this application uses
+
+# Enable API Keys for machine-to-machine authentication
+api = true
+
+# Enable Webhooks for durable outbound notifications
+[webhooks]
+events = ["invoice.created", "invoice.paid"]
+
+# Enable Jobs for durable background processing
+[jobs]
+max_attempts = 5

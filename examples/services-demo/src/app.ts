@@ -6,11 +6,13 @@ import type { Invoice } from './models.js';
 const app = express();
 app.use(express.json());
 
-// Initialize unified AppPort Services (API Keys, Webhooks, Jobs share one durable runtime)
+// Initialize unified AppPort Services with DSL configuration
+// The appport.toml file declares which capabilities (api, webhooks, jobs) are used
 const services = createServices({
   mode: 'local',
   namespace: 'demo-services',
   path: './.feltdb/demo',
+  config: './appport.toml',
 });
 
 // Middleware: API Key authentication
