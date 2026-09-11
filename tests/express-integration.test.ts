@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import express from 'express';
 import type { Request, Response } from 'express';
-import { createApiKeyService, apiKeyAuth, requireApiKeyAuth, assertTenant } from '../src/index.js';
+import { createApiKeyService, apiKeyAuth, requireApiKeyAuth, assertTenant } from '../src/_internal.js';
 
 async function createLocalService() {
   const path = await mkdtemp(join(tmpdir(), 'appport-express-'));

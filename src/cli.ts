@@ -2,7 +2,7 @@
 
 import process from 'node:process';
 
-import { createApiKeyService } from './index.js';
+import { createApiKeyService } from './_internal.js';
 import type { ApiKeyService } from './api-keys/service.js';
 import {
   createFeltDbRuntime,
@@ -15,7 +15,7 @@ import {
   FeltDbJobScheduleStore,
   FeltDbJobAuditSink,
   JobService,
-} from './index.js';
+} from './_internal.js';
 
 interface CommandIo {
   readonly stdout: NodeJS.WritableStream;

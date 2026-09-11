@@ -64,39 +64,7 @@ export {
 export { apiKeyAuth, requireApiKeyAuth } from './runtime/express-middleware.js';
 
 // ============================================================================
-// INTERNAL EXPORTS - For testing, advanced use, and dependency injection
-// (Not part of normal consumer documentation. Consumers should use createServices)
+// NOTE: Internal exports (FeltDB stores, runtime, legacy APIs) are kept in
+// src/_internal.ts to enforce the public/private boundary. The compiled
+// dist/src/index.js contains ONLY the consumer-facing public API above.
 // ============================================================================
-
-// Runtime and store interfaces for advanced use cases
-export type { AuditSink, ApiKeyStore, FeltDbServiceRuntime } from './storage/api-keys.js';
-export type {
-  WebhookEndpointStore,
-  WebhookDeliveryStore,
-  WebhookAuditSink,
-} from './storage/webhooks.js';
-export type {
-  JobStore,
-  JobScheduleStore,
-  JobAuditSink,
-} from './jobs/index.js';
-export type { WebhookSecretStore } from './webhooks/secrets.js';
-
-// Concrete FeltDB implementations (for dependency injection in tests)
-export { createFeltDbRuntime, FeltDbApiKeyStore, FeltDbAuditSink, type CreateFeltDbRuntimeOptions, auditCollectionName } from './storage/api-keys.js';
-export { FeltDbWebhookEndpointStore, FeltDbWebhookDeliveryStore, FeltDbWebhookAuditSink, webhookAuditCollectionName } from './storage/webhooks.js';
-export { EncryptedWebhookSecretStore, InMemoryWebhookSecretStore } from './webhooks/secrets.js';
-export { FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink, jobAuditCollectionName } from './jobs/store.js';
-
-// Backward compatibility: single factory for API key service
-// (Deprecated: use createServices instead for unified services with one runtime)
-import { createFeltDbRuntime as _createFeltDbRuntime, FeltDbApiKeyStore as _FeltDbApiKeyStore, FeltDbAuditSink as _FeltDbAuditSink, type CreateFeltDbRuntimeOptions } from './storage/api-keys.js';
-import { ApiKeyService as _ApiKeyService } from './api-keys/service.js';
-export function createApiKeyService(options: CreateFeltDbRuntimeOptions = {}): _ApiKeyService {
-  const runtime = _createFeltDbRuntime(options);
-  return new _ApiKeyService({
-    store: new _FeltDbApiKeyStore(runtime.db),
-    auditSink: new _FeltDbAuditSink(runtime.db),
-    runtime,
-  });
-}

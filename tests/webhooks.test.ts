@@ -11,7 +11,7 @@ import {
   FeltDbWebhookAuditSink,
   WebhookService,
   InMemoryWebhookSecretStore,
-} from '../src/index.js';
+} from '../src/_internal.js';
 
 async function createLocalWebhookService() {
   const path = await mkdtemp(join(tmpdir(), 'appport-webhooks-test-'));

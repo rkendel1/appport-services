@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createApiKeyService, createFeltDbRuntime, FeltDbAuditSink, FeltDbApiKeyStore, ApiKeyService, authenticateBearerToken, auditCollectionName } from '../src/index.js';
+import { createApiKeyService, createFeltDbRuntime, FeltDbAuditSink, FeltDbApiKeyStore, ApiKeyService, authenticateBearerToken, auditCollectionName } from '../src/_internal.js';
 
 async function createLocalService(prefix = 'appport-services-test-'): Promise<{ service: ApiKeyService; path: string }> {
   const path = await mkdtemp(join(tmpdir(), prefix));
