@@ -7,7 +7,7 @@ import test from 'node:test';
 import {
   createServices,
   FeltDbWebhookEndpointStore,
-} from '../src/index.js';
+} from '../src/_internal.js';
 
 test('Atomic composition: application state + webhook + job in one transaction', async () => {
   const path = await mkdtemp(join(tmpdir(), 'atomic-test-'));

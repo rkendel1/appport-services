@@ -12,7 +12,7 @@ import {
   TenantMismatchError,
   RequestContext,
   type HttpRequest,
-} from '../src/index.js';
+} from '../src/_internal.js';
 
 async function createLocalService() {
   const path = await mkdtemp(join(tmpdir(), 'appport-adapter-test-'));

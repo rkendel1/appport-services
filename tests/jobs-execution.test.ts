@@ -11,7 +11,7 @@ import {
   FeltDbJobAuditSink,
   JobService,
   JobWorker,
-} from '../src/index.js';
+} from '../src/_internal.js';
 
 async function createLocalJobService(now?: () => Date, pollIntervalMs?: number) {
   const path = await mkdtemp(join(tmpdir(), 'appport-jobs-execution-test-'));
