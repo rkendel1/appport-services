@@ -1,7 +1,7 @@
 {
   "name": "invoice-app",
   "version": "0.1.0",
-  "description": "Invoice Application - AppPort Services Dogfood",
+  "description": "Invoice Application - AppPort Services Example",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -9,8 +9,7 @@
     "worker": "npm run build && node dist/src/worker.js",
     "test": "npm run build && node --test dist/tests/**/*.test.js",
     "test:restart": "npm run build && node --test dist/tests/restart.test.js",
-    "test:atomic": "npm run build && node --test dist/tests/atomic.test.js",
-    "test:package": "npm run build && node --test dist/tests/package.test.js"
+    "test:atomic": "npm run build && node --test dist/tests/atomic.test.js"
   },
   "keywords": [
     "appport",
