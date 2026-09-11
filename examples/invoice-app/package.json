@@ -1,0 +1,31 @@
+{
+  "name": "invoice-app",
+  "version": "0.1.0",
+  "description": "Invoice Application - AppPort Services Dogfood",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && node dist/src/server.js",
+    "worker": "npm run build && node dist/src/worker.js",
+    "test": "npm run build && node --test dist/tests/**/*.test.js",
+    "test:restart": "npm run build && node --test dist/tests/restart.test.js",
+    "test:atomic": "npm run build && node --test dist/tests/atomic.test.js",
+    "test:package": "npm run build && node --test dist/tests/package.test.js"
+  },
+  "keywords": [
+    "appport",
+    "invoicing",
+    "webhooks",
+    "jobs"
+  ],
+  "license": "ISC",
+  "dependencies": {
+    "@appport/services": "^0.1.0",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "22.10.2",
+    "typescript": "5.6.3"
+  }
+}
