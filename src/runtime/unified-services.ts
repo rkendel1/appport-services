@@ -6,6 +6,8 @@ import { FeltDbWebhookEndpointStore, FeltDbWebhookDeliveryStore, FeltDbWebhookAu
 import { EncryptedWebhookSecretStore } from '../webhooks/secrets.js';
 import { JobService } from '../jobs/service.js';
 import { FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink } from '../jobs/store.js';
+import { TransactionBuilder } from './transaction.js';
+import { TransactionContextImpl } from './transaction-services.js';
 
 /**
  * Unified AppPort Services instance.
@@ -16,6 +18,22 @@ export interface AppPortServices {
   readonly apiKeys: ApiKeyService;
   readonly webhooks: WebhookService;
   readonly jobs: JobService;
+
+  /**
+   * Execute application and AppPort operations atomically.
+   *
+   * All operations in the callback are collected and executed in a single
+   * FeltDB transaction. Either all succeed together or all roll back.
+   *
+   * @param callback Receives a context for queuing operations
+   * @returns Result of the callback
+   */
+  transaction<T>(callback: (tx: TransactionContextImpl) => Promise<T>): Promise<T>;
+
+  /**
+   * @internal Test-only: Access to underlying FeltDB instance for verification
+   */
+  readonly ['_getDb']?: unknown;
 }
 
 /**
@@ -59,5 +77,26 @@ export function createServices(options: FeltDBOptions = {}): AppPortServices {
     apiKeys: apiKeyService,
     webhooks: webhookService,
     jobs: jobService,
+
+    /**
+     * Execute application and AppPort operations in a single atomic transaction.
+     */
+    async transaction<T>(callback: (tx: TransactionContextImpl) => Promise<T>): Promise<T> {
+      const builder = new TransactionBuilder();
+      const context = new TransactionContextImpl(builder);
+
+      // Execute callback to collect operations
+      const result = await callback(context);
+
+      // Commit all operations in a single FeltDB transaction
+      await builder.commit(db);
+
+      return result;
+    },
+
+    /**
+     * @internal Test-only access to database
+     */
+    ['_getDb']: db,
   };
 }
