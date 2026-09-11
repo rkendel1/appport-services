@@ -16,7 +16,8 @@ const API_KEY_SCHEME = 'app_live';
 const SECRET_BYTES = 32;
 const SALT_BYTES = 16;
 const MAX_CREATE_ATTEMPTS = 5;
-const MAX_UPDATE_ATTEMPTS = 5;
+const MAX_UPDATE_ATTEMPTS = 10;
+const MAX_UPDATE_RETRY_DELAY_MS = 32;
 
 interface ApiKeyServiceOptions {
   readonly store: ApiKeyStore;
@@ -28,6 +29,7 @@ interface ApiKeyServiceOptions {
 export class ApiKeyService {
   readonly runtime?: FeltDbServiceRuntime;
   private readonly now: () => Date;
+  private authenticationQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: ApiKeyServiceOptions) {
     this.runtime = options.runtime;
@@ -108,6 +110,7 @@ export class ApiKeyService {
       const revokedAt = this.now().toISOString();
       const updated = await this.options.store.revoke(current.id, current.__version, revokedAt);
       if (!updated) {
+        await waitForUpdateRetry(attempt);
         continue;
       }
 
@@ -127,6 +130,21 @@ export class ApiKeyService {
   }
 
   async authenticateApiKey(secret: string): Promise<AuthenticatedPrincipal | null> {
+    const previous = this.authenticationQueue;
+    let release!: () => void;
+    this.authenticationQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+    try {
+      return await this.authenticateApiKeyWithSideEffects(secret);
+    } finally {
+      release();
+    }
+  }
+
+  private async authenticateApiKeyWithSideEffects(secret: string): Promise<AuthenticatedPrincipal | null> {
     const prefix = parsePrefix(secret);
     if (!prefix) {
       return null;
@@ -145,22 +163,36 @@ export class ApiKeyService {
         return null;
       }
 
-      const updated = await this.options.store.recordLastUsed(current.id, current.__version, now.toISOString());
+      let updated: ApiKey | null;
+      try {
+        updated = await this.options.store.recordLastUsed(current.id, current.__version, now.toISOString());
+      } catch {
+        await waitForUpdateRetry(attempt);
+        continue;
+      }
       if (!updated) {
+        await waitForUpdateRetry(attempt);
         continue;
       }
 
-      await this.recordAuthEvent(updated, 'success', now.toISOString());
-      return {
-        principalId: updated.id,
-        principalType: 'api_key',
-        tenantId: updated.tenantId,
-        scopes: [...updated.scopes],
-        credentialId: updated.id,
-      };
+      await this.recordSuccessfulAuthEvent(updated, now.toISOString());
+      return toPrincipal(updated);
     }
 
-    return null;
+    // Credential validity is determined by the latest successful read and hash
+    // verification, not by availability of usage/audit bookkeeping writes.
+    const current = await this.options.store.findByPrefix(prefix);
+    if (!current) {
+      return null;
+    }
+    const now = this.now();
+    const failure = authenticationFailure(current, secret, now);
+    if (failure) {
+      await this.recordAuthEvent(current, failure, now.toISOString());
+      return null;
+    }
+    await this.recordSuccessfulAuthEvent(current, now.toISOString());
+    return toPrincipal(current);
   }
 
   async close(): Promise<void> {
@@ -178,6 +210,25 @@ export class ApiKeyService {
       result,
     });
   }
+
+  private async recordSuccessfulAuthEvent(apiKey: ApiKey, timestamp: string): Promise<void> {
+    await this.recordAuthEvent(apiKey, 'success', timestamp).catch(() => undefined);
+  }
+}
+
+async function waitForUpdateRetry(attempt: number): Promise<void> {
+  const delayMs = Math.min(2 ** attempt, MAX_UPDATE_RETRY_DELAY_MS);
+  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+}
+
+function toPrincipal(apiKey: ApiKey): AuthenticatedPrincipal {
+  return {
+    principalId: apiKey.id,
+    principalType: 'api_key',
+    tenantId: apiKey.tenantId,
+    scopes: [...apiKey.scopes],
+    credentialId: apiKey.id,
+  };
 }
 
 function toView(apiKey: ApiKey): ApiKeyView {

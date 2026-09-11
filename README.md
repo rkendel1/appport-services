@@ -58,6 +58,22 @@ await services.jobs.enqueue({
 
 The consumer does not need to know that FeltDB exists underneath. All three services share a single durable runtime.
 
+## Initialize an application
+
+After installing the package, generate an `appport.toml` for all capabilities:
+
+```sh
+npx appport init
+```
+
+Or select only the capabilities the application uses:
+
+```sh
+npx appport init --use api,webhooks,jobs
+```
+
+The command will not overwrite an existing `appport.toml`.
+
 ## What is AppPort Services?
 
 AppPort Services answers:

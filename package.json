@@ -1,6 +1,6 @@
 {
   "name": "@appport/services",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AppPort Services API keys backed by FeltDB",
   "type": "module",
   "exports": {
@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/tests/**/*.test.js",
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests/**/*.test.js",
     "publish:packages": "sh scripts/publish-packages.sh"
   },
   "keywords": [

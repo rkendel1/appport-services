@@ -171,6 +171,41 @@ test('tenant isolation: request A with tenant A and request B with tenant B run 
   await service.close();
 });
 
+test('repeated concurrent authentication does not lose valid principals', async () => {
+  const { service } = await createLocalService();
+  const auth = createApiKeyAuth({ service });
+  const keys = [
+    await service.createApiKey({
+      tenantId: 'tenant-a',
+      name: 'stress-a',
+      scopes: ['read'],
+      createdBy: 'user-1',
+    }),
+    await service.createApiKey({
+      tenantId: 'tenant-b',
+      name: 'stress-b',
+      scopes: ['write'],
+      createdBy: 'user-2',
+    }),
+  ];
+
+  const results = await Promise.all(
+    Array.from({ length: 20 }, (_, index) => {
+      const key = keys[index % keys.length];
+      return auth.authenticateRequest({
+        headers: { authorization: `Bearer ${key.secret}` },
+      });
+    }),
+  );
+
+  assert.equal(results.every((result) => result.principal !== null), true);
+  assert.deepEqual(
+    new Set(results.map((result) => result.principal?.tenantId)),
+    new Set(['tenant-a', 'tenant-b']),
+  );
+  await service.close();
+});
+
 test('revoked credential fails authentication', async () => {
   const { service } = await createLocalService();
   const auth = createApiKeyAuth({ service });

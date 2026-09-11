@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
+import { writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import { createApiKeyService } from './_internal.js';
 import type { ApiKeyService } from './api-keys/service.js';
@@ -25,12 +27,17 @@ interface CommandIo {
 export async function runCli(
   argv: readonly string[],
   io: CommandIo = { stdout: process.stdout, stderr: process.stderr },
-  service = createApiKeyService(),
+  service?: ApiKeyService,
+  cwd = process.cwd(),
 ): Promise<number> {
+  let activeService = service;
   try {
     const [group, action, ...rest] = argv;
-    if (group === 'api-key') {
-      return handleApiKeyCommand(action, rest, io, service);
+    if (group === 'init') {
+      return handleInitCommand(argv.slice(1), io, cwd);
+    } else if (group === 'api-key') {
+      activeService ??= createApiKeyService();
+      return handleApiKeyCommand(action, rest, io, activeService);
     } else if (group === 'webhook') {
       return handleWebhookCommand(action, rest, io);
     } else if (group === 'job') {
@@ -38,13 +45,74 @@ export async function runCli(
     } else {
       writeLine(
         io.stderr,
-        'Usage: appport <api-key|webhook|job> <command>',
+        'Usage: appport init [--use api,webhooks,jobs] | appport <api-key|webhook|job> <command>',
       );
       return 1;
     }
   } finally {
-    await closeQuietly(service);
+    if (activeService) {
+      await closeQuietly(activeService);
+    }
   }
+}
+
+const SUPPORTED_CAPABILITIES = ['api', 'webhooks', 'jobs'] as const;
+
+async function handleInitCommand(
+  tokens: readonly string[],
+  io: CommandIo,
+  cwd: string,
+): Promise<number> {
+  const options = parseOptions(tokens);
+  for (const key of options.keys()) {
+    if (key !== 'use') {
+      throw new Error(`Unknown option for init: --${key}`);
+    }
+  }
+
+  const requested = arrayOption(options, 'use').flatMap((value) => value.split(','));
+  const capabilities = requested.length === 0
+    ? [...SUPPORTED_CAPABILITIES]
+    : requested.map((value) => value.trim()).filter(Boolean);
+
+  if (capabilities.length === 0) {
+    throw new Error('--use must include at least one capability');
+  }
+
+  const unknown = capabilities.filter(
+    (capability) => !SUPPORTED_CAPABILITIES.includes(capability as typeof SUPPORTED_CAPABILITIES[number]),
+  );
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown capability: ${unknown.join(', ')}. Supported: ${SUPPORTED_CAPABILITIES.join(', ')}`,
+    );
+  }
+
+  const selected = SUPPORTED_CAPABILITIES.filter((capability) => capabilities.includes(capability));
+  const destination = resolve(cwd, 'appport.toml');
+  const content = [
+    '# AppPort Services capabilities used by this application',
+    '',
+    ...selected.map((capability) => `use ${capability}`),
+    '',
+  ].join('\n');
+
+  try {
+    await writeFile(destination, content, { encoding: 'utf8', flag: 'wx' });
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'EEXIST') {
+      throw new Error(`appport.toml already exists at ${destination}`);
+    }
+    throw error;
+  }
+
+  writeLine(io.stdout, `Created ${destination}`);
+  writeLine(io.stdout, `Enabled: ${selected.join(', ')}`);
+  return 0;
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }
 
 async function handleApiKeyCommand(
