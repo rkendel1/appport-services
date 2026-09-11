@@ -1,0 +1,6 @@
+tests/
+appport.flow
+.git
+.gitignore
+PACKAGING.md
+DOGFOOD_REPORT.md

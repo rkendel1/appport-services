@@ -1,0 +1,15 @@
+# Invoice Application - AppPort Services Configuration
+# Declares which AppPort capabilities the invoice application uses
+
+# Capability declarations
+use api
+use webhooks
+use jobs
+
+# Webhook configuration
+[webhooks]
+events = ["invoice.created"]
+
+# Job configuration
+[jobs]
+max_attempts = 3
