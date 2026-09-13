@@ -17,3 +17,5 @@ await app.api.keys.createApiKey(/* ... */);
 ```
 
 `appport()` compiles the contract once and materializes HTTP, state, tenancy, events, API keys, webhooks, jobs, observability, and lifecycle. The runtime installs its CLI and capability implementation transitively.
+
+The stable management surface is `/_appport/health`, `/_appport/overview`, `/_appport/events`, `/_appport/api/keys`, `/_appport/webhooks`, and `/_appport/jobs`.

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
-import { parseFlowSpec, validateFlowSpec, type Collection, type FeltDBOptions, type FlowSpec, type StateFirstDB } from '@feltdb/core';
+import { parseFlowSpec, validateFlowSpec, type FeltDBOptions, type FlowSpec, type StateFirstDB } from '@feltdb/core';
 import type { IncomingMessage } from 'node:http';
 
 import { ApiKeyService } from '../api-keys/service.js';
@@ -30,11 +30,17 @@ export interface AppPortOptions extends FeltDBOptions {
   /** Authoritative FeltDB contract. Defaults to feltdb.flow beside appport.toml. */
   readonly flow?: string;
   readonly routes?: Readonly<Record<string, AppPortRouteHandler>>;
+  readonly jobs?: Readonly<Record<string, (job: import('../jobs/models.js').Job) => Promise<void>>>;
+  readonly webhooks?: Readonly<Record<string, (event: import('./platform.js').AppPortEvent<Record<string, unknown>>) => void | Promise<void>>>;
+  /** @deprecated Use jobs. */
   readonly jobHandlers?: Readonly<Record<string, (job: import('../jobs/models.js').Job) => Promise<void>>>;
 }
 
 export interface AppPortRouteContext { readonly application: AppPortApplication; readonly services: AppPortTenantServices; readonly request: IncomingMessage; readonly body: unknown; readonly tenantId: string; readonly principal: import('../contract/principals.js').AuthenticatedPrincipal | null }
 export type AppPortRouteHandler = (context: AppPortRouteContext) => unknown | Promise<unknown>;
+export interface AppPortApiKeys extends Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'getApiKey' | 'revokeApiKey' | 'authenticateApiKey'> {}
+export interface AppPortWebhooks extends Pick<WebhookService, 'createWebhookEndpoint' | 'getWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint' | 'emitWebhookEvent' | 'getWebhookDelivery' | 'listWebhookDeliveries' | 'replayWebhookDelivery'> {}
+export interface AppPortJobs extends Pick<JobService, 'enqueue' | 'schedule' | 'scheduleRecurring' | 'getJob' | 'listJobs' | 'getSchedule' | 'listSchedules' | 'disableSchedule' | 'retry'> {}
 export interface AppPortTenantServices {
   readonly api: { readonly keys: {
     createApiKey(input: Omit<import('../api-keys/models.js').CreateApiKeyInput, 'tenantId'>): ReturnType<ApiKeyService['createApiKey']>;
@@ -54,24 +60,26 @@ export interface AppPortTenantServices {
   publish<T extends Record<string, unknown>>(type: string, data: T): Promise<import('./platform.js').AppPortEvent<T>>;
 }
 export interface AppPortState {
-  collection<T>(name: string): Pick<Collection<T>, 'get' | 'list' | 'find' | 'insert' | 'update' | 'delete' | 'subscribe'>;
+  collection<T>(name: string): AppPortStateCollection<T>;
   subscribe<T>(collection: string, handler: (items: T[]) => void): () => void;
 }
+export interface AppPortStateCollection<T> { get(id: string | number): Promise<T | null>; list(): Promise<T[]>; find(query?: Partial<T>): Promise<T[]>; insert(data: Partial<T>, id?: string | number): Promise<string>; update(id: string | number, changes: Partial<T>): Promise<void>; delete(id: string | number): Promise<void>; subscribe(handler: (items: T[]) => void): () => void }
 
 export interface AppPortApiCapability {
-  readonly keys: ApiKeyService;
+  readonly keys: AppPortApiKeys;
 }
 
 export interface AppPortApplication {
   readonly plan: CapabilityPlan;
   readonly contract: AppPortContractSnapshot;
   readonly api: AppPortApiCapability;
-  readonly webhooks: WebhookService;
-  readonly jobs: JobService;
+  readonly webhooks: AppPortWebhooks;
+  readonly jobs: AppPortJobs;
   readonly events: AppPortEvents;
   readonly state: AppPortState;
   readonly tenant: AppPortTenantContext;
   readonly http?: AppPortHttpRuntime;
+  start(): Promise<void>;
   forTenant(tenantId: string): AppPortTenantServices;
   publish<T extends Record<string, unknown>>(type: string, data: T, tenantId?: string): Promise<import('./platform.js').AppPortEvent<T>>;
   overview(): Record<string, unknown>;
@@ -144,7 +152,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const flowPath = resolve(options.flow ?? dirname(configPath), options.flow ? '' : 'feltdb.flow');
   const flow = await loadAuthoritativeFlow(flowPath, config);
   const plan = createCapabilityPlan(config, flow);
-  const { config: _config, flow: _flow, routes = {}, jobHandlers = {}, ...explicitFeltDbOptions } = options;
+  const { config: _config, flow: _flow, routes = {}, jobs = {}, jobHandlers = {}, webhooks: webhookHandlers = {}, ...explicitFeltDbOptions } = options;
   const feltDbOptions = runtimeOptionsFromContract(config, explicitFeltDbOptions, dirname(configPath));
   const runtime = createFeltDbRuntime(feltDbOptions);
   const services: InitializedCapabilities = {};
@@ -154,7 +162,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   }
 
   await runtime.db.deployFlowSpec(flow);
-  for (const [type, handler] of Object.entries(jobHandlers)) services.jobs?.register(type, handler);
+  for (const [type, handler] of Object.entries({ ...jobHandlers, ...jobs })) services.jobs?.register(type, handler);
 
   const events = new AppPortEvents();
   const tenant = new AppPortTenantContext(config.tenant.default);
@@ -164,8 +172,12 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   };
   let http: AppPortHttpRuntime | undefined;
   let closed = false;
+  let started = false;
   const workerTimers: NodeJS.Timeout[] = [];
   const shutdown = () => void application.close();
+  const apiKeysFacade: AppPortApiKeys | undefined = services.apiKeys ? bindMethods(services.apiKeys, ['createApiKey', 'listApiKeys', 'getApiKey', 'revokeApiKey', 'authenticateApiKey']) : undefined;
+  const webhooksFacade: AppPortWebhooks | undefined = services.webhooks ? bindMethods(services.webhooks, ['createWebhookEndpoint', 'getWebhookEndpoint', 'listWebhookEndpoints', 'disableWebhookEndpoint', 'emitWebhookEvent', 'getWebhookDelivery', 'listWebhookDeliveries', 'replayWebhookDelivery']) : undefined;
+  const jobsFacade: AppPortJobs | undefined = services.jobs ? bindMethods(services.jobs, ['enqueue', 'schedule', 'scheduleRecurring', 'getJob', 'listJobs', 'getSchedule', 'listSchedules', 'disableSchedule', 'retry']) : undefined;
 
   const application = {
     plan,
@@ -177,19 +189,28 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
     get api(): AppPortApiCapability {
       if (!config.capabilities.api) throw new CapabilityNotDeclaredError('api');
       return {
-        get keys(): ApiKeyService {
-          if (!services.apiKeys) throw new CapabilityNotDeclaredError('api.keys');
-          return services.apiKeys;
+        get keys(): AppPortApiKeys {
+          if (!apiKeysFacade) throw new CapabilityNotDeclaredError('api.keys');
+          return apiKeysFacade;
         },
       };
     },
-    get webhooks(): WebhookService {
-      if (!services.webhooks) throw new CapabilityNotDeclaredError('webhooks');
-      return services.webhooks;
+    get webhooks(): AppPortWebhooks {
+      if (!webhooksFacade) throw new CapabilityNotDeclaredError('webhooks');
+      return webhooksFacade;
     },
-    get jobs(): JobService {
-      if (!services.jobs) throw new CapabilityNotDeclaredError('jobs');
-      return services.jobs;
+    get jobs(): AppPortJobs {
+      if (!jobsFacade) throw new CapabilityNotDeclaredError('jobs');
+      return jobsFacade;
+    },
+    async start(): Promise<void> {
+      if (closed) throw new Error('AppPort application is closed');
+      if (started) return;
+      started = true;
+      if (config.http.enabled) http = await startHttpRuntime(application, routes);
+      if (config.lifecycle.managed && config.tenant.default && services.jobs && config.jobs.execution.enabled) workerTimers.push(startManagedLoop(async () => { const queued = await services.jobs?.listJobs(config.tenant.default!); for (const job of queued ?? []) if (job.status === 'pending' || job.status === 'retrying') await services.jobs?.executeJob(job.tenantId, job.id, `${config.application.name}:runtime`); }));
+      if (config.lifecycle.managed && config.tenant.default && services.webhooks && config.webhooks.delivery.enabled) workerTimers.push(startManagedLoop(async () => { const deliveries = await services.webhooks?.listWebhookDeliveries(config.tenant.default!); for (const delivery of deliveries ?? []) if (delivery.status === 'pending' || delivery.status === 'retrying') await services.webhooks?.deliverWebhook(delivery.tenantId, delivery.id); }));
+      if (config.lifecycle.managed) { process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown); }
     },
     overview(): Record<string, unknown> {
       return { application: config.application, deployment: config.deployment, capabilities: plan.capabilities, tenant: config.tenant, state: { ...config.state, runtime: runtime.deployment }, api: config.api, webhooks: config.webhooks, jobs: config.jobs, events: events.overview(), health: { ok: !closed } };
@@ -216,6 +237,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
     },
     async publish<T extends Record<string, unknown>>(type: string, data: T, tenantId = tenant.current()): Promise<import('./platform.js').AppPortEvent<T>> {
       const event = events.publish(type, data, tenantId);
+      await webhookHandlers[type]?.(event);
       if (services.webhooks) {
         const deliveries = await services.webhooks.emitWebhookEvent({ tenantId, type, payload: data });
         await Promise.all(deliveries.map((delivery) => services.webhooks?.deliverWebhook(tenantId, delivery.id)));
@@ -241,25 +263,13 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
     },
   } satisfies AppPortApplication;
 
-  if (config.http.enabled) http = await startHttpRuntime(application, routes);
-  if (config.lifecycle.managed && config.tenant.default && services.jobs && config.jobs.execution.enabled) {
-    workerTimers.push(startManagedLoop(async () => {
-      const jobs = await services.jobs?.listJobs(config.tenant.default!);
-      for (const job of jobs ?? []) if (job.status === 'pending' || job.status === 'retrying') await services.jobs?.executeJob(job.tenantId, job.id, `${config.application.name}:runtime`);
-    }));
-  }
-  if (config.lifecycle.managed && config.tenant.default && services.webhooks && config.webhooks.delivery.enabled) {
-    workerTimers.push(startManagedLoop(async () => {
-      const deliveries = await services.webhooks?.listWebhookDeliveries(config.tenant.default!);
-      for (const delivery of deliveries ?? []) if (delivery.status === 'pending' || delivery.status === 'retrying') await services.webhooks?.deliverWebhook(delivery.tenantId, delivery.id);
-    }));
-  }
-  if (config.lifecycle.managed) {
-    process.once('SIGINT', shutdown);
-    process.once('SIGTERM', shutdown);
-  }
+  if (config.lifecycle.managed) await application.start();
 
   return application;
+}
+
+function bindMethods<T extends object, K extends keyof T>(target: T, names: readonly K[]): Pick<T, K> {
+  return Object.freeze(Object.fromEntries(names.map((name) => [name, (target[name] as Function).bind(target)]))) as Pick<T, K>;
 }
 
 function startManagedLoop(work: () => Promise<void>): NodeJS.Timeout {

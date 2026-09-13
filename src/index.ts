@@ -4,7 +4,7 @@
 
 // Primary factory for creating unified AppPort Services
 export { appport, capabilityRegistry, createCapabilityPlan, CapabilityNotDeclaredError } from './runtime/appport.js';
-export type { AppPortApplication, AppPortApiCapability, AppPortCapabilityName, AppPortOptions, AppPortRouteContext, AppPortRouteHandler, AppPortState, AppPortTenantServices, CapabilityPlan } from './runtime/appport.js';
+export type { AppPortApplication, AppPortApiCapability, AppPortApiKeys, AppPortCapabilityName, AppPortJobs, AppPortOptions, AppPortRouteContext, AppPortRouteHandler, AppPortState, AppPortStateCollection, AppPortTenantServices, AppPortWebhooks, CapabilityPlan } from './runtime/appport.js';
 export { createServices } from './runtime/unified-services.js';
 export type { AppPortServices, CreateServicesOptions } from './runtime/unified-services.js';
 

@@ -115,10 +115,11 @@ test('generated contract materializes HTTP, state, events, identity, and lifecyc
     config: configPath,
     path: join(path, '.state'),
     routes: { 'POST /echo': ({ body, tenantId }) => ({ body, tenantId }) },
-    jobHandlers: { 'example.process': async () => undefined },
+    jobs: { 'example.process': async () => undefined },
   });
 
   assert.ok(application.http);
+  assert.equal('runtime' in application.api.keys, false);
   assert.equal(application.contract.state.namespace, application.contract.application.name);
   assert.equal(Object.isFrozen(application.contract), true);
   const health = await fetch(`${application.http?.url}/_appport/health`).then((response) => response.json()) as { ok: boolean };
@@ -134,5 +135,24 @@ test('generated contract materializes HTTP, state, events, identity, and lifecyc
   assert.deepEqual(received, [1, 2]);
   await application.state.collection<{ id: string; value: number }>('Example').insert({ id: 'one', value: 1 }, 'one');
   assert.equal((await application.state.collection<{ id: string; value: number }>('Example').get('one'))?.value, 1);
+  await application.close();
+});
+
+test('unmanaged lifecycle exposes explicit idempotent start and close', async () => {
+  const path = await mkdtemp(join(tmpdir(), 'appport-runtime-unmanaged-'));
+  const sink = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+  await runCli(['init', '--use', 'api'], { stdout: sink, stderr: sink }, undefined, path);
+  const configPath = join(path, 'appport.toml');
+  const source = (await readFile(configPath, 'utf8'))
+    .replace('port = 8787', 'port = 0')
+    .replace('[authorization]\nenabled = true', '[authorization]\nenabled = false')
+    .replace('[lifecycle]\nmanaged = true', '[lifecycle]\nmanaged = false');
+  await writeFile(configPath, source);
+  const application = await appport({ config: configPath });
+  assert.equal(application.http, undefined);
+  await application.start();
+  await application.start();
+  assert.ok(application.http);
+  await application.close();
   await application.close();
 });

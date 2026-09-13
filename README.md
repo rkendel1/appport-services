@@ -66,7 +66,7 @@ const application = await appport({
   routes: {
     'POST /invoices': async ({ body, tenantId }) => createInvoice(body, tenantId),
   },
-  jobHandlers: {
+  jobs: {
     'invoice.process': async (job) => processInvoice(job.payload),
   },
 });
@@ -75,6 +75,19 @@ await application.publish('invoice.created', { id: 'inv-123' });
 ```
 
 The public `application.state` and `application.events` APIs provide provider-neutral state and subscriptions. Application code never reaches through a capability to access its private database.
+
+The runtime owns the stable management contract:
+
+```text
+/_appport/health
+/_appport/overview
+/_appport/events
+/_appport/api/keys
+/_appport/webhooks
+/_appport/jobs
+```
+
+Health is public. Other endpoints follow the contract's authorization and tenant rules. Events uses SSE for `GET` and publishes domain events with `POST`; API keys, webhooks, and jobs support runtime-owned create/list operations.
 
 `@appport/services` supplies the CLI and capability implementation, but application source imports only `@appport/runtime`. Existing applications may continue using `createServices()` from `@appport/services` as a compatibility API.
 

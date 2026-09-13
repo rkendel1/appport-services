@@ -22,7 +22,7 @@ const application = await appport({
       return application.state.collection<Invoice>('invoices').find({ tenant_id: principal.tenantId });
     },
   },
-  jobHandlers: { 'invoice.process': async (job) => console.log('Processing invoice', job.payload) },
+  jobs: { 'invoice.process': async (job) => console.log('Processing invoice', job.payload) },
 });
 
 console.log(`Application listening at ${application.http?.url}`);

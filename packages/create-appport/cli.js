@@ -27,7 +27,7 @@ const application = await appport({
   routes: {
     'GET /': async ({ services }) => ({ application: application.contract.application.name, jobs: await services.jobs.listJobs() }),
   },
-  jobHandlers: {
+  jobs: {
     'example.process': async (job) => {
       // Add application behavior here.
       console.log('Processing job', job.id);
