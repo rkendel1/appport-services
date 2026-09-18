@@ -101,7 +101,7 @@ npx @appport/runtime job list --tenant acme
 
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
 
-The repository implements three complete vertical slices: **tenant-scoped API keys**, **durable webhooks**, and **durable job execution** backed by **`@feltdb/core@0.10.0`**.
+The repository defines four AppPort capabilities: **tenant-scoped API keys**, **durable webhooks**, **durable job execution**, and provider-neutral **Secrets** metadata/lifecycle contracts. Secrets material remains with an authorized provider and is never durable AppPort state.
 
 ```text
             Application
@@ -110,7 +110,7 @@ The repository implements three complete vertical slices: **tenant-scoped API ke
      │                       │
   AuthPort             AppPort Services
      │                       │
-identity/authz        API Keys, Webhooks, Jobs
+identity/authz        API Keys, Webhooks, Jobs, Secrets
      │                       │
      └───────────┬───────────┘
                  │
@@ -191,6 +191,13 @@ AppPort Services uses Flow (the `@feltdb/core` contract language) as the authori
 - `Jobs` — Individual jobs with execution status and lease tracking
 - `JobSchedules` — Recurring job definitions
 - `JobAuditEvents` — Job execution audit trail
+
+**Secrets vertical:**
+- `Secrets` — Tenant-scoped logical secret identity and lifecycle metadata
+- `SecretVersions` — Provider references and explicit rotation versions
+- `SecretAuditEvents` — Creation, resolution, rotation, revocation, retirement, and failure audit records
+
+Secrets operations distinguish `describeSecret` (metadata only) from `resolveSecret` (authorized provider resolution). Secret values, plaintext, decrypted material, and provider credentials are not fields in `appport.flow` or audit events.
 
 All collections are tenant-scoped via `tenant_id` field with `tenant_idx` for efficient queries.
 
@@ -549,7 +556,8 @@ AppPort Services
       ├─→ FeltDbApiKeyStore (ApiKeys, ApiKeyPrefixes, ApiKeyAuditEvents)
       ├─→ FeltDbWebhookEndpointStore (WebhookEndpoints, WebhookAuditEvents)
       ├─→ FeltDbWebhookDeliveryStore (WebhookDeliveries)
-      └─→ FeltDbJobStore (Jobs, JobSchedules, JobAuditEvents)
+      ├─→ FeltDbJobStore (Jobs, JobSchedules, JobAuditEvents)
+      └─→ Secrets protocol (Secrets, SecretVersions, SecretAuditEvents)
       │
       ▼
  @feltdb/core@0.10.0
@@ -559,6 +567,14 @@ AppPort Services
 ```
 
 ## What happens to the secret?
+
+For AppPort Secrets, the boundary is:
+
+```text
+application .flow → capability contract → AuthBoundry authorization → secret provider
+```
+
+Applications declare the `secrets` capability, but never put secret values in `.flow`. AppPort stores identity, lifecycle, tenant, audit, and provider-reference metadata only; an authorized provider resolves the material.
 
 - generated with cryptographic randomness
 - returned exactly once at creation time

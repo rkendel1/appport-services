@@ -97,6 +97,9 @@ test('appport.flow defines Job collections', () => {
   assert.ok(collectionNames.includes('Jobs'), 'Jobs collection defined');
   assert.ok(collectionNames.includes('JobSchedules'), 'JobSchedules collection defined');
   assert.ok(collectionNames.includes('JobAuditEvents'), 'JobAuditEvents collection defined');
+  assert.ok(collectionNames.includes('Secrets'), 'Secrets collection defined');
+  assert.ok(collectionNames.includes('SecretVersions'), 'SecretVersions collection defined');
+  assert.ok(collectionNames.includes('SecretAuditEvents'), 'SecretAuditEvents collection defined');
 
   // Verify Jobs fields
   const jobsCollection = spec.collections.find((c) => c.name === 'Jobs');
@@ -167,6 +170,9 @@ test('all collections are tenant-scoped', () => {
     'Jobs',
     'JobSchedules',
     'JobAuditEvents',
+    'Secrets',
+    'SecretVersions',
+    'SecretAuditEvents',
   ];
 
   for (const collectionName of expectedTenantScoped) {
@@ -190,6 +196,8 @@ test('appport.flow has expected tenant indexes', () => {
     'WebhookDeliveries',
     'Jobs',
     'JobSchedules',
+    'Secrets',
+    'SecretVersions',
   ];
 
   for (const collectionName of tenantIndexedCollections) {

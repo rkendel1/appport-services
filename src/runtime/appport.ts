@@ -11,12 +11,13 @@ import { FeltDbApiKeyStore, FeltDbAuditSink, createFeltDbRuntime } from '../stor
 import { FeltDbWebhookAuditSink, FeltDbWebhookDeliveryStore, FeltDbWebhookEndpointStore } from '../storage/webhooks.js';
 import { EncryptedWebhookSecretStore } from '../webhooks/secrets.js';
 import { WebhookService } from '../webhooks/service.js';
+import { InMemorySecretAuditSink, InMemorySecretStore, SecretsService, UnavailableSecretProvider } from '../secrets/index.js';
 import { parseAppPortConfig, type AppPortConfig, type AppPortContractSnapshot } from './dsl.js';
 import { AppPortEvents, AppPortTenantContext, startHttpRuntime, type AppPortHttpRuntime } from './platform.js';
 import { TransactionContextImpl } from './transaction-services.js';
 import { TransactionBuilder } from './transaction.js';
 
-export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs';
+export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs' | 'secrets';
 
 export interface CapabilityPlan {
   readonly capabilities: readonly AppPortCapabilityName[];
@@ -41,6 +42,7 @@ export type AppPortRouteHandler = (context: AppPortRouteContext) => unknown | Pr
 export interface AppPortApiKeys extends Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'getApiKey' | 'revokeApiKey' | 'authenticateApiKey'> {}
 export interface AppPortWebhooks extends Pick<WebhookService, 'createWebhookEndpoint' | 'getWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint' | 'emitWebhookEvent' | 'getWebhookDelivery' | 'listWebhookDeliveries' | 'replayWebhookDelivery'> {}
 export interface AppPortJobs extends Pick<JobService, 'enqueue' | 'schedule' | 'scheduleRecurring' | 'getJob' | 'listJobs' | 'getSchedule' | 'listSchedules' | 'disableSchedule' | 'retry'> {}
+export interface AppPortSecrets extends Pick<SecretsService, 'registerSecret' | 'describeSecret' | 'listSecrets' | 'resolveSecret' | 'rotateSecret' | 'revokeSecret' | 'retireSecret'> {}
 export interface AppPortTenantServices {
   readonly api: { readonly keys: {
     createApiKey(input: Omit<import('../api-keys/models.js').CreateApiKeyInput, 'tenantId'>): ReturnType<ApiKeyService['createApiKey']>;
@@ -56,6 +58,15 @@ export interface AppPortTenantServices {
   readonly jobs: {
     enqueue(input: Omit<import('../jobs/models.js').CreateJobInput, 'tenantId'>): ReturnType<JobService['enqueue']>;
     listJobs(): ReturnType<JobService['listJobs']>;
+  };
+  readonly secrets: {
+    registerSecret(input: Omit<import('../secrets/models.js').RegisterSecretInput, 'tenantId'>): ReturnType<SecretsService['registerSecret']>;
+    describeSecret(secretId: string): ReturnType<SecretsService['describeSecret']>;
+    listSecrets(): ReturnType<SecretsService['listSecrets']>;
+    resolveSecret(input: Omit<import('../secrets/models.js').SecretOperationInput, 'tenantId'>): ReturnType<SecretsService['resolveSecret']>;
+    rotateSecret(input: Omit<import('../secrets/models.js').RotateSecretInput, 'tenantId'>): ReturnType<SecretsService['rotateSecret']>;
+    revokeSecret(input: Omit<import('../secrets/models.js').SecretOperationInput, 'tenantId'>): ReturnType<SecretsService['revokeSecret']>;
+    retireSecret(input: Omit<import('../secrets/models.js').SecretOperationInput, 'tenantId'>): ReturnType<SecretsService['retireSecret']>;
   };
   publish<T extends Record<string, unknown>>(type: string, data: T): Promise<import('./platform.js').AppPortEvent<T>>;
 }
@@ -75,6 +86,7 @@ export interface AppPortApplication {
   readonly api: AppPortApiCapability;
   readonly webhooks: AppPortWebhooks;
   readonly jobs: AppPortJobs;
+  readonly secrets: AppPortSecrets;
   readonly events: AppPortEvents;
   readonly state: AppPortState;
   readonly tenant: AppPortTenantContext;
@@ -96,7 +108,7 @@ export class CapabilityNotDeclaredError extends Error {
 }
 
 export function createCapabilityPlan(config: AppPortConfig, flow?: FlowSpec): CapabilityPlan {
-  const capabilities = (['api', 'webhooks', 'jobs'] as const).filter((name) => config.capabilities[name]);
+  const capabilities = (['api', 'webhooks', 'jobs', 'secrets'] as const).filter((name) => config.capabilities[name]);
   return { capabilities, config, ...(flow ? { flow } : {}) };
 }
 
@@ -104,6 +116,7 @@ interface InitializedCapabilities {
   apiKeys?: ApiKeyService;
   webhooks?: WebhookService;
   jobs?: JobService;
+  secrets?: SecretsService;
 }
 
 type CapabilityFactory = (
@@ -143,6 +156,13 @@ export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, Capabili
       allowedTypes: Object.keys(config.jobs.types),
     });
   },
+  secrets(_db, _config, services) {
+    services.secrets = new SecretsService({
+      store: new InMemorySecretStore(),
+      provider: new UnavailableSecretProvider(),
+      auditSink: new InMemorySecretAuditSink(),
+    });
+  },
 };
 
 /** Bootstrap AppPort from the executable appport.toml contract. */
@@ -178,6 +198,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const apiKeysFacade: AppPortApiKeys | undefined = services.apiKeys ? bindMethods(services.apiKeys, ['createApiKey', 'listApiKeys', 'getApiKey', 'revokeApiKey', 'authenticateApiKey']) : undefined;
   const webhooksFacade: AppPortWebhooks | undefined = services.webhooks ? bindMethods(services.webhooks, ['createWebhookEndpoint', 'getWebhookEndpoint', 'listWebhookEndpoints', 'disableWebhookEndpoint', 'emitWebhookEvent', 'getWebhookDelivery', 'listWebhookDeliveries', 'replayWebhookDelivery']) : undefined;
   const jobsFacade: AppPortJobs | undefined = services.jobs ? bindMethods(services.jobs, ['enqueue', 'schedule', 'scheduleRecurring', 'getJob', 'listJobs', 'getSchedule', 'listSchedules', 'disableSchedule', 'retry']) : undefined;
+  const secretsFacade: AppPortSecrets | undefined = services.secrets ? bindMethods(services.secrets, ['registerSecret', 'describeSecret', 'listSecrets', 'resolveSecret', 'rotateSecret', 'revokeSecret', 'retireSecret']) : undefined;
 
   const application = {
     plan,
@@ -202,6 +223,10 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
     get jobs(): AppPortJobs {
       if (!jobsFacade) throw new CapabilityNotDeclaredError('jobs');
       return jobsFacade;
+    },
+    get secrets(): AppPortSecrets {
+      if (!secretsFacade) throw new CapabilityNotDeclaredError('secrets');
+      return secretsFacade;
     },
     async start(): Promise<void> {
       if (closed) throw new Error('AppPort application is closed');
@@ -231,6 +256,15 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
         jobs: {
           enqueue: (input) => application.jobs.enqueue({ ...input, tenantId }),
           listJobs: () => application.jobs.listJobs(tenantId),
+        },
+        secrets: {
+          registerSecret: (input) => application.secrets.registerSecret({ ...input, tenantId }),
+          describeSecret: (id) => application.secrets.describeSecret({ secretId: id, tenantId, principalId: 'tenant-context' }),
+          listSecrets: () => application.secrets.listSecrets(tenantId),
+          resolveSecret: (input) => application.secrets.resolveSecret({ ...input, tenantId }),
+          rotateSecret: (input) => application.secrets.rotateSecret({ ...input, tenantId }),
+          revokeSecret: (input) => application.secrets.revokeSecret({ ...input, tenantId }),
+          retireSecret: (input) => application.secrets.retireSecret({ ...input, tenantId }),
         },
         publish: (type, data) => application.publish(type, data, tenantId),
       };
@@ -298,6 +332,7 @@ const CAPABILITY_COLLECTIONS: Readonly<Record<AppPortCapabilityName, readonly st
   api: ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents'],
   webhooks: ['WebhookEndpoints', 'WebhookDeliveries', 'WebhookAuditEvents'],
   jobs: ['Jobs', 'JobSchedules', 'JobAuditEvents'],
+  secrets: ['Secrets', 'SecretVersions', 'SecretAuditEvents'],
 };
 
 async function loadAuthoritativeFlow(path: string, config: AppPortConfig): Promise<FlowSpec> {
