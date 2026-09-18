@@ -19,6 +19,7 @@
   "files": [
     "dist/src",
     "appport.flow",
+    "docs/credentials.md",
     "README.md"
   ],
   "scripts": {
@@ -33,7 +34,7 @@
   ],
   "license": "ISC",
   "dependencies": {
-    "@feltdb/core": "0.10.0",
+    "@feltdb/core": "0.11.1",
     "@iarna/toml": "^2.2.5"
   },
   "devDependencies": {

@@ -135,6 +135,9 @@ app appport-services {
     current_version: integer
     status: text
     provider_ref: text
+    provider: text
+    account_id: text
+    kind: text
     created_at: datetime
     expires_at: datetime
     revoked_at: datetime
@@ -169,6 +172,9 @@ app appport-services {
     principal_id: text
     timestamp: datetime
     result: text
+    purpose: text
+    provider: text
+    reason: text
     index tenant_idx using hash(tenant_id)
     index secret_idx using hash(secret_id)
   }

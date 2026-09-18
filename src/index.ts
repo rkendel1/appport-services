@@ -21,10 +21,11 @@ export type { AppPortEvent, AppPortHttpRuntime, EventSubscription } from './runt
 export { ApiKeyService } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
 export { JobService, JobWorker } from './jobs/index.js';
-export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, RegisterSecretInput, RotateSecretInput, SecretOperationInput, ResolveSecretInput, SecretsProtocol } from './secrets/index.js';
+export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, RegisterSecretInput, RotateSecretInput, SecretOperationInput, ResolveSecretInput, SecretReference, SecretResolutionContext, ScopedResolveSecretInput, ResolvedSecret, SecretResolutionFailureCode, SecretsProtocol, ScopedSecretsResolver } from './secrets/index.js';
 export {
   SecretError, SecretNotFoundError, SecretRevokedError, SecretExpiredError, SecretResolutionDeniedError,
   SecretProviderUnavailableError, InvalidSecretReferenceError, InvalidSecretLifecycleOperationError,
+  SecretTenantMismatchError, SecretInactiveError, SecretProviderMismatchError, SecretUnavailableError, SecretInternalError,
 } from './secrets/index.js';
 
 // Domain types
@@ -58,7 +59,6 @@ export type {
   ScheduleRecurringInput,
 } from './jobs/index.js';
 export type { AuthenticatedPrincipal } from './contract/principals.js';
-
 // HTTP integration
 export { authenticateBearerToken } from './runtime/api-keys.js';
 export {

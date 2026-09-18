@@ -4,6 +4,8 @@ import type {
   RotateSecretInput,
   SecretMetadata,
   SecretOperationInput,
+  ResolvedSecret,
+  ScopedResolveSecretInput,
 } from './models.js';
 
 /**
@@ -20,4 +22,17 @@ export interface SecretsProtocol {
   rotateSecret(input: RotateSecretInput): Promise<SecretMetadata>;
   revokeSecret(input: SecretOperationInput): Promise<SecretMetadata>;
   retireSecret(input: SecretOperationInput): Promise<SecretMetadata>;
+}
+
+/**
+ * Preferred server-execution contract for temporary secret access.
+ *
+ * AppPort declares this protocol only. AuthBoundry supplies the access decision;
+ * AppBoundry implements provider resolution and invokes the callback.
+ */
+export interface ScopedSecretsResolver<TSecret = unknown> {
+  withSecret<TResult>(
+    input: ScopedResolveSecretInput,
+    use: (secret: ResolvedSecret<TSecret>) => TResult | Promise<TResult>,
+  ): Promise<TResult>;
 }

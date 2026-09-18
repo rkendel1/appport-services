@@ -101,7 +101,7 @@ npx @appport/runtime job list --tenant acme
 
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
 
-The repository defines four AppPort capabilities: **tenant-scoped API keys**, **durable webhooks**, **durable job execution**, and provider-neutral **Secrets** metadata/lifecycle contracts. Secrets material remains with an authorized provider and is never durable AppPort state.
+The repository defines four AppPort capabilities: **tenant-scoped API keys**, **durable webhooks**, **durable job execution**, and provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts. Legacy runtime state uses **`@feltdb/core@0.11.1`**. Secret material remains with an authorized provider and is never durable AppPort state.
 
 ```text
             Application
@@ -118,6 +118,17 @@ identity/authz        API Keys, Webhooks, Jobs, Secrets
 ```
 
 ## Consumer API
+
+Outbound credentials use a server-only scoped protocol. AppPort defines the reference, context, lifecycle, audit, errors, and callback contract; AuthBoundry authorizes and AppBoundry resolves provider-held material. AppPort ships no resolver, secret store, provider adapter, or policy engine, and exposes no browser-facing credential-value route.
+
+```javascript
+await secrets.withSecret({
+  reference: { secretId, tenantId: 'acme', provider: 'pipedrive' },
+  context: { tenantId: 'acme', principalId: 'integration:pipedrive', purpose: 'person.lookup', authorizationRef },
+}, async ({ value }) => callProvider(value));
+```
+
+See [the outbound credential guide](docs/credentials.md) for ownership, authorization handoff, lifecycle, and failure semantics.
 
 The contract determines which runtime APIs are available:
 
@@ -208,7 +219,7 @@ feltdb.flow (generated authoritative application contract)
        ↓
 TypeScript implementation
        ↓
-FeltDB (@feltdb/core@0.10.0)
+FeltDB (@feltdb/core@0.11.1)
 ```
 
 The Flow contract is parsed and validated at test time. The TypeScript stores (FeltDbApiKeyStore, FeltDbWebhookEndpointStore, etc.) implement the contract semantics directly against FeltDB collections.
@@ -239,7 +250,7 @@ Dependencies are pinned, including:
 ```json
 {
   "dependencies": {
-    "@feltdb/core": "0.10.0"
+    "@feltdb/core": "0.11.1"
   }
 }
 ```
@@ -545,7 +556,7 @@ Jobs are **durable and idempotent**. Job state survives process restarts; worker
 
 ## Where does durable state live?
 
-AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.10.0`.
+AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.11.1`.
 
 ```text
 feltdb.flow (generated Flow contract)
@@ -560,7 +571,7 @@ AppPort Services
       └─→ Secrets protocol (Secrets, SecretVersions, SecretAuditEvents)
       │
       ▼
- @feltdb/core@0.10.0
+ @feltdb/core@0.11.1
       │
       ▼
  real FeltDB
