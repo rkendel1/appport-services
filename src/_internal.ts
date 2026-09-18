@@ -23,7 +23,6 @@ export type { AppPortConfig } from './runtime/dsl.js';
 export { ApiKeyService, parseApiKeyPrefix } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
 export { JobService, JobWorker } from './jobs/index.js';
-export * from './secrets/index.js';
 
 // Public HTTP integration APIs (exported here for internal tests)
 export { authenticateBearerToken } from './runtime/api-keys.js';

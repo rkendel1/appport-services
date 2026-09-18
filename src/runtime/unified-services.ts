@@ -5,7 +5,6 @@ import { WebhookService } from '../webhooks/service.js';
 import { FeltDbWebhookEndpointStore, FeltDbWebhookDeliveryStore, FeltDbWebhookAuditSink } from '../storage/webhooks.js';
 import { EncryptedWebhookSecretStore } from '../webhooks/secrets.js';
 import { JobService } from '../jobs/service.js';
-import { InMemorySecretAuditSink, InMemorySecretStore, SecretsService, UnavailableSecretProvider } from '../secrets/index.js';
 import { FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink } from '../jobs/store.js';
 import { TransactionBuilder } from './transaction.js';
 import { TransactionContextImpl } from './transaction-services.js';
@@ -20,7 +19,6 @@ export interface AppPortServices {
   readonly apiKeys: ApiKeyService;
   readonly webhooks: WebhookService;
   readonly jobs: JobService;
-  readonly secrets: SecretsService;
 
   /**
    * Execute application and AppPort operations atomically.
@@ -94,17 +92,11 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     scheduleStore: new FeltDbJobScheduleStore(db),
     auditSink: new FeltDbJobAuditSink(db),
   });
-  const secretsService = new SecretsService({
-    store: new InMemorySecretStore(),
-    provider: new UnavailableSecretProvider(),
-    auditSink: new InMemorySecretAuditSink(),
-  });
 
   return {
     apiKeys: apiKeyService,
     webhooks: webhookService,
     jobs: jobService,
-    secrets: secretsService,
 
     /**
      * Execute application and AppPort operations in a single atomic transaction.

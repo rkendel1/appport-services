@@ -21,8 +21,7 @@ export type { AppPortEvent, AppPortHttpRuntime, EventSubscription } from './runt
 export { ApiKeyService } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
 export { JobService, JobWorker } from './jobs/index.js';
-export { SecretsService, InMemorySecretStore, InMemorySecretAuditSink, UnavailableSecretProvider } from './secrets/index.js';
-export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, RegisterSecretInput, RotateSecretInput, SecretOperationInput, SecretStore, SecretAuditSink, SecretProvider, SecretsServiceOptions } from './secrets/index.js';
+export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, RegisterSecretInput, RotateSecretInput, SecretOperationInput, ResolveSecretInput, SecretsProtocol } from './secrets/index.js';
 export {
   SecretError, SecretNotFoundError, SecretRevokedError, SecretExpiredError, SecretResolutionDeniedError,
   SecretProviderUnavailableError, InvalidSecretReferenceError, InvalidSecretLifecycleOperationError,

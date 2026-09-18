@@ -574,7 +574,9 @@ For AppPort Secrets, the boundary is:
 application .flow → capability contract → AuthBoundry authorization → secret provider
 ```
 
-Applications declare the `secrets` capability, but never put secret values in `.flow`. AppPort stores identity, lifecycle, tenant, audit, and provider-reference metadata only; an authorized provider resolves the material.
+Applications declare the `secrets` capability, but never put secret values in `.flow`. AppPort publishes identity, lifecycle, tenant, audit, and provider-reference metadata only; AppBoundry supplies provider execution after AuthBoundry authorization.
+
+AppPort is declarative: it defines what the Secrets capability means. AppBoundry decides how it runs, and AuthBoundry decides who may use it. The Secrets contract contains no provider, storage, caching, injection, or authorization implementation.
 
 - generated with cryptographic randomness
 - returned exactly once at creation time

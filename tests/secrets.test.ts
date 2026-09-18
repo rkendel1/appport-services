@@ -1,59 +1,55 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 
-import {
-  InMemorySecretAuditSink,
-  InMemorySecretStore,
-  InvalidSecretLifecycleOperationError,
-  SecretExpiredError,
-  SecretRevokedError,
-  SecretsService,
-} from '../src/index.js';
+import type { SecretsProtocol } from '../src/index.js';
 
-function makeService(value = 'material'): { service: SecretsService; audit: InMemorySecretAuditSink } {
-  const audit = new InMemorySecretAuditSink();
-  return {
-    audit,
-    service: new SecretsService({
-      store: new InMemorySecretStore(),
-      provider: { resolve: async () => value },
-      auditSink: audit,
-      now: () => new Date('2026-01-01T00:00:00.000Z'),
+const root = join(process.cwd());
+
+test('Secrets protocol is exported without an execution implementation', async () => {
+  const protocol: SecretsProtocol = {
+    registerSecret: async (input) => ({
+      id: 'secret-id',
+      tenantId: input.tenantId,
+      name: input.name,
+      currentVersion: 1,
+      status: 'active',
+      providerRef: input.providerRef,
+      createdAt: new Date(0).toISOString(),
+      createdBy: input.createdBy,
     }),
+    describeSecret: async () => null,
+    listSecrets: async () => [],
+    resolveSecret: async () => undefined,
+    rotateSecret: async () => { throw new Error('implementation boundary'); },
+    revokeSecret: async () => { throw new Error('implementation boundary'); },
+    retireSecret: async () => { throw new Error('implementation boundary'); },
   };
-}
-
-test('Secrets metadata and resolution are distinct operations', async () => {
-  const { service, audit } = makeService();
-  const metadata = await service.registerSecret({ tenantId: 'tenant-a', name: 'database', providerRef: 'vault://db', createdBy: 'operator' });
-  assert.equal('providerRef' in metadata, true);
-  assert.equal('secret' in metadata, false);
-  const resolved = await service.resolveSecret({ tenantId: 'tenant-a', secretId: metadata.id, principalId: 'worker' });
-  assert.equal(resolved, 'material');
-  assert.equal(audit.events.some((event) => event.type === 'secret.resolved'), true);
-  assert.equal(JSON.stringify(audit.events).includes('material'), false);
+  assert.equal(typeof protocol.registerSecret, 'function');
+  assert.equal(typeof protocol.resolveSecret, 'function');
 });
 
-test('Secrets rotate and revoke without changing logical identity', async () => {
-  const { service } = makeService();
-  const first = await service.registerSecret({ tenantId: 'tenant-a', name: 'database', providerRef: 'vault://db/1', createdBy: 'operator' });
-  const rotated = await service.rotateSecret({ tenantId: 'tenant-a', secretId: first.id, providerRef: 'vault://db/2', rotatedBy: 'operator' });
-  assert.equal(rotated.id, first.id);
-  assert.equal(rotated.currentVersion, 2);
-  await service.revokeSecret({ tenantId: 'tenant-a', secretId: first.id, principalId: 'operator' });
-  await assert.rejects(
-    service.resolveSecret({ tenantId: 'tenant-a', secretId: first.id, principalId: 'worker' }),
-    SecretRevokedError,
-  );
+test('Secrets package has no provider, authorization, or storage implementation', () => {
+  const source = readFileSync(join(root, 'src/secrets/index.ts'), 'utf8');
+  assert.equal(source.includes('Service'), false);
+  assert.equal(source.includes('Store'), false);
+  assert.equal(readFileSync(join(root, 'src/secrets/protocol.ts'), 'utf8').includes('authorize'), false);
+  assert.equal(readFileSync(join(root, 'src/secrets/protocol.ts'), 'utf8').includes('process.env'), false);
 });
 
-test('Secrets reject expired and invalid lifecycle operations', async () => {
-  const { service } = makeService();
-  const expired = await service.registerSecret({ tenantId: 'tenant-a', name: 'old', providerRef: 'vault://old', createdBy: 'operator', expiresAt: '2025-01-01T00:00:00.000Z' });
-  await assert.rejects(service.resolveSecret({ tenantId: 'tenant-a', secretId: expired.id, principalId: 'worker' }), SecretExpiredError);
-  await service.retireSecret({ tenantId: 'tenant-a', secretId: expired.id, principalId: 'operator' });
-  await assert.rejects(
-    service.rotateSecret({ tenantId: 'tenant-a', secretId: expired.id, providerRef: 'vault://new', rotatedBy: 'operator' }),
-    InvalidSecretLifecycleOperationError,
-  );
+test('Secrets durable contract excludes secret material and provider credentials', () => {
+  const flow = readFileSync(join(root, 'appport.flow'), 'utf8');
+  for (const forbidden of ['secret_value', 'plaintext', 'decrypted_value', 'provider_password', 'provider_token']) {
+    assert.equal(flow.includes(forbidden), false, `appport.flow must not contain ${forbidden}`);
+  }
+  assert.match(flow, /collection Secrets/);
+  assert.match(flow, /collection SecretVersions/);
+  assert.match(flow, /collection SecretAuditEvents/);
+});
+
+test('package dependencies remain implementation-neutral', () => {
+  const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { dependencies: Record<string, string> };
+  const dependencies = Object.keys(packageJson.dependencies);
+  assert.equal(dependencies.some((name) => /vault|aws|gcp|fly|authboundry|appboundry/i.test(name)), false);
 });

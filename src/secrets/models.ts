@@ -14,7 +14,6 @@ export interface Secret {
   revokedAt?: string;
   retiredAt?: string;
   createdBy: string;
-  __version: number;
 }
 
 export interface SecretVersion {
@@ -28,7 +27,6 @@ export interface SecretVersion {
   expiresAt?: string;
   revokedAt?: string;
   createdBy: string;
-  __version: number;
 }
 
 export type SecretMetadata = Omit<Secret, '__version'>;
@@ -54,6 +52,8 @@ export interface SecretOperationInput {
   secretId: string;
   principalId: string;
 }
+
+export interface ResolveSecretInput extends SecretOperationInput {}
 
 export interface SecretAuditEvent {
   id: string;
