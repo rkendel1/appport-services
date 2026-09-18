@@ -16,7 +16,7 @@ import { AppPortEvents, AppPortTenantContext, startHttpRuntime, type AppPortHttp
 import { TransactionContextImpl } from './transaction-services.js';
 import { TransactionBuilder } from './transaction.js';
 
-export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs';
+export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs' | 'secrets';
 
 export interface CapabilityPlan {
   readonly capabilities: readonly AppPortCapabilityName[];
@@ -96,7 +96,7 @@ export class CapabilityNotDeclaredError extends Error {
 }
 
 export function createCapabilityPlan(config: AppPortConfig, flow?: FlowSpec): CapabilityPlan {
-  const capabilities = (['api', 'webhooks', 'jobs'] as const).filter((name) => config.capabilities[name]);
+  const capabilities = (['api', 'webhooks', 'jobs', 'secrets'] as const).filter((name) => config.capabilities[name]);
   return { capabilities, config, ...(flow ? { flow } : {}) };
 }
 
@@ -143,6 +143,8 @@ export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, Capabili
       allowedTypes: Object.keys(config.jobs.types),
     });
   },
+  // Secrets is a contract capability only. AppBoundry supplies execution.
+  secrets() {},
 };
 
 /** Bootstrap AppPort from the executable appport.toml contract. */
@@ -298,6 +300,7 @@ const CAPABILITY_COLLECTIONS: Readonly<Record<AppPortCapabilityName, readonly st
   api: ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents'],
   webhooks: ['WebhookEndpoints', 'WebhookDeliveries', 'WebhookAuditEvents'],
   jobs: ['Jobs', 'JobSchedules', 'JobAuditEvents'],
+  secrets: ['Secrets', 'SecretVersions', 'SecretAuditEvents'],
 };
 
 async function loadAuthoritativeFlow(path: string, config: AppPortConfig): Promise<FlowSpec> {
