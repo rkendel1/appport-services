@@ -92,6 +92,11 @@ function normalizeConfig(raw: Record<string, unknown>, uses: Set<AppPortCapabili
     normalizedTypes[type] = { timeout_ms: integer(config.timeout_ms, file, `jobs.types.${type}.timeout_ms`, 30_000, 1) };
   }
   const maxAttempts = integer(jobExecution.max_attempts ?? jobs.max_attempts, file, 'jobs.execution.max_attempts', 3, 1);
+  const capabilities = Object.defineProperty(
+    { api: uses.has('api'), webhooks: uses.has('webhooks'), jobs: uses.has('jobs') },
+    'secrets',
+    { value: uses.has('secrets'), enumerable: false, writable: false },
+  ) as Readonly<Record<AppPortCapabilityName, boolean>>;
   return deepFreeze({
     version: enumeration(raw.version, file, 'version', ['1'], '1'),
     application: { name, description: str(application.description, file, 'application.description', 'AppPort application'), runtime: enumeration(application.runtime, file, 'application.runtime', ['node'], 'node') },
@@ -100,7 +105,7 @@ function normalizeConfig(raw: Record<string, unknown>, uses: Set<AppPortCapabili
     tenant: { mode: enumeration(tenant.mode, file, 'tenant.mode', ['required', 'optional', 'single'], 'required'), ...(tenant.default === undefined ? {} : { default: str(tenant.default, file, 'tenant.default', '') }) },
     http: { enabled: bool(http.enabled, file, 'http.enabled', false), host: str(http.host, file, 'http.host', '127.0.0.1'), port: integer(http.port, file, 'http.port', 8787, 0, 65535) },
     cors: { enabled: bool(cors.enabled, file, 'cors.enabled', false), origins: stringArray(cors.origins, file, 'cors.origins', ['*']) },
-    capabilities: { api: uses.has('api'), webhooks: uses.has('webhooks'), jobs: uses.has('jobs'), secrets: uses.has('secrets') },
+    capabilities,
     api: { enabled: uses.has('api'), keys: { enabled: bool(apiKeys.enabled ?? api.keys, file, 'api.keys.enabled', uses.has('api')), scopes: stringArray(apiKeys.scopes ?? api.scopes, file, 'api.keys.scopes', []) } },
     webhooks: { enabled: uses.has('webhooks'), delivery: { enabled: bool(webhookDelivery.enabled, file, 'webhooks.delivery.enabled', uses.has('webhooks')), retries: integer(webhookDelivery.retries, file, 'webhooks.delivery.retries', 3, 0), timeout_ms: integer(webhookDelivery.timeout_ms, file, 'webhooks.delivery.timeout_ms', 10_000, 1) }, events: { allowed: stringArray(webhookEvents.allowed ?? legacyWebhookEvents, file, 'webhooks.events.allowed', []) } },
     jobs: { enabled: uses.has('jobs'), execution: { enabled: bool(jobExecution.enabled, file, 'jobs.execution.enabled', uses.has('jobs')), max_attempts: maxAttempts }, types: normalizedTypes, max_attempts: maxAttempts },

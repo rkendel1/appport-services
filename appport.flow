@@ -129,46 +129,46 @@ app appport-services {
   }
 
   collection Secrets {
-    id uuid
-    tenant_id text
-    name text
-    current_version integer
-    status text
-    provider_ref text
-    created_at datetime
-    expires_at datetime
-    revoked_at datetime
-    retired_at datetime
-    created_by text
+    id: uuid
+    tenant_id: text
+    name: text
+    current_version: integer
+    status: text
+    provider_ref: text
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime
+    retired_at: datetime
+    created_by: text
     index tenant_idx using hash(tenant_id)
     index name_idx using hash(name)
     index status_idx using hash(status)
   }
 
   collection SecretVersions {
-    id uuid
-    secret_id uuid
-    tenant_id text
-    version integer
-    provider_ref text
-    status text
-    created_at datetime
-    expires_at datetime
-    revoked_at datetime
-    created_by text
+    id: uuid
+    secret_id: uuid
+    tenant_id: text
+    version: integer
+    provider_ref: text
+    status: text
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime
+    created_by: text
     index tenant_idx using hash(tenant_id)
     index secret_idx using hash(secret_id)
   }
 
   collection SecretAuditEvents {
-    id uuid
-    type text
-    secret_id uuid
-    version integer
-    tenant_id text
-    principal_id text
-    timestamp datetime
-    result text
+    id: uuid
+    type: text
+    secret_id: uuid
+    version: integer
+    tenant_id: text
+    principal_id: text
+    timestamp: datetime
+    result: text
     index tenant_idx using hash(tenant_id)
     index secret_idx using hash(secret_id)
   }
