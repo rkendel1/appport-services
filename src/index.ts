@@ -21,6 +21,14 @@ export type { AppPortEvent, AppPortHttpRuntime, EventSubscription } from './runt
 export { ApiKeyService } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
 export { JobService, JobWorker } from './jobs/index.js';
+export {
+  ConfigurationService, ConfigurationAuthorizationError, ConfigurationValidationError,
+  createConfigurationRouter, createConfigurationManagementRouter, createConfigurationUiRouter, configurationErrorHandler,
+} from './configuration/index.js';
+export type {
+  ConfigurationEnvironment, ConfigurationKind, ConfigurationScope, ConfigurationVariableView,
+  ConfigurationSecretView, ConfigurationDeclaration, ConfigurationList, ConfigurationAuditEvent,
+} from './configuration/index.js';
 export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, RegisterSecretInput, RotateSecretInput, SecretOperationInput, ResolveSecretInput, SecretReference, SecretResolutionContext, ScopedResolveSecretInput, ResolvedSecret, SecretResolutionFailureCode, SecretsProtocol, ScopedSecretsResolver } from './secrets/index.js';
 export {
   SecretError, SecretNotFoundError, SecretRevokedError, SecretExpiredError, SecretResolutionDeniedError,

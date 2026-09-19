@@ -20,6 +20,7 @@
     "dist/src",
     "appport.flow",
     "docs/credentials.md",
+    "docs/configuration.md",
     "README.md"
   ],
   "scripts": {
