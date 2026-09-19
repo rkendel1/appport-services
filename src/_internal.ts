@@ -23,6 +23,9 @@ export type { AppPortConfig } from './runtime/dsl.js';
 export { ApiKeyService, parseApiKeyPrefix } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
 export { JobService, JobWorker } from './jobs/index.js';
+export { ConfigurationService, createConfigurationRouter, createConfigurationManagementRouter, createConfigurationUiRouter, configurationErrorHandler } from './configuration/index.js';
+export { FeltDbConfigurationStore } from './configuration/storage.js';
+export type { ConfigurationStore } from './configuration/storage.js';
 
 // Public HTTP integration APIs (exported here for internal tests)
 export { authenticateBearerToken } from './runtime/api-keys.js';

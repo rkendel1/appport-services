@@ -9,6 +9,8 @@ import { FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink } from '../j
 import { TransactionBuilder } from './transaction.js';
 import { TransactionContextImpl } from './transaction-services.js';
 import { parseAppPortConfig, type AppPortConfig } from './dsl.js';
+import { ConfigurationService } from '../configuration/service.js';
+import { FeltDbConfigurationStore } from '../configuration/storage.js';
 
 /**
  * Unified AppPort Services instance.
@@ -19,6 +21,7 @@ export interface AppPortServices {
   readonly apiKeys: ApiKeyService;
   readonly webhooks: WebhookService;
   readonly jobs: JobService;
+  readonly configuration: ConfigurationService;
 
   /**
    * Execute application and AppPort operations atomically.
@@ -92,11 +95,13 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     scheduleStore: new FeltDbJobScheduleStore(db),
     auditSink: new FeltDbJobAuditSink(db),
   });
+  const configurationService = new ConfigurationService({ store: new FeltDbConfigurationStore(db) });
 
   return {
     apiKeys: apiKeyService,
     webhooks: webhookService,
     jobs: jobService,
+    configuration: configurationService,
 
     /**
      * Execute application and AppPort operations in a single atomic transaction.

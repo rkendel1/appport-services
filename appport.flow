@@ -178,4 +178,49 @@ app appport-services {
     index tenant_idx using hash(tenant_id)
     index secret_idx using hash(secret_id)
   }
+
+  collection ConfigurationVariables {
+    id: uuid
+    tenant_id: text
+    application_id: text
+    environment: text
+    name: text
+    value: text
+    required: boolean
+    created_at: datetime
+    updated_at: datetime
+    created_by: text
+    index scope_idx using hash(tenant_id)
+    index name_idx using hash(name)
+  }
+
+  collection ConfigurationSecrets {
+    id: uuid
+    tenant_id: text
+    application_id: text
+    environment: text
+    name: text
+    value: text
+    required: boolean
+    created_at: datetime
+    updated_at: datetime
+    created_by: text
+    index scope_idx using hash(tenant_id)
+    index name_idx using hash(name)
+  }
+
+  collection ConfigurationAuditEvents {
+    id: uuid
+    type: text
+    tenant_id: text
+    application_id: text
+    environment: text
+    name: text
+    kind: text
+    actor: text
+    timestamp: datetime
+    operation: text
+    status: text
+    index tenant_idx using hash(tenant_id)
+  }
 }
