@@ -1,6 +1,10 @@
 # AppPort Services
 
-AppPort Services provides operational application capabilities that sit beside AuthPort.
+AppPort Services provides durable operational application capabilities that sit beside AuthPort.
+
+The service set includes API Keys, Jobs, Secrets, Webhooks, and Notifications. Notifications are
+stored and delivered by AppPort Services; they are not an attention-management layer. Attn may
+consume them to derive attention separately.
 
 ## Create and run an application
 

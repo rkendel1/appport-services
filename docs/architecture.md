@@ -48,6 +48,10 @@ API-key records live in FeltDB collections:
 
 Creation persists the key record and prefix locator atomically. Revocation and last-used updates use FeltDB version-checked updates instead of app-local locking.
 
+Notifications use the same FeltDB boundary. Their provider-neutral records and separate delivery
+records keep notification state independent from channel-specific delivery behavior. Notifications
+are durable infrastructure; Attn may consume them, but AppPort Services does not decide attention.
+
 ## Deliberate non-goals
 
 This repository still does **not** implement:

@@ -21,6 +21,9 @@ export type { AppPortEvent, AppPortHttpRuntime, EventSubscription } from './runt
 export { ApiKeyService } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
 export { JobService, JobWorker } from './jobs/index.js';
+export { NotificationService, NotificationAuthorizationError, NotificationValidationError, NotificationNotFoundError } from './notifications/index.js';
+export { createNotificationRouter, notificationErrorHandler } from './notifications/index.js';
+export { FeltDbNotificationStore, FeltDbNotificationDeliveryStore, FeltDbNotificationAuditSink } from './storage/notifications.js';
 export {
   ConfigurationService, ConfigurationAuthorizationError, ConfigurationValidationError,
   createConfigurationRouter, createConfigurationManagementRouter, createConfigurationUiRouter, configurationErrorHandler,
@@ -67,6 +70,7 @@ export type {
   ScheduleRecurringInput,
 } from './jobs/index.js';
 export type { AuthenticatedPrincipal } from './contract/principals.js';
+export type { Notification, NotificationDelivery, NotificationAuditEvent, NotificationPriority, NotificationSource, CreateNotificationInput, NotificationListOptions, NotificationPage } from './notifications/index.js';
 // HTTP integration
 export { authenticateBearerToken } from './runtime/api-keys.js';
 export {
