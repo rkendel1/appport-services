@@ -29,14 +29,14 @@ test('configuration UI exposes pages for all services', async () => {
       assert.match(services, new RegExp(label));
     }
     assert.match(apiKeys, /Create API key/);
-    assert.match(apiKeys, /method:'POST'/);
+    assert.match(apiKeys, /method='POST'/);
     assert.match(jobs, /Queue durable work/);
-    assert.match(jobs, /method:'POST'/);
+    assert.match(jobs, /method='POST'/);
     assert.match(secrets, /Provider-neutral secret metadata/);
     assert.match(webhooks, /Register durable event endpoints/);
     assert.match(notifications, /Create durable notification records/);
     assert.match(files, /Create durable file metadata records/);
-    assert.match(files, /method:'POST'/);
+    assert.match(files, /method='POST'/);
     assert.match(schedules, /plain English/);
     assert.match(schedules, /Every 15 minutes/);
     assert.doesNotMatch(schedules, /cron/i);
