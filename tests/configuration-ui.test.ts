@@ -28,13 +28,20 @@ test('configuration UI exposes pages for all services', async () => {
     for (const label of ['API Keys', 'Jobs', 'Schedules', 'Files', 'Secrets', 'Webhooks', 'Notifications']) {
       assert.match(services, new RegExp(label));
     }
-    assert.match(apiKeys, /Credential records/);
-    assert.match(jobs, /Durable execution records/);
+    assert.match(apiKeys, /Create API key/);
+    assert.match(apiKeys, /method:'POST'/);
+    assert.match(jobs, /Queue durable work/);
+    assert.match(jobs, /method:'POST'/);
     assert.match(secrets, /Provider-neutral secret metadata/);
-    assert.match(webhooks, /Durable endpoint registrations/);
-    assert.match(notifications, /Durable notification activity/);
-    assert.match(files, /Durable file metadata/);
-    assert.match(schedules, /Recurring execution definitions/);
+    assert.match(webhooks, /Register durable event endpoints/);
+    assert.match(notifications, /Create durable notification records/);
+    assert.match(files, /Create durable file metadata records/);
+    assert.match(files, /method:'POST'/);
+    assert.match(schedules, /plain English/);
+    assert.match(schedules, /Every 15 minutes/);
+    assert.doesNotMatch(schedules, /cron/i);
+    assert.match(webhooks, /Register endpoint/);
+    assert.match(notifications, /Create durable notification records/);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
