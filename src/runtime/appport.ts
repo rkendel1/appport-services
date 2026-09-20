@@ -11,12 +11,14 @@ import { FeltDbApiKeyStore, FeltDbAuditSink, createFeltDbRuntime } from '../stor
 import { FeltDbWebhookAuditSink, FeltDbWebhookDeliveryStore, FeltDbWebhookEndpointStore } from '../storage/webhooks.js';
 import { EncryptedWebhookSecretStore } from '../webhooks/secrets.js';
 import { WebhookService } from '../webhooks/service.js';
+import { NotificationService } from '../notifications/service.js';
+import { FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNotificationStore } from '../storage/notifications.js';
 import { parseAppPortConfig, type AppPortConfig, type AppPortContractSnapshot } from './dsl.js';
 import { AppPortEvents, AppPortTenantContext, startHttpRuntime, type AppPortHttpRuntime } from './platform.js';
 import { TransactionContextImpl } from './transaction-services.js';
 import { TransactionBuilder } from './transaction.js';
 
-export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs' | 'secrets';
+export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs' | 'secrets' | 'notifications';
 
 export interface CapabilityPlan {
   readonly capabilities: readonly AppPortCapabilityName[];
@@ -41,6 +43,7 @@ export type AppPortRouteHandler = (context: AppPortRouteContext) => unknown | Pr
 export interface AppPortApiKeys extends Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'getApiKey' | 'revokeApiKey' | 'authenticateApiKey'> {}
 export interface AppPortWebhooks extends Pick<WebhookService, 'createWebhookEndpoint' | 'getWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint' | 'emitWebhookEvent' | 'getWebhookDelivery' | 'listWebhookDeliveries' | 'replayWebhookDelivery'> {}
 export interface AppPortJobs extends Pick<JobService, 'enqueue' | 'schedule' | 'scheduleRecurring' | 'getJob' | 'listJobs' | 'getSchedule' | 'listSchedules' | 'disableSchedule' | 'retry'> {}
+export interface AppPortNotifications extends Pick<NotificationService, 'create' | 'get' | 'list' | 'markRead' | 'dismiss' | 'delete' | 'deliveries'> {}
 export interface AppPortTenantServices {
   readonly api: { readonly keys: {
     createApiKey(input: Omit<import('../api-keys/models.js').CreateApiKeyInput, 'tenantId'>): ReturnType<ApiKeyService['createApiKey']>;
@@ -75,6 +78,7 @@ export interface AppPortApplication {
   readonly api: AppPortApiCapability;
   readonly webhooks: AppPortWebhooks;
   readonly jobs: AppPortJobs;
+  readonly notifications: AppPortNotifications;
   readonly events: AppPortEvents;
   readonly state: AppPortState;
   readonly tenant: AppPortTenantContext;
@@ -104,6 +108,7 @@ interface InitializedCapabilities {
   apiKeys?: ApiKeyService;
   webhooks?: WebhookService;
   jobs?: JobService;
+  notifications?: NotificationService;
 }
 
 type CapabilityFactory = (
@@ -145,6 +150,13 @@ export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, Capabili
   },
   // Secrets is a contract capability only. AppBoundry supplies execution.
   secrets() {},
+  notifications(db, _config, services) {
+    services.notifications = new NotificationService({
+      store: new FeltDbNotificationStore(db),
+      deliveryStore: new FeltDbNotificationDeliveryStore(db),
+      auditSink: new FeltDbNotificationAuditSink(db),
+    });
+  },
 };
 
 /** Bootstrap AppPort from the executable appport.toml contract. */
@@ -180,6 +192,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const apiKeysFacade: AppPortApiKeys | undefined = services.apiKeys ? bindMethods(services.apiKeys, ['createApiKey', 'listApiKeys', 'getApiKey', 'revokeApiKey', 'authenticateApiKey']) : undefined;
   const webhooksFacade: AppPortWebhooks | undefined = services.webhooks ? bindMethods(services.webhooks, ['createWebhookEndpoint', 'getWebhookEndpoint', 'listWebhookEndpoints', 'disableWebhookEndpoint', 'emitWebhookEvent', 'getWebhookDelivery', 'listWebhookDeliveries', 'replayWebhookDelivery']) : undefined;
   const jobsFacade: AppPortJobs | undefined = services.jobs ? bindMethods(services.jobs, ['enqueue', 'schedule', 'scheduleRecurring', 'getJob', 'listJobs', 'getSchedule', 'listSchedules', 'disableSchedule', 'retry']) : undefined;
+  const notificationsFacade: AppPortNotifications | undefined = services.notifications ? bindMethods(services.notifications, ['create', 'get', 'list', 'markRead', 'dismiss', 'delete', 'deliveries']) : undefined;
 
   const application = {
     plan,
@@ -205,6 +218,10 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
       if (!jobsFacade) throw new CapabilityNotDeclaredError('jobs');
       return jobsFacade;
     },
+    get notifications(): AppPortNotifications {
+      if (!config.capabilities.notifications || !notificationsFacade) throw new CapabilityNotDeclaredError('notifications');
+      return notificationsFacade;
+    },
     async start(): Promise<void> {
       if (closed) throw new Error('AppPort application is closed');
       if (started) return;
@@ -215,7 +232,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
       if (config.lifecycle.managed) { process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown); }
     },
     overview(): Record<string, unknown> {
-      return { application: config.application, deployment: config.deployment, capabilities: plan.capabilities, tenant: config.tenant, state: { ...config.state, runtime: runtime.deployment }, api: config.api, webhooks: config.webhooks, jobs: config.jobs, events: events.overview(), health: { ok: !closed } };
+      return { application: config.application, deployment: config.deployment, capabilities: plan.capabilities, tenant: config.tenant, state: { ...config.state, runtime: runtime.deployment }, api: config.api, webhooks: config.webhooks, jobs: config.jobs, notifications: config.notifications, events: events.overview(), health: { ok: !closed } };
     },
     forTenant(tenantId: string): AppPortTenantServices {
       return {
@@ -301,6 +318,7 @@ const CAPABILITY_COLLECTIONS: Readonly<Record<AppPortCapabilityName, readonly st
   webhooks: ['WebhookEndpoints', 'WebhookDeliveries', 'WebhookAuditEvents'],
   jobs: ['Jobs', 'JobSchedules', 'JobAuditEvents'],
   secrets: ['Secrets', 'SecretVersions', 'SecretAuditEvents'],
+  notifications: ['Notifications', 'NotificationDeliveries', 'NotificationAuditEvents'],
 };
 
 async function loadAuthoritativeFlow(path: string, config: AppPortConfig): Promise<FlowSpec> {
@@ -317,7 +335,7 @@ async function loadAuthoritativeFlow(path: string, config: AppPortConfig): Promi
   }
 
   const collections = new Set(flow.collections.map((collection) => collection.name));
-  for (const capability of ['api', 'webhooks', 'jobs'] as const) {
+  for (const capability of ['api', 'webhooks', 'jobs', 'notifications'] as const) {
     const present = CAPABILITY_COLLECTIONS[capability].filter((name) => collections.has(name));
     if (config.capabilities[capability] && present.length !== CAPABILITY_COLLECTIONS[capability].length) {
       const missing = CAPABILITY_COLLECTIONS[capability].filter((name) => !collections.has(name));

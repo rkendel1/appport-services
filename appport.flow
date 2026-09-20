@@ -223,4 +223,47 @@ app appport-services {
     status: text
     index tenant_idx using hash(tenant_id)
   }
+
+  collection Notifications {
+    id: uuid
+    tenant_id: text
+    recipient: text
+    type: text
+    title: text
+    body: text
+    data: json
+    source: json
+    priority: text
+    created_at: datetime
+    read_at: datetime
+    dismissed_at: datetime
+    index tenant_recipient_created_idx using hash(tenant_id, recipient, created_at)
+    index tenant_recipient_read_idx using hash(tenant_id, recipient, read_at)
+    index tenant_recipient_priority_idx using hash(tenant_id, recipient, priority)
+  }
+
+  collection NotificationDeliveries {
+    id: uuid
+    tenant_id: text
+    notification_id: uuid
+    channel: text
+    status: text
+    attempted_at: datetime
+    delivered_at: datetime
+    error: text
+    index tenant_idx using hash(tenant_id)
+    index notification_idx using hash(notification_id)
+  }
+
+  collection NotificationAuditEvents {
+    id: uuid
+    type: text
+    notification_id: uuid
+    tenant_id: text
+    recipient: text
+    principal_id: text
+    timestamp: datetime
+    result: text
+    index tenant_idx using hash(tenant_id)
+  }
 }

@@ -144,6 +144,29 @@ export class TransactionContextImpl {
     return id;
   }
 
+  queueNotification(input: {
+    tenantId: string;
+    recipient: string;
+    type: string;
+    title: string;
+    body?: string;
+    data?: Record<string, unknown>;
+    priority?: 'low' | 'normal' | 'high' | 'urgent';
+  }): string {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const notification = { ...input, id, priority: input.priority ?? 'normal', createdAt: now, __version: 1 };
+    this.addOperation({ collection: 'notifications', id, requireAbsent: true, value: notification });
+    const auditId = crypto.randomUUID();
+    this.addOperation({
+      collection: 'notification_audit_events',
+      id: auditId,
+      requireAbsent: true,
+      value: { id: auditId, type: 'notification.created', notificationId: id, tenantId: input.tenantId, recipient: input.recipient, principalId: 'transaction', timestamp: now, result: 'success' },
+    });
+    return id;
+  }
+
   /**
    * Internal: get the builder (used to commit the transaction).
    */
@@ -151,4 +174,3 @@ export class TransactionContextImpl {
     return this.builder;
   }
 }
-
