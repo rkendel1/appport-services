@@ -125,6 +125,23 @@ test('appport.flow defines Job collections', () => {
   assert.ok(scheduleFieldNames.includes('enabled'));
 });
 
+test('appport.flow defines File collections', () => {
+  const flowPath = join(process.cwd(), 'appport.flow');
+  const flowContent = readFileSync(flowPath, 'utf-8');
+  const spec = parseFlowSpec(flowContent);
+  const collectionNames = spec.collections.map((c) => c.name);
+
+  assert.ok(collectionNames.includes('Files'), 'Files collection defined');
+  assert.ok(collectionNames.includes('FileAuditEvents'), 'FileAuditEvents collection defined');
+
+  const filesCollection = spec.collections.find((c) => c.name === 'Files');
+  assert.ok(filesCollection);
+  const fieldNames = filesCollection!.fields.map((f) => f.name);
+  for (const field of ['tenant_id', 'owner', 'name', 'size', 'storage_key']) {
+    assert.ok(fieldNames.includes(field), `Files includes ${field}`);
+  }
+});
+
 test('appport.flow defines no secret fields in durable state', () => {
   const flowPath = join(process.cwd(), 'appport.flow');
   const flowContent = readFileSync(flowPath, 'utf-8');
@@ -173,6 +190,8 @@ test('all collections are tenant-scoped', () => {
     'Secrets',
     'SecretVersions',
     'SecretAuditEvents',
+    'Files',
+    'FileAuditEvents',
   ];
 
   for (const collectionName of expectedTenantScoped) {
@@ -198,6 +217,7 @@ test('appport.flow has expected tenant indexes', () => {
     'JobSchedules',
     'Secrets',
     'SecretVersions',
+    'Files',
   ];
 
   for (const collectionName of tenantIndexedCollections) {

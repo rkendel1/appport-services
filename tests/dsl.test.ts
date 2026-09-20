@@ -24,6 +24,15 @@ use jobs
   assert.equal(parsed.capabilities.jobs, true);
 });
 
+test('DSL: parse files capability', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
+  const configPath = join(tempDir, 'appport.toml');
+  writeFileSync(configPath, 'use files\n');
+  const parsed = parseAppPortConfig(configPath);
+  assert.equal(parsed.capabilities.files, true);
+  assert.equal(parsed.files.enabled, true);
+});
+
 test('DSL: parse with webhook events configuration', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
 

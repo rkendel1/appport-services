@@ -77,6 +77,7 @@ test('interactive init configures capabilities without requiring flags', async (
   setTimeout(() => stdin.write('y\n'), 5);
   setTimeout(() => stdin.write('n\n'), 10);
   setTimeout(() => stdin.write('y\n'), 15);
+  setTimeout(() => stdin.write('n\n'), 20);
 
   const code = await runCli(
     ['init'],
@@ -89,6 +90,27 @@ test('interactive init configures capabilities without requiring flags', async (
   assert.deepEqual(parseAppPortConfig(join(cwd, 'appport.toml')).capabilities, { api: true, webhooks: false, jobs: true });
   assert.match(stdout.output(), /Enable API keys/);
   assert.match(stdout.output(), /Enabled: api, jobs/);
+});
+
+test('init --use includes files flow collections', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'appport-init-files-'));
+  const stdout = capture();
+  const stderr = capture();
+
+  const code = await runCli(
+    ['init', '--use', 'files,api'],
+    { stdout: stdout.stream, stderr: stderr.stream },
+    undefined,
+    cwd,
+  );
+
+  assert.equal(code, 0);
+  assert.equal(parseAppPortConfig(join(cwd, 'appport.toml')).capabilities.files, true);
+  const flow = parseFlowSpec(await readFile(join(cwd, 'feltdb.flow'), 'utf8'));
+  assert.deepEqual(flow.collections.map((collection) => collection.name), [
+    'ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents',
+    'Files', 'FileAuditEvents',
+  ]);
 });
 
 test('init rejects unknown capabilities', async () => {

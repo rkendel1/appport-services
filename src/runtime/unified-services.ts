@@ -13,6 +13,9 @@ import { ConfigurationService } from '../configuration/service.js';
 import { FeltDbConfigurationStore } from '../configuration/storage.js';
 import { NotificationService } from '../notifications/service.js';
 import { FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNotificationStore } from '../storage/notifications.js';
+import { FileService } from '../files/service.js';
+import { FeltDbFileAuditSink, FeltDbFileStore } from '../storage/files.js';
+import { ScheduleService } from '../schedules/service.js';
 
 /**
  * Unified AppPort Services instance.
@@ -25,6 +28,8 @@ export interface AppPortServices {
   readonly jobs: JobService;
   readonly configuration: ConfigurationService;
   readonly notifications: NotificationService;
+  readonly files: FileService;
+  readonly schedules: ScheduleService;
 
   /**
    * Execute application and AppPort operations atomically.
@@ -104,6 +109,11 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     deliveryStore: new FeltDbNotificationDeliveryStore(db),
     auditSink: new FeltDbNotificationAuditSink(db),
   });
+  const fileService = new FileService({
+    store: new FeltDbFileStore(db),
+    auditSink: new FeltDbFileAuditSink(db),
+  });
+  const scheduleService = new ScheduleService({ jobs: jobService });
 
   return {
     apiKeys: apiKeyService,
@@ -111,6 +121,8 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     jobs: jobService,
     configuration: configurationService,
     notifications: notificationService,
+    files: fileService,
+    schedules: scheduleService,
 
     /**
      * Execute application and AppPort operations in a single atomic transaction.

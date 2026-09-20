@@ -95,6 +95,7 @@ export class JobService {
   }
 
   async scheduleRecurring(input: ScheduleRecurringInput): Promise<JobSchedule> {
+    if (this.allowedTypes && !this.allowedTypes.has(input.type)) throw new Error(`Job type "${input.type}" is not declared in appport.toml`);
     const id = randomUUID();
     const now = this.now().toISOString();
     const nextRunAt = this.nextRunTime(now, input.interval);

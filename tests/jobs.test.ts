@@ -10,7 +10,9 @@ import {
   FeltDbJobScheduleStore,
   FeltDbJobAuditSink,
   JobService,
+  ScheduleService,
 } from '../src/_internal.js';
+import type { AuthenticatedPrincipal } from '../src/contract/principals.js';
 
 async function createLocalJobService(now?: () => Date) {
   const path = await mkdtemp(join(tmpdir(), 'appport-jobs-test-'));
@@ -29,6 +31,10 @@ async function createLocalJobService(now?: () => Date) {
 
   return { service, runtime };
 }
+
+const principal = (id = 'user-1', scopes = ['schedules.create', 'schedules.read', 'schedules.write']): AuthenticatedPrincipal => ({
+  principalId: id, principalType: 'api_key', tenantId: 'tenant-a', scopes, credentialId: 'key',
+});
 
 test('enqueue creates pending job', async () => {
   const { service, runtime } = await createLocalJobService();
@@ -318,5 +324,21 @@ test('disable schedule stops generating jobs', async () => {
   const fetched = await service.getSchedule('tenant-a', schedule.id);
   assert.equal(fetched?.enabled, false);
 
+  await runtime.db.close();
+});
+
+test('schedules service exposes recurring schedules as a first-class authorized surface', async () => {
+  const { service: jobs, runtime } = await createLocalJobService();
+  const schedules = new ScheduleService({ jobs });
+  const created = await schedules.create({
+    tenantId: 'tenant-a',
+    type: 'test.recurring',
+    payload: { ok: true },
+    interval: '1h',
+    createdBy: 'ignored',
+  }, principal());
+  assert.equal(created.createdBy, 'user-1');
+  assert.equal((await schedules.list('tenant-a', principal())).length, 1);
+  assert.equal((await schedules.disable('tenant-a', created.id, principal()))?.enabled, false);
   await runtime.db.close();
 });

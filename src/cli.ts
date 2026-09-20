@@ -55,7 +55,7 @@ export async function runCli(
     } else {
       writeLine(
         io.stderr,
-        'Usage: appport-runtime init [--use api,webhooks,jobs,notifications] | appport-runtime config migrate | appport-runtime <api-key|webhook|job> <command>',
+        'Usage: appport-runtime init [--use api,webhooks,jobs,notifications,files] | appport-runtime config migrate | appport-runtime <api-key|webhook|job> <command>',
       );
       return 1;
     }
@@ -85,13 +85,14 @@ async function handleConfigMigrate(io: CommandIo, cwd: string): Promise<number> 
   return 0;
 }
 
-const SUPPORTED_CAPABILITIES = ['api', 'webhooks', 'jobs', 'notifications'] as const;
+const SUPPORTED_CAPABILITIES = ['api', 'webhooks', 'jobs', 'notifications', 'files'] as const;
 const DEFAULT_CAPABILITIES = ['api', 'webhooks', 'jobs'] as const;
 const CAPABILITY_COLLECTIONS: Record<typeof SUPPORTED_CAPABILITIES[number], readonly string[]> = {
   api: ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents'],
   webhooks: ['WebhookEndpoints', 'WebhookDeliveries', 'WebhookAuditEvents'],
   jobs: ['Jobs', 'JobSchedules', 'JobAuditEvents'],
   notifications: ['Notifications', 'NotificationDeliveries', 'NotificationAuditEvents'],
+  files: ['Files', 'FileAuditEvents'],
 };
 
 async function handleInitCommand(
@@ -185,6 +186,7 @@ function canonicalConfig(applicationName: string, selected: readonly string[]): 
   if (has('webhooks')) lines.push('', '[webhooks]', 'enabled = true', '', '[webhooks.delivery]', 'enabled = true', 'retries = 3', 'timeout_ms = 10000', '', '[webhooks.events]', 'allowed = ["example.created"]');
   if (has('jobs')) lines.push('', '[jobs]', 'enabled = true', '', '[jobs.execution]', 'enabled = true', 'max_attempts = 3', '', '[jobs.types]', '"example.process" = { timeout_ms = 30000 }');
   if (has('notifications')) lines.push('', '[notifications]', 'enabled = true', 'default_priority = "normal"', 'default_channel = "in-app"');
+  if (has('files')) lines.push('', '[files]', 'enabled = true');
   lines.push(
     '', '[events]', 'enabled = true', '', '[events.streaming]', 'enabled = true', 'transport = "sse"',
     '', '[authorization]', `enabled = ${has('api')}`, 'default = "deny"',
@@ -218,10 +220,11 @@ async function configureCapabilities(io: CommandIo): Promise<string[]> {
   }
 
   writeLine(io.stdout, 'Configure AppPort capabilities (press Enter to accept each default):');
-  const prompts: ReadonlyArray<readonly [typeof DEFAULT_CAPABILITIES[number], string]> = [
+  const prompts: ReadonlyArray<readonly [typeof SUPPORTED_CAPABILITIES[number], string]> = [
     ['api', 'API keys'],
     ['webhooks', 'Webhooks'],
     ['jobs', 'Jobs'],
+    ['files', 'Files'],
   ];
   const selected: string[] = [];
   const readline = createInterface({ input: io.stdin, output: io.stdout, terminal: true });

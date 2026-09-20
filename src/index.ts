@@ -24,6 +24,9 @@ export { JobService, JobWorker } from './jobs/index.js';
 export { NotificationService, NotificationAuthorizationError, NotificationValidationError, NotificationNotFoundError } from './notifications/index.js';
 export { createNotificationRouter, notificationErrorHandler } from './notifications/index.js';
 export { FeltDbNotificationStore, FeltDbNotificationDeliveryStore, FeltDbNotificationAuditSink } from './storage/notifications.js';
+export { FileService, FileAuthorizationError, FileValidationError, FileNotFoundError } from './files/index.js';
+export { FeltDbFileStore, FeltDbFileAuditSink } from './files/index.js';
+export { ScheduleService, ScheduleAuthorizationError, ScheduleValidationError } from './schedules/index.js';
 export {
   ConfigurationService, ConfigurationAuthorizationError, ConfigurationValidationError,
   createConfigurationRouter, createConfigurationManagementRouter, createConfigurationUiRouter, configurationErrorHandler,
@@ -71,6 +74,8 @@ export type {
 } from './jobs/index.js';
 export type { AuthenticatedPrincipal } from './contract/principals.js';
 export type { Notification, NotificationDelivery, NotificationAuditEvent, NotificationPriority, NotificationSource, CreateNotificationInput, NotificationListOptions, NotificationPage } from './notifications/index.js';
+export type { File, FileAuditEvent, CreateFileInput, UpdateFileInput } from './files/index.js';
+export type { Schedule, CreateScheduleInput } from './schedules/index.js';
 // HTTP integration
 export { authenticateBearerToken } from './runtime/api-keys.js';
 export {

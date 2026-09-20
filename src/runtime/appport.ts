@@ -13,12 +13,15 @@ import { EncryptedWebhookSecretStore } from '../webhooks/secrets.js';
 import { WebhookService } from '../webhooks/service.js';
 import { NotificationService } from '../notifications/service.js';
 import { FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNotificationStore } from '../storage/notifications.js';
+import { FileService } from '../files/service.js';
+import { FeltDbFileAuditSink, FeltDbFileStore } from '../storage/files.js';
 import { parseAppPortConfig, type AppPortConfig, type AppPortContractSnapshot } from './dsl.js';
 import { AppPortEvents, AppPortTenantContext, startHttpRuntime, type AppPortHttpRuntime } from './platform.js';
 import { TransactionContextImpl } from './transaction-services.js';
 import { TransactionBuilder } from './transaction.js';
+import { ScheduleService } from '../schedules/service.js';
 
-export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs' | 'secrets' | 'notifications';
+export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs' | 'secrets' | 'notifications' | 'files';
 
 export interface CapabilityPlan {
   readonly capabilities: readonly AppPortCapabilityName[];
@@ -44,6 +47,8 @@ export interface AppPortApiKeys extends Pick<ApiKeyService, 'createApiKey' | 'li
 export interface AppPortWebhooks extends Pick<WebhookService, 'createWebhookEndpoint' | 'getWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint' | 'emitWebhookEvent' | 'getWebhookDelivery' | 'listWebhookDeliveries' | 'replayWebhookDelivery'> {}
 export interface AppPortJobs extends Pick<JobService, 'enqueue' | 'schedule' | 'scheduleRecurring' | 'getJob' | 'listJobs' | 'getSchedule' | 'listSchedules' | 'disableSchedule' | 'retry'> {}
 export interface AppPortNotifications extends Pick<NotificationService, 'create' | 'get' | 'list' | 'markRead' | 'dismiss' | 'delete' | 'deliveries'> {}
+export interface AppPortFiles extends Pick<FileService, 'create' | 'get' | 'list' | 'update' | 'delete'> {}
+export interface AppPortSchedules extends Pick<ScheduleService, 'create' | 'get' | 'list' | 'disable'> {}
 export interface AppPortTenantServices {
   readonly api: { readonly keys: {
     createApiKey(input: Omit<import('../api-keys/models.js').CreateApiKeyInput, 'tenantId'>): ReturnType<ApiKeyService['createApiKey']>;
@@ -59,6 +64,14 @@ export interface AppPortTenantServices {
   readonly jobs: {
     enqueue(input: Omit<import('../jobs/models.js').CreateJobInput, 'tenantId'>): ReturnType<JobService['enqueue']>;
     listJobs(): ReturnType<JobService['listJobs']>;
+  };
+  readonly files: {
+    create(input: Omit<import('../files/models.js').CreateFileInput, 'tenantId'>, principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<FileService['create']>;
+    list(principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<FileService['list']>;
+  };
+  readonly schedules: {
+    create(input: Omit<import('../schedules/models.js').CreateScheduleInput, 'tenantId' | 'createdBy'>, principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<ScheduleService['create']>;
+    list(principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<ScheduleService['list']>;
   };
   publish<T extends Record<string, unknown>>(type: string, data: T): Promise<import('./platform.js').AppPortEvent<T>>;
 }
@@ -79,6 +92,8 @@ export interface AppPortApplication {
   readonly webhooks: AppPortWebhooks;
   readonly jobs: AppPortJobs;
   readonly notifications: AppPortNotifications;
+  readonly files: AppPortFiles;
+  readonly schedules: AppPortSchedules;
   readonly events: AppPortEvents;
   readonly state: AppPortState;
   readonly tenant: AppPortTenantContext;
@@ -93,14 +108,14 @@ export interface AppPortApplication {
 
 export class CapabilityNotDeclaredError extends Error {
   constructor(readonly capability: string) {
-    const declaration = capability.split('.')[0];
+    const declaration = capability === 'schedules' ? 'jobs' : capability.split('.')[0];
     super(`Capability "${capability}" is not declared in appport.toml. Add "use ${declaration}" to enable it.`);
     this.name = 'CapabilityNotDeclaredError';
   }
 }
 
 export function createCapabilityPlan(config: AppPortConfig, flow?: FlowSpec): CapabilityPlan {
-  const capabilities = (['api', 'webhooks', 'jobs', 'secrets'] as const).filter((name) => config.capabilities[name]);
+  const capabilities = (['api', 'webhooks', 'jobs', 'secrets', 'notifications', 'files'] as const).filter((name) => config.capabilities[name]);
   return { capabilities, config, ...(flow ? { flow } : {}) };
 }
 
@@ -109,6 +124,8 @@ interface InitializedCapabilities {
   webhooks?: WebhookService;
   jobs?: JobService;
   notifications?: NotificationService;
+  files?: FileService;
+  schedules?: ScheduleService;
 }
 
 type CapabilityFactory = (
@@ -157,6 +174,12 @@ export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, Capabili
       auditSink: new FeltDbNotificationAuditSink(db),
     });
   },
+  files(db, _config, services) {
+    services.files = new FileService({
+      store: new FeltDbFileStore(db),
+      auditSink: new FeltDbFileAuditSink(db),
+    });
+  },
 };
 
 /** Bootstrap AppPort from the executable appport.toml contract. */
@@ -174,6 +197,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   for (const capability of plan.capabilities) {
     capabilityRegistry[capability](runtime.db, config, services, runtime);
   }
+  if (services.jobs) services.schedules = new ScheduleService({ jobs: services.jobs });
 
   await runtime.db.deployFlowSpec(flow);
   for (const [type, handler] of Object.entries({ ...jobHandlers, ...jobs })) services.jobs?.register(type, handler);
@@ -193,6 +217,8 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const webhooksFacade: AppPortWebhooks | undefined = services.webhooks ? bindMethods(services.webhooks, ['createWebhookEndpoint', 'getWebhookEndpoint', 'listWebhookEndpoints', 'disableWebhookEndpoint', 'emitWebhookEvent', 'getWebhookDelivery', 'listWebhookDeliveries', 'replayWebhookDelivery']) : undefined;
   const jobsFacade: AppPortJobs | undefined = services.jobs ? bindMethods(services.jobs, ['enqueue', 'schedule', 'scheduleRecurring', 'getJob', 'listJobs', 'getSchedule', 'listSchedules', 'disableSchedule', 'retry']) : undefined;
   const notificationsFacade: AppPortNotifications | undefined = services.notifications ? bindMethods(services.notifications, ['create', 'get', 'list', 'markRead', 'dismiss', 'delete', 'deliveries']) : undefined;
+  const filesFacade: AppPortFiles | undefined = services.files ? bindMethods(services.files, ['create', 'get', 'list', 'update', 'delete']) : undefined;
+  const schedulesFacade: AppPortSchedules | undefined = services.schedules ? bindMethods(services.schedules, ['create', 'get', 'list', 'disable']) : undefined;
 
   const application = {
     plan,
@@ -222,17 +248,25 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
       if (!config.capabilities.notifications || !notificationsFacade) throw new CapabilityNotDeclaredError('notifications');
       return notificationsFacade;
     },
+    get files(): AppPortFiles {
+      if (!config.capabilities.files || !filesFacade) throw new CapabilityNotDeclaredError('files');
+      return filesFacade;
+    },
+    get schedules(): AppPortSchedules {
+      if (!schedulesFacade) throw new CapabilityNotDeclaredError('schedules');
+      return schedulesFacade;
+    },
     async start(): Promise<void> {
       if (closed) throw new Error('AppPort application is closed');
       if (started) return;
       started = true;
       if (config.http.enabled) http = await startHttpRuntime(application, routes);
-      if (config.lifecycle.managed && config.tenant.default && services.jobs && config.jobs.execution.enabled) workerTimers.push(startManagedLoop(async () => { const queued = await services.jobs?.listJobs(config.tenant.default!); for (const job of queued ?? []) if (job.status === 'pending' || job.status === 'retrying') await services.jobs?.executeJob(job.tenantId, job.id, `${config.application.name}:runtime`); }));
+      if (config.lifecycle.managed && config.tenant.default && services.jobs && config.jobs.execution.enabled) workerTimers.push(startManagedLoop(async () => { await services.jobs?.processRecurringSchedules(config.tenant.default!); const queued = await services.jobs?.listJobs(config.tenant.default!); for (const job of queued ?? []) if (job.status === 'pending' || job.status === 'retrying') await services.jobs?.executeJob(job.tenantId, job.id, `${config.application.name}:runtime`); }));
       if (config.lifecycle.managed && config.tenant.default && services.webhooks && config.webhooks.delivery.enabled) workerTimers.push(startManagedLoop(async () => { const deliveries = await services.webhooks?.listWebhookDeliveries(config.tenant.default!); for (const delivery of deliveries ?? []) if (delivery.status === 'pending' || delivery.status === 'retrying') await services.webhooks?.deliverWebhook(delivery.tenantId, delivery.id); }));
       if (config.lifecycle.managed) { process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown); }
     },
     overview(): Record<string, unknown> {
-      return { application: config.application, deployment: config.deployment, capabilities: plan.capabilities, tenant: config.tenant, state: { ...config.state, runtime: runtime.deployment }, api: config.api, webhooks: config.webhooks, jobs: config.jobs, notifications: config.notifications, events: events.overview(), health: { ok: !closed } };
+      return { application: config.application, deployment: config.deployment, capabilities: plan.capabilities, tenant: config.tenant, state: { ...config.state, runtime: runtime.deployment }, api: config.api, webhooks: config.webhooks, jobs: config.jobs, notifications: config.notifications, files: config.files, events: events.overview(), health: { ok: !closed } };
     },
     forTenant(tenantId: string): AppPortTenantServices {
       return {
@@ -250,6 +284,14 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
         jobs: {
           enqueue: (input) => application.jobs.enqueue({ ...input, tenantId }),
           listJobs: () => application.jobs.listJobs(tenantId),
+        },
+        files: {
+          create: (input, principal) => application.files.create({ ...input, tenantId }, principal),
+          list: (principal) => application.files.list(tenantId, principal),
+        },
+        schedules: {
+          create: (input, principal) => application.schedules.create({ ...input, tenantId, createdBy: principal.principalId }, principal),
+          list: (principal) => application.schedules.list(tenantId, principal),
         },
         publish: (type, data) => application.publish(type, data, tenantId),
       };
@@ -319,6 +361,7 @@ const CAPABILITY_COLLECTIONS: Readonly<Record<AppPortCapabilityName, readonly st
   jobs: ['Jobs', 'JobSchedules', 'JobAuditEvents'],
   secrets: ['Secrets', 'SecretVersions', 'SecretAuditEvents'],
   notifications: ['Notifications', 'NotificationDeliveries', 'NotificationAuditEvents'],
+  files: ['Files', 'FileAuditEvents'],
 };
 
 async function loadAuthoritativeFlow(path: string, config: AppPortConfig): Promise<FlowSpec> {
@@ -335,7 +378,7 @@ async function loadAuthoritativeFlow(path: string, config: AppPortConfig): Promi
   }
 
   const collections = new Set(flow.collections.map((collection) => collection.name));
-  for (const capability of ['api', 'webhooks', 'jobs', 'notifications'] as const) {
+  for (const capability of ['api', 'webhooks', 'jobs', 'notifications', 'files'] as const) {
     const present = CAPABILITY_COLLECTIONS[capability].filter((name) => collections.has(name));
     if (config.capabilities[capability] && present.length !== CAPABILITY_COLLECTIONS[capability].length) {
       const missing = CAPABILITY_COLLECTIONS[capability].filter((name) => !collections.has(name));
