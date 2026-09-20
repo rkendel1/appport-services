@@ -14,6 +14,7 @@ export { FeltDbWebhookEndpointStore, FeltDbWebhookDeliveryStore, FeltDbWebhookAu
 export { EncryptedWebhookSecretStore, InMemoryWebhookSecretStore } from './webhooks/secrets.js';
 export { FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink, jobAuditCollectionName } from './jobs/store.js';
 export { FeltDbNotificationStore, FeltDbNotificationDeliveryStore, FeltDbNotificationAuditSink } from './storage/notifications.js';
+export { FeltDbFileStore, FeltDbFileAuditSink, fileCollectionNames } from './storage/files.js';
 
 // Public APIs (exported here for internal tests; also exported from index.ts for consumers)
 export { createServices } from './runtime/unified-services.js';
@@ -25,6 +26,8 @@ export { ApiKeyService, parseApiKeyPrefix } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
 export { JobService, JobWorker } from './jobs/index.js';
 export { NotificationService, createNotificationRouter, notificationErrorHandler } from './notifications/index.js';
+export { FileService, FileAuthorizationError, FileValidationError, FileNotFoundError } from './files/index.js';
+export { ScheduleService } from './schedules/index.js';
 export { ConfigurationService, createConfigurationRouter, createConfigurationManagementRouter, createConfigurationUiRouter, configurationErrorHandler } from './configuration/index.js';
 export { FeltDbConfigurationStore } from './configuration/storage.js';
 export type { ConfigurationStore } from './configuration/storage.js';
@@ -56,6 +59,7 @@ export type {
 } from './jobs/index.js';
 export type { WebhookSecretStore } from './webhooks/secrets.js';
 export type { NotificationStore, NotificationDeliveryStore, NotificationAuditSink } from './storage/notifications.js';
+export type { FileStore, FileAuditSink } from './storage/files.js';
 
 // Legacy factory for backward compatibility
 import { createFeltDbRuntime as _createFeltDbRuntime, FeltDbApiKeyStore as _FeltDbApiKeyStore, FeltDbAuditSink as _FeltDbAuditSink, type CreateFeltDbRuntimeOptions } from './storage/api-keys.js';

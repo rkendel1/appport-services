@@ -9,11 +9,11 @@ import { appport, CapabilityNotDeclaredError, createCapabilityPlan, parseAppPort
 import { runCli } from '../src/cli.js';
 import { Writable } from 'node:stream';
 
-async function writeApiFlow(path: string): Promise<void> {
+async function writeFlow(path: string, collections: readonly string[]): Promise<void> {
   const template = await readFile(new URL('../../appport.flow', import.meta.url), 'utf8');
   const flow = parseFlowSpec(template);
   flow.collections = flow.collections.filter((collection) =>
-    ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents'].includes(collection.name));
+    collections.includes(collection.name));
   await writeFile(join(path, 'feltdb.flow'), formatFlowSpec(flow));
 }
 
@@ -21,7 +21,7 @@ test('appport contract initializes only declared capabilities', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-runtime-api-'));
   const config = join(path, 'appport.toml');
   await writeFile(config, 'use api\n');
-  await writeApiFlow(path);
+  await writeFlow(path, ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents']);
 
   const application = await appport({
     config,
@@ -50,7 +50,7 @@ test('use api block configures the API keys sub-capability', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-runtime-api-block-'));
   const config = join(path, 'appport.toml');
   await writeFile(config, 'use api {\n  keys = false\n}\n');
-  await writeApiFlow(path);
+  await writeFlow(path, ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents']);
 
   const application = await appport({
     config,
@@ -68,7 +68,7 @@ test('transaction helpers reject undeclared infrastructure', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-runtime-transaction-'));
   const config = join(path, 'appport.toml');
   await writeFile(config, 'use api\n');
-  await writeApiFlow(path);
+  await writeFlow(path, ['ApiKeys', 'ApiKeyPrefixes', 'ApiKeyAuditEvents']);
   const application = await appport({
     config,
     mode: 'local',
@@ -135,6 +135,22 @@ test('generated contract materializes HTTP, state, events, identity, and lifecyc
   assert.deepEqual(received, [1, 2]);
   await application.state.collection<{ id: string; value: number }>('Example').insert({ id: 'one', value: 1 }, 'one');
   assert.equal((await application.state.collection<{ id: string; value: number }>('Example').get('one'))?.value, 1);
+  await application.close();
+});
+
+test('files capability and schedules facade are exposed through appport', async () => {
+  const path = await mkdtemp(join(tmpdir(), 'appport-runtime-files-'));
+  const config = join(path, 'appport.toml');
+  await writeFile(config, 'use jobs\nuse files\n');
+  await writeFlow(path, ['Jobs', 'JobSchedules', 'JobAuditEvents', 'Files', 'FileAuditEvents']);
+  const application = await appport({
+    config,
+    mode: 'local',
+    namespace: 'runtime-files',
+    path: join(path, '.feltdb'),
+  });
+  assert.ok(application.schedules);
+  assert.ok(application.files);
   await application.close();
 });
 

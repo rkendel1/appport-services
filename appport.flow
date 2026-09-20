@@ -266,4 +266,34 @@ app appport-services {
     result: text
     index tenant_idx using hash(tenant_id)
   }
+
+  collection Files {
+    id: uuid
+    tenant_id: text
+    owner: text
+    name: text
+    content_type: text
+    size: integer
+    checksum: text
+    storage_key: text
+    metadata: json
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime
+    index tenant_idx using hash(tenant_id)
+    index owner_idx using hash(owner)
+    index storage_key_idx using hash(storage_key)
+  }
+
+  collection FileAuditEvents {
+    id: uuid
+    type: text
+    file_id: uuid
+    tenant_id: text
+    owner: text
+    principal_id: text
+    timestamp: datetime
+    result: text
+    index tenant_idx using hash(tenant_id)
+  }
 }
