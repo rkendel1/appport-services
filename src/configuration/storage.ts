@@ -30,9 +30,20 @@ export class FeltDbConfigurationStore implements ConfigurationStore {
   }
 
   async listVariables(scope: Scope) {
-    return (await this.variables.find({ tenantId: scope.tenantId })).filter((item) => item.applicationId === scope.applicationId && item.environment === scope.environment);
+    return this.variables.find({
+      tenantId: scope.tenantId,
+      applicationId: scope.applicationId,
+      environment: scope.environment,
+    });
   }
-  getVariable(scope: Scope, name: string) { return this.variables.find({ ...scope, name }).then((items) => items[0] ?? null); }
+  getVariable(scope: Scope, name: string) {
+    return this.variables.find({
+      tenantId: scope.tenantId,
+      applicationId: scope.applicationId,
+      environment: scope.environment,
+      name,
+    }).then((items) => items[0] ?? null);
+  }
   async saveVariable(item: ConfigurationVariable, expectedVersion?: number): Promise<ConfigurationVariable> {
     if (expectedVersion === undefined) {
       await this.variables.insert(item, item.id);
@@ -44,9 +55,20 @@ export class FeltDbConfigurationStore implements ConfigurationStore {
   }
   async deleteVariable(item: ConfigurationVariable) { await this.variables.delete(item.id); }
   async listSecrets(scope: Scope) {
-    return (await this.secrets.find({ tenantId: scope.tenantId })).filter((item) => item.applicationId === scope.applicationId && item.environment === scope.environment);
+    return this.secrets.find({
+      tenantId: scope.tenantId,
+      applicationId: scope.applicationId,
+      environment: scope.environment,
+    });
   }
-  getSecret(scope: Scope, name: string) { return this.secrets.find({ ...scope, name }).then((items) => items[0] ?? null); }
+  getSecret(scope: Scope, name: string) {
+    return this.secrets.find({
+      tenantId: scope.tenantId,
+      applicationId: scope.applicationId,
+      environment: scope.environment,
+      name,
+    }).then((items) => items[0] ?? null);
+  }
   async saveSecret(item: ConfigurationSecret, expectedVersion?: number): Promise<ConfigurationSecret> {
     if (expectedVersion === undefined) {
       await this.secrets.insert(item, item.id);
