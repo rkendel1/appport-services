@@ -1,6 +1,6 @@
 {
   "name": "@appport/services",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "API keys, durable webhooks, background jobs, and provider-neutral secrets for AppPort applications",
   "type": "module",
   "exports": {

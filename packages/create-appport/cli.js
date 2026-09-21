@@ -19,7 +19,7 @@ async function createApplication(name, install) {
   await writeFile(resolve(target, 'package.json'), JSON.stringify({
     name: packageName(name), version: '0.1.0', private: true, type: 'module',
     scripts: { dev: 'node --watch src/app.js', start: 'node src/app.js' },
-    dependencies: { '@appport/runtime': '^0.4.0' },
+    dependencies: { '@appport/runtime': '^0.4.1' },
   }, null, 2) + '\n');
   await writeFile(resolve(target, 'src/app.js'), `import { appport } from '@appport/runtime';
 
