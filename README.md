@@ -105,7 +105,7 @@ npx @appport/runtime job list --tenant acme
 
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
 
-The repository defines four AppPort capabilities: **tenant-scoped API keys**, **durable webhooks**, **durable job execution**, and provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts. Legacy runtime state uses **`@feltdb/core@0.11.1`**. Secret material remains with an authorized provider and is never durable AppPort state.
+The repository defines four AppPort capabilities: **tenant-scoped API keys**, **durable webhooks**, **durable job execution**, and provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts. Legacy runtime state uses **`@feltdb/core@0.11.2`**. Secret material remains with an authorized provider and is never durable AppPort state.
 
 ```text
             Application
@@ -122,6 +122,21 @@ identity/authz        API Keys, Webhooks, Jobs, Secrets
 ```
 
 ## Consumer API
+
+Existing authenticated Express applications can mount the supported management runtime against their existing service instance:
+
+```javascript
+import { createManagementRouter, createServices } from '@appport/services';
+
+const services = createServices({ path: '.appport' });
+app.use(createManagementRouter({
+  services,
+  authenticate: (request) => hostAuthentication(request),
+  authorize: (capability, context) => hostAuthorization(capability, context),
+}));
+```
+
+The host owns authentication and authorization; AppPort Services owns service behavior and durable state. API-key management requires `apikeys.read`, `apikeys.create`, and `apikeys.revoke`, always uses the authenticated tenant, and returns a plaintext credential only in the creation response. See [Composable management runtime](docs/management.md) for the full contract and standalone/embedded behavior.
 
 Outbound credentials use a server-only scoped protocol. AppPort defines the reference, context, lifecycle, audit, errors, and callback contract; AuthBoundry authorizes and AppBoundry resolves provider-held material. AppPort ships no resolver, secret store, provider adapter, or policy engine, and exposes no browser-facing credential-value route.
 
@@ -223,7 +238,7 @@ feltdb.flow (generated authoritative application contract)
        ↓
 TypeScript implementation
        ↓
-FeltDB (@feltdb/core@0.11.1)
+FeltDB (@feltdb/core@0.11.2)
 ```
 
 The Flow contract is parsed and validated at test time. The TypeScript stores (FeltDbApiKeyStore, FeltDbWebhookEndpointStore, etc.) implement the contract semantics directly against FeltDB collections.
@@ -254,7 +269,7 @@ Dependencies are pinned, including:
 ```json
 {
   "dependencies": {
-    "@feltdb/core": "0.11.1"
+    "@feltdb/core": "0.11.2"
   }
 }
 ```
@@ -560,7 +575,7 @@ Jobs are **durable and idempotent**. Job state survives process restarts; worker
 
 ## Where does durable state live?
 
-AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.11.1`.
+AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.11.2`.
 
 ```text
 feltdb.flow (generated Flow contract)
@@ -575,7 +590,7 @@ AppPort Services
       └─→ Secrets protocol (Secrets, SecretVersions, SecretAuditEvents)
       │
       ▼
- @feltdb/core@0.11.1
+ @feltdb/core@0.11.2
       │
       ▼
  real FeltDB

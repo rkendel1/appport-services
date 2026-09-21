@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import express from 'express';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import type { AppPortApplication, AppPortRouteHandler } from './appport.js';
+import { createManagementRouter, type ManagementServices } from './management.js';
 
 export interface AppPortEvent<T = unknown> { readonly id: number; readonly type: string; readonly tenantId: string; readonly data: T; readonly timestamp: string }
 export interface EventSubscription { close(): void }
@@ -37,15 +39,45 @@ export interface AppPortHttpRuntime { readonly url: string; readonly port: numbe
 
 export async function startHttpRuntime(application: AppPortApplication, routes: Readonly<Record<string, AppPortRouteHandler>>): Promise<AppPortHttpRuntime> {
   const config = application.contract;
-  const server = createServer((request, response) => void dispatch(application, routes, request, response));
+  const host = express();
+  const services = managementServices(application);
+  const management = createManagementRouter({
+    services,
+    authenticate: (request) => authenticate(application, request),
+    authorize: (capability, { principal }) => principal.scopes.includes(capability),
+    includeConfiguration: false,
+    includeUi: false,
+  });
+  host.use((request, response, next) => {
+    applyCors(application, request, response);
+    if (request.method === 'OPTIONS') response.status(204).end();
+    else next();
+  });
+  host.use((request, response, next) => isManagementServicePath(request.path) ? management(request, response, next) : next());
+  host.use((request, response) => void dispatch(application, routes, request, response));
+  const server = createServer(host);
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(config.http.port, config.http.host, () => { server.off('error', reject); resolve(); }); });
   const address = server.address(); const port = typeof address === 'object' && address ? address.port : config.http.port;
   return { url: `http://${config.http.host}:${port}`, port, close: () => closeServer(server) };
 }
 
+function managementServices(application: AppPortApplication): ManagementServices {
+  const declared = new Set(application.plan.capabilities);
+  return {
+    ...(declared.has('api') && application.contract.api.keys.enabled ? { apiKeys: application.api.keys } : {}),
+    ...(declared.has('webhooks') ? { webhooks: application.webhooks } : {}),
+    ...(declared.has('jobs') ? { jobs: application.jobs, schedules: application.schedules } : {}),
+    ...(declared.has('notifications') ? { notifications: application.notifications } : {}),
+    ...(declared.has('files') ? { files: application.files } : {}),
+  };
+}
+
+function isManagementServicePath(path: string): boolean {
+  return ['/_appport/api/keys', '/_appport/webhooks', '/_appport/jobs', '/_appport/schedules', '/_appport/files', '/_appport/notifications']
+    .some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
 async function dispatch(application: AppPortApplication, routes: Readonly<Record<string, AppPortRouteHandler>>, request: IncomingMessage, response: ServerResponse): Promise<void> {
-  applyCors(application, request, response);
-  if (request.method === 'OPTIONS') { response.writeHead(204).end(); return; }
   try {
     const url = new URL(request.url ?? '/', 'http://appport.local');
     if (url.pathname === '/_appport/health') { json(response, 200, { ok: true, application: application.contract.application.name }); return; }
@@ -54,33 +86,6 @@ async function dispatch(application: AppPortApplication, routes: Readonly<Record
     if (!tenantId && application.contract.tenant.mode === 'required') throw httpError(400, 'TENANT_REQUIRED', 'A tenant is required');
     if (url.pathname === '/_appport/events' && request.method === 'GET' && application.contract.events.streaming.enabled) { streamEvents(application, request, response, tenantId ?? 'default'); return; }
     if (url.pathname === '/_appport/overview') { json(response, 200, application.overview()); return; }
-    if (url.pathname === '/_appport/api/keys' && request.method === 'GET') { json(response, 200, await application.api.keys.listApiKeys(tenantId!)); return; }
-    if (url.pathname === '/_appport/api/keys' && request.method === 'POST') { const body = record(await readJson(request)); const created = await application.api.keys.createApiKey({ tenantId: tenantId!, name: text(body.name, 'name'), scopes: texts(body.scopes, 'scopes'), createdBy: principal?.principalId ?? text(body.createdBy, 'createdBy') }); json(response, 201, created); return; }
-    const apiKeyId = matchId(url.pathname, '/_appport/api/keys');
-    if (apiKeyId && request.method === 'DELETE') { await application.api.keys.revokeApiKey({ tenantId: tenantId!, id: apiKeyId, revokedBy: principal?.principalId ?? 'system' }); response.writeHead(204).end(); return; }
-    if (url.pathname === '/_appport/webhooks' && request.method === 'GET') { json(response, 200, await application.webhooks.listWebhookEndpoints(tenantId!)); return; }
-    if (url.pathname === '/_appport/webhooks' && request.method === 'POST') { const body = record(await readJson(request)); const created = await application.webhooks.createWebhookEndpoint({ tenantId: tenantId!, url: text(body.url, 'url'), events: texts(body.events, 'events'), createdBy: principal?.principalId ?? text(body.createdBy, 'createdBy') }); json(response, 201, created); return; }
-    const webhookId = matchId(url.pathname, '/_appport/webhooks');
-    if (webhookId && request.method === 'DELETE') { await application.webhooks.disableWebhookEndpoint({ tenantId: tenantId!, id: webhookId, disabledBy: principal?.principalId ?? 'system' }); response.writeHead(204).end(); return; }
-    if (url.pathname === '/_appport/jobs' && request.method === 'GET') { json(response, 200, await application.jobs.listJobs(tenantId!)); return; }
-    if (url.pathname === '/_appport/jobs' && request.method === 'POST') { const body = record(await readJson(request)); const created = await application.jobs.enqueue({ tenantId: tenantId!, type: text(body.type, 'type'), payload: record(body.payload ?? {}), ...(body.maxAttempts === undefined ? {} : { maxAttempts: Number(body.maxAttempts) }) }); json(response, 201, created); return; }
-    const jobRetry = url.pathname.match(/^\/_appport\/jobs\/([^/]+)\/retry$/);
-    if (jobRetry && request.method === 'POST') { json(response, 200, await application.jobs.retry(tenantId!, jobRetry[1])); return; }
-    if (url.pathname === '/_appport/schedules' && request.method === 'GET') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); json(response, 200, await application.schedules.list(tenantId!, principal)); return; }
-    if (url.pathname === '/_appport/schedules' && request.method === 'POST') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); const body = record(await readJson(request)); const created = await application.schedules.create({ tenantId: tenantId!, type: text(body.type, 'type'), payload: record(body.payload ?? {}), interval: text(body.interval, 'interval'), createdBy: principal.principalId }, principal); json(response, 201, created); return; }
-    const scheduleId = matchId(url.pathname, '/_appport/schedules');
-    if (scheduleId && request.method === 'DELETE') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); json(response, 200, await application.schedules.disable(tenantId!, scheduleId, principal)); return; }
-    if (url.pathname === '/_appport/files' && request.method === 'GET') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); json(response, 200, await application.files.list(tenantId!, principal, { ...(url.searchParams.get('owner') ? { owner: url.searchParams.get('owner')! } : {}) })); return; }
-    if (url.pathname === '/_appport/files' && request.method === 'POST') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); const body = record(await readJson(request)); const created = await application.files.create({ tenantId: tenantId!, owner: text(body.owner ?? principal.principalId, 'owner'), name: text(body.name, 'name'), size: numberValue(body.size, 'size'), storageKey: text(body.storageKey, 'storageKey'), ...(body.contentType === undefined ? {} : { contentType: text(body.contentType, 'contentType') }), ...(body.checksum === undefined ? {} : { checksum: text(body.checksum, 'checksum') }), ...(body.metadata === undefined ? {} : { metadata: record(body.metadata) }) }, principal); json(response, 201, created); return; }
-    const fileId = matchId(url.pathname, '/_appport/files');
-    if (fileId && (request.method === 'PATCH' || request.method === 'PUT')) { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); const body = record(await readJson(request)); json(response, 200, await application.files.update({ tenantId: tenantId!, id: fileId, ...(body.name === undefined ? {} : { name: text(body.name, 'name') }), ...(body.storageKey === undefined ? {} : { storageKey: text(body.storageKey, 'storageKey') }), ...(body.size === undefined ? {} : { size: numberValue(body.size, 'size') }), ...(body.contentType === undefined ? {} : { contentType: text(body.contentType, 'contentType') }), ...(body.checksum === undefined ? {} : { checksum: text(body.checksum, 'checksum') }), ...(body.metadata === undefined ? {} : { metadata: record(body.metadata) }) }, principal)); return; }
-    if (fileId && request.method === 'DELETE') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); await application.files.delete(tenantId!, fileId, principal); response.writeHead(204).end(); return; }
-    if (url.pathname === '/_appport/notifications' && request.method === 'GET') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); const page = await application.notifications.list(tenantId!, { limit: Number(url.searchParams.get('limit') ?? 50), cursor: url.searchParams.get('cursor') ?? undefined, recipient: url.searchParams.get('recipient') ?? undefined, type: url.searchParams.get('type') ?? undefined, unread: url.searchParams.get('unread') === 'true' }, principal); json(response, 200, page); return; }
-    if (url.pathname === '/_appport/notifications' && request.method === 'POST') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); const body = record(await readJson(request)); const created = await application.notifications.create({ tenantId: tenantId!, recipient: text(body.recipient, 'recipient'), type: text(body.type, 'type'), title: text(body.title, 'title'), ...(body.body === undefined ? {} : { body: text(body.body, 'body') }), ...(body.data === undefined ? {} : { data: record(body.data) }), ...(body.priority === undefined ? {} : { priority: text(body.priority, 'priority') as 'low' | 'normal' | 'high' | 'urgent' }) }, principal); json(response, 201, created); return; }
-    const notificationAction = url.pathname.match(/^\/_appport\/notifications\/([^/]+)\/(read|dismiss)$/);
-    if (notificationAction && request.method === 'POST') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); const item = notificationAction[2] === 'read' ? await application.notifications.markRead(tenantId!, notificationAction[1], principal) : await application.notifications.dismiss(tenantId!, notificationAction[1], principal); json(response, 200, item); return; }
-    const notificationId = matchId(url.pathname, '/_appport/notifications');
-    if (notificationId && request.method === 'DELETE') { if (!principal) throw httpError(401, 'UNAUTHENTICATED', 'Authentication is required'); await application.notifications.delete(tenantId!, notificationId, principal); response.writeHead(204).end(); return; }
     if (url.pathname === '/_appport/events' && request.method === 'POST') { const body = record(await readJson(request)); const event = await application.publish(text(body.type, 'type'), record(body.data ?? {}), tenantId!); json(response, 201, event); return; }
     const handler = routes[`${request.method ?? 'GET'} ${url.pathname}`];
     if (!handler) throw httpError(404, 'NOT_FOUND', 'Route not found');
@@ -117,10 +122,4 @@ function json(response: ServerResponse, status: number, value: unknown): void { 
 function httpError(status: number, code: string, message: string): Error & { status: number; code: string } { return Object.assign(new Error(message), { status, code }); }
 function record(value: unknown): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw httpError(400, 'INVALID_INPUT', 'Expected a JSON object'); return value as Record<string, unknown>; }
 function text(value: unknown, property: string): string { if (typeof value !== 'string' || !value) throw httpError(400, 'INVALID_INPUT', `${property} must be a non-empty string`); return value; }
-function texts(value: unknown, property: string): string[] { if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) throw httpError(400, 'INVALID_INPUT', `${property} must be an array of strings`); return value as string[]; }
-function numberValue(value: unknown, property: string): number { if (!Number.isInteger(value) || Number(value) < 0) throw httpError(400, 'INVALID_INPUT', `${property} must be a non-negative integer`); return Number(value); }
-function matchId(pathname: string, prefix: string): string | null {
-  const match = pathname.match(new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/([^/]+)$`));
-  return match?.[1] ?? null;
-}
 function closeServer(server: Server): Promise<void> { return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }

@@ -1,7 +1,9 @@
 export interface AuthenticatedPrincipal {
   readonly principalId: string;
-  readonly principalType: 'api_key';
+  /** Host-defined identity kind. AppPort Services never grants authority from it. */
+  readonly principalType: string;
   readonly tenantId: string;
   readonly scopes: readonly string[];
-  readonly credentialId: string;
+  /** Present for principals authenticated with an AppPort API key. */
+  readonly credentialId?: string;
 }

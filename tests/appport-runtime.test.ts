@@ -172,3 +172,42 @@ test('unmanaged lifecycle exposes explicit idempotent start and close', async ()
   await application.close();
   await application.close();
 });
+
+test('standalone HTTP runtime composes the supported API-key management contract', async () => {
+  const path = await mkdtemp(join(tmpdir(), 'appport-runtime-management-'));
+  const sink = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+  await runCli(['init', '--use', 'api'], { stdout: sink, stderr: sink }, undefined, path);
+  const configPath = join(path, 'appport.toml');
+  const source = (await readFile(configPath, 'utf8'))
+    .replace('port = 8787', 'port = 0')
+    .replace('scopes = ["example.read", "example.write"]', 'scopes = ["apikeys.read", "apikeys.create", "apikeys.revoke"]')
+    .replace('[lifecycle]\nmanaged = true', '[lifecycle]\nmanaged = false');
+  await writeFile(configPath, source);
+  const application = await appport({ config: configPath, path: join(path, '.state') });
+  const administrator = await application.api.keys.createApiKey({
+    tenantId: 'tenant-a',
+    name: 'standalone administrator',
+    scopes: ['apikeys.read', 'apikeys.create', 'apikeys.revoke'],
+    createdBy: 'bootstrap',
+  });
+
+  await application.start();
+  try {
+    const headers = { authorization: `Bearer ${administrator.secret}`, 'content-type': 'application/json' };
+    const creation = await fetch(`${application.http?.url}/_appport/api/keys`, {
+      method: 'POST', headers, body: JSON.stringify({ name: 'worker', scopes: [] }),
+    });
+    assert.equal(creation.status, 201);
+    const created = await creation.json() as { id: string; secret: string };
+    assert.match(created.secret, /^app_live_/);
+
+    const listed = await fetch(`${application.http?.url}/_appport/api/keys`, { headers }).then((response) => response.json()) as { id: string; secret?: string; secretHash?: string }[];
+    assert.equal(listed.some((key) => key.id === created.id), true);
+    assert.equal(listed.some((key) => key.secret !== undefined || key.secretHash !== undefined), false);
+
+    const revoked = await fetch(`${application.http?.url}/_appport/api/keys/${created.id}`, { method: 'DELETE', headers });
+    assert.equal(revoked.status, 204);
+  } finally {
+    await application.close();
+  }
+});

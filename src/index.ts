@@ -16,6 +16,15 @@ export { parseAppPortConfig, parseAppPortConfigText, AppPortConfigError } from '
 export type { AppPortConfig, AppPortContractSnapshot, DeploymentMode } from './runtime/dsl.js';
 export { AppPortEvents, AppPortTenantContext } from './runtime/platform.js';
 export type { AppPortEvent, AppPortHttpRuntime, EventSubscription } from './runtime/platform.js';
+export {
+  API_KEY_MANAGEMENT_CAPABILITIES, APPPORT_UI_CONTRIBUTIONS,
+  createManagementRouter, managementErrorHandler,
+  ManagementAuthenticationError, ManagementAuthorizationError,
+} from './runtime/management.js';
+export type {
+  ApiKeyManagementCapability, CreateManagementRouterOptions, ManagementAuthenticationAdapter,
+  ManagementAuthorizationAdapter, ManagementAuthorizationContext, ManagementAuthorizationResult, ManagementServices,
+} from './runtime/management.js';
 
 // Service classes (consumers construct services via createServices)
 export { ApiKeyService } from './api-keys/service.js';
