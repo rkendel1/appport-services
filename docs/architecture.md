@@ -1,6 +1,6 @@
 # Architecture
 
-AppPort Services is a Node/TypeScript package that consumes FeltDB’s real deployment and persistence model through `@feltdb/core@0.11.2`.
+AppPort Services is a Node/TypeScript package that consumes FeltDB’s real deployment and persistence model through `@feltdb/core@0.11.6`.
 
 ```text
 Application
@@ -11,7 +11,7 @@ ApiKeyService
    ↓
 FeltDbApiKeyStore
    ↓
-@feltdb/core@0.11.2
+@feltdb/core@0.11.6
    ↓
 FeltDB
 ```
@@ -51,6 +51,10 @@ Creation persists the key record and prefix locator atomically. Revocation and l
 Notifications use the same FeltDB boundary. Their provider-neutral records and separate delivery
 records keep notification state independent from channel-specific delivery behavior. Notifications
 are durable infrastructure; Attn may consume them, but AppPort Services does not decide attention.
+Channels (`in-app`, `browser`, and host-registered adapters such as email or webhook) receive the
+authoritative notification and return a result; they do not own persistence. Delivery retries run
+as reserved `appport.notifications.deliver` jobs on the existing job infrastructure. See
+[notifications.md](notifications.md).
 
 ## Deliberate non-goals
 

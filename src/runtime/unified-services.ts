@@ -108,6 +108,8 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     store: new FeltDbNotificationStore(db),
     deliveryStore: new FeltDbNotificationDeliveryStore(db),
     auditSink: new FeltDbNotificationAuditSink(db),
+    // Delivery retries run on the shared job infrastructure.
+    jobs: jobService,
   });
   const fileService = new FileService({
     store: new FeltDbFileStore(db),

@@ -1,5 +1,6 @@
 import type { StateFirstDB } from '@feltdb/core';
 import { TransactionBuilder, TransactionCollectionImpl, type AppPortTransactionCollection, type TransactionOperation } from './transaction.js';
+import { assertNoCredentials } from '../notifications/sensitive.js';
 
 /**
  * Transaction context for atomic composition of application state, webhooks, and jobs.
@@ -144,6 +145,12 @@ export class TransactionContextImpl {
     return id;
   }
 
+  /**
+   * Queue an in-app notification that commits with the surrounding transaction.
+   * The durable inbox is its delivery channel, so the in-app delivery record is
+   * written as delivered in the same commit. Use NotificationService.notify()
+   * for other channels.
+   */
   queueNotification(input: {
     tenantId: string;
     recipient: string;
@@ -151,12 +158,30 @@ export class TransactionContextImpl {
     title: string;
     body?: string;
     data?: Record<string, unknown>;
+    source?: { type: string; id?: string; eventId?: string };
     priority?: 'low' | 'normal' | 'high' | 'urgent';
   }): string {
+    assertNoCredentials(input.title, 'title');
+    if (input.body !== undefined) assertNoCredentials(input.body, 'body');
+    if (input.data !== undefined) assertNoCredentials(input.data, 'data');
+    if (input.source !== undefined) assertNoCredentials(input.source, 'source');
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const notification = { ...input, id, priority: input.priority ?? 'normal', createdAt: now, __version: 1 };
+    const notification = {
+      id, tenantId: input.tenantId, recipient: input.recipient, type: input.type, title: input.title,
+      ...(input.body !== undefined ? { body: input.body } : {}),
+      ...(input.data !== undefined ? { data: input.data } : {}),
+      ...(input.source !== undefined ? { source: input.source } : {}),
+      priority: input.priority ?? 'normal', channels: ['in-app'], status: 'delivered', createdAt: now, deliveredAt: now, createdBy: 'transaction', __version: 1,
+    };
     this.addOperation({ collection: 'notifications', id, requireAbsent: true, value: notification });
+    const deliveryId = crypto.randomUUID();
+    this.addOperation({
+      collection: 'notification_deliveries',
+      id: deliveryId,
+      requireAbsent: true,
+      value: { id: deliveryId, tenantId: input.tenantId, notificationId: id, recipient: input.recipient, channel: 'in-app', status: 'delivered', idempotencyKey: `${id}:in-app`, attemptCount: 1, maxAttempts: 1, createdAt: now, lastAttemptAt: now, deliveredAt: now, __version: 1 },
+    });
     const auditId = crypto.randomUUID();
     this.addOperation({
       collection: 'notification_audit_events',

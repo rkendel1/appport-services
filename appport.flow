@@ -234,11 +234,21 @@ app appport-services {
     data: json
     source: json
     priority: text
+    channels: json
+    status: text
+    idempotency_key: text
     created_at: datetime
+    created_by: text
+    expires_at: datetime
+    delivered_at: datetime
+    failed_at: datetime
+    expired_at: datetime
     read_at: datetime
+    acknowledged_at: datetime
     dismissed_at: datetime
     index tenant_recipient_created_idx using hash(tenant_id, recipient, created_at)
     index tenant_recipient_read_idx using hash(tenant_id, recipient, read_at)
+    index tenant_recipient_status_idx using hash(tenant_id, recipient, status)
     index tenant_recipient_priority_idx using hash(tenant_id, recipient, priority)
   }
 
@@ -246,19 +256,30 @@ app appport-services {
     id: uuid
     tenant_id: text
     notification_id: uuid
+    recipient: text
     channel: text
     status: text
-    attempted_at: datetime
+    idempotency_key: text
+    attempt_count: integer
+    max_attempts: integer
+    created_at: datetime
+    last_attempt_at: datetime
+    next_attempt_at: datetime
     delivered_at: datetime
-    error: text
+    failed_at: datetime
+    failure_reason: text
+    external_id: text
     index tenant_idx using hash(tenant_id)
     index notification_idx using hash(notification_id)
+    index status_idx using hash(status)
   }
 
   collection NotificationAuditEvents {
     id: uuid
     type: text
     notification_id: uuid
+    delivery_id: uuid
+    channel: text
     tenant_id: text
     recipient: text
     principal_id: text

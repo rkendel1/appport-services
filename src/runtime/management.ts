@@ -7,7 +7,8 @@ import { createConfigurationUiRouter } from '../configuration/ui.js';
 import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from '../configuration/service.js';
 import { FileAuthorizationError, type FileService } from '../files/service.js';
 import type { JobService } from '../jobs/service.js';
-import { NotificationAuthorizationError, type NotificationService } from '../notifications/service.js';
+import { notificationListOptions } from '../notifications/http.js';
+import { NotificationAuthorizationError, NotificationNotFoundError, NotificationSensitiveDataError, NotificationValidationError, type NotificationService } from '../notifications/service.js';
 import { ScheduleAuthorizationError, type ScheduleService } from '../schedules/service.js';
 import type { WebhookService } from '../webhooks/service.js';
 
@@ -37,7 +38,7 @@ export interface ManagementServices {
   readonly configuration?: ConfigurationService;
   readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'>;
   readonly jobs?: Pick<JobService, 'enqueue' | 'listJobs' | 'retry'>;
-  readonly notifications?: Pick<NotificationService, 'create' | 'list' | 'markRead' | 'dismiss' | 'delete'>;
+  readonly notifications?: Pick<NotificationService, 'notify' | 'get' | 'list' | 'deliveries' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete'>;
   readonly files?: Pick<FileService, 'create' | 'list' | 'update' | 'delete'>;
   readonly schedules?: Pick<ScheduleService, 'create' | 'list' | 'disable'>;
 }
@@ -195,6 +196,14 @@ export function managementErrorHandler(error: unknown, _req: Request, res: Respo
     res.status(403).json({ error: { code: 'FORBIDDEN', message: error.message } });
     return;
   }
+  if (error instanceof NotificationValidationError || error instanceof NotificationSensitiveDataError) {
+    res.status(400).json({ error: { code: 'INVALID_INPUT', message: error.message } });
+    return;
+  }
+  if (error instanceof NotificationNotFoundError) {
+    res.status(404).json({ error: { code: 'NOT_FOUND', message: error.message } });
+    return;
+  }
   const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : 500;
   const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : 'MANAGEMENT_OPERATION_FAILED';
   const message = status < 500 && error instanceof Error ? error.message : 'Management operation failed';
@@ -237,9 +246,15 @@ function mountExistingServiceRoutes(router: Router, services: ManagementServices
     router.delete('/_appport/files/:id', handler(async (req, principal) => { await services.files!.delete(principal.tenantId, req.params.id, principal); return { status: 204 }; }));
   }
   if (services.notifications) {
-    router.get('/_appport/notifications', handler(async (req, principal) => ({ body: await services.notifications!.list(principal.tenantId, { limit: Number(req.query.limit ?? 50), cursor: stringQuery(req.query.cursor), recipient: stringQuery(req.query.recipient), type: stringQuery(req.query.type), unread: req.query.unread === 'true' }, principal) })));
-    router.post('/_appport/notifications', handler(async (req, principal) => ({ status: 201, body: await services.notifications!.create({ ...req.body, tenantId: principal.tenantId }, principal) })));
+    router.get('/_appport/notifications', handler(async (req, principal) => ({ body: await services.notifications!.list(principal.tenantId, notificationListOptions(req.query), principal) })));
+    router.post('/_appport/notifications', handler(async (req, principal) => {
+      const result = await services.notifications!.notify({ ...objectValue(req.body, 'body'), tenantId: principal.tenantId } as unknown as Parameters<NotificationService['notify']>[0], principal);
+      return { status: result.created ? 201 : 200, body: { notification: result.notification, deliveries: result.deliveries } };
+    }));
+    router.get('/_appport/notifications/:id', handler(async (req, principal) => ({ body: await services.notifications!.get(principal.tenantId, req.params.id, principal) })));
+    router.get('/_appport/notifications/:id/deliveries', handler(async (req, principal) => ({ body: { items: await services.notifications!.deliveries(principal.tenantId, req.params.id, principal) } })));
     router.post('/_appport/notifications/:id/read', handler(async (req, principal) => ({ body: await services.notifications!.markRead(principal.tenantId, req.params.id, principal) })));
+    router.post('/_appport/notifications/:id/acknowledge', handler(async (req, principal) => ({ body: await services.notifications!.acknowledge(principal.tenantId, req.params.id, principal) })));
     router.post('/_appport/notifications/:id/dismiss', handler(async (req, principal) => ({ body: await services.notifications!.dismiss(principal.tenantId, req.params.id, principal) })));
     router.delete('/_appport/notifications/:id', handler(async (req, principal) => { await services.notifications!.delete(principal.tenantId, req.params.id, principal); return { status: 204 }; }));
   }

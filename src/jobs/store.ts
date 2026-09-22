@@ -72,7 +72,7 @@ export class FeltDbJobStore implements JobStore {
     const all = await this.jobs.find({ tenantId });
     return all.filter((job) => {
       const isDue =
-        job.status === 'pending' && job.runAt <= now ||
+        (job.status === 'pending' || job.status === 'scheduled') && job.runAt <= now ||
         job.status === 'retrying' && job.nextAttemptAt && job.nextAttemptAt <= now;
       const isStale = job.status === 'running' && job.leaseExpiresAt && job.leaseExpiresAt <= now;
       return isDue || isStale;

@@ -12,6 +12,8 @@ import { HandlerNotRegisteredError, InvalidIntervalError } from './errors.js';
 const DEFAULT_MAX_ATTEMPTS = 5;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const LEASE_DURATION_MS = 30000;
+/** Job types under this prefix belong to AppPort Services itself. */
+export const SYSTEM_JOB_TYPE_PREFIX = 'appport.';
 
 interface JobServiceOptions {
   readonly jobStore: JobStore;
@@ -46,12 +48,34 @@ export class JobService {
   }
 
   register(type: string, handler: JobHandler): void {
+    assertApplicationJobType(type);
     if (this.allowedTypes && !this.allowedTypes.has(type)) throw new Error(`Job type "${type}" is not declared in appport.toml`);
     this.handlers.set(type, handler);
   }
 
+  /**
+   * Register a handler for an AppPort-owned job type (prefixed `appport.`).
+   * System types are not declared in appport.toml and cannot be enqueued
+   * through the application-facing enqueue().
+   */
+  registerSystem(type: string, handler: JobHandler): void {
+    if (!type.startsWith(SYSTEM_JOB_TYPE_PREFIX)) throw new Error(`System job types must start with "${SYSTEM_JOB_TYPE_PREFIX}"`);
+    this.handlers.set(type, handler);
+  }
+
+  /** Enqueue an AppPort-owned job. See registerSystem(). */
+  async enqueueSystem(input: CreateJobInput): Promise<Job> {
+    if (!input.type.startsWith(SYSTEM_JOB_TYPE_PREFIX)) throw new Error(`System job types must start with "${SYSTEM_JOB_TYPE_PREFIX}"`);
+    return this.createJob(input);
+  }
+
   async enqueue(input: CreateJobInput): Promise<Job> {
+    assertApplicationJobType(input.type);
     if (this.allowedTypes && !this.allowedTypes.has(input.type)) throw new Error(`Job type "${input.type}" is not declared in appport.toml`);
+    return this.createJob(input);
+  }
+
+  private async createJob(input: CreateJobInput): Promise<Job> {
     const id = randomUUID();
     const now = this.now().toISOString();
     const runAt = input.runAt ?? now;
@@ -95,6 +119,7 @@ export class JobService {
   }
 
   async scheduleRecurring(input: ScheduleRecurringInput): Promise<JobSchedule> {
+    assertApplicationJobType(input.type);
     if (this.allowedTypes && !this.allowedTypes.has(input.type)) throw new Error(`Job type "${input.type}" is not declared in appport.toml`);
     const id = randomUUID();
     const now = this.now().toISOString();
@@ -135,6 +160,11 @@ export class JobService {
 
   async listJobs(tenantId: string): Promise<readonly Job[]> {
     return this.jobStore.list(tenantId);
+  }
+
+  /** Jobs whose run time or retry time has arrived, plus stale leases. */
+  async listDueJobs(tenantId: string): Promise<readonly Job[]> {
+    return this.jobStore.listDue(tenantId, this.now().toISOString());
   }
 
   async getSchedule(tenantId: string, scheduleId: string): Promise<JobSchedule | null> {
@@ -368,4 +398,8 @@ export class JobService {
 
     return new Date(new Date(now).getTime() + delayMs).toISOString();
   }
+}
+
+function assertApplicationJobType(type: string): void {
+  if (type.startsWith(SYSTEM_JOB_TYPE_PREFIX)) throw new Error(`Job type "${type}" is reserved for AppPort Services`);
 }

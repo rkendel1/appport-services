@@ -2,9 +2,9 @@
 
 AppPort Services provides durable operational application capabilities that sit beside AuthPort.
 
-The service set includes API Keys, Jobs, Secrets, Webhooks, and Notifications. Notifications are
-stored and delivered by AppPort Services; they are not an attention-management layer. Attn may
-consume them to derive attention separately.
+The service set includes API Keys, Jobs, Schedules, Secrets, Webhooks, Files, and Notifications.
+Notifications are stored and delivered by AppPort Services; they are not an attention-management
+layer. Attn may consume them to derive attention separately.
 
 ## Create and run an application
 
@@ -105,7 +105,7 @@ npx @appport/runtime job list --tenant acme
 
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
 
-The repository defines four AppPort capabilities: **tenant-scoped API keys**, **durable webhooks**, **durable job execution**, and provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts. Legacy runtime state uses **`@feltdb/core@0.11.2`**. Secret material remains with an authorized provider and is never durable AppPort state.
+The repository defines four AppPort capabilities: **tenant-scoped API keys**, **durable webhooks**, **durable job execution**, and provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts. Legacy runtime state uses **`@feltdb/core@0.11.6`**. Secret material remains with an authorized provider and is never durable AppPort state.
 
 ```text
             Application
@@ -238,7 +238,7 @@ feltdb.flow (generated authoritative application contract)
        ↓
 TypeScript implementation
        ↓
-FeltDB (@feltdb/core@0.11.2)
+FeltDB (@feltdb/core@0.11.6)
 ```
 
 The Flow contract is parsed and validated at test time. The TypeScript stores (FeltDbApiKeyStore, FeltDbWebhookEndpointStore, etc.) implement the contract semantics directly against FeltDB collections.
@@ -269,7 +269,7 @@ Dependencies are pinned, including:
 ```json
 {
   "dependencies": {
-    "@feltdb/core": "0.11.2"
+    "@feltdb/core": "0.11.6"
   }
 }
 ```
@@ -573,9 +573,47 @@ const schedule = await service.scheduleRecurring({
 
 Jobs are **durable and idempotent**. Job state survives process restarts; workers claim jobs via version-based optimistic locking.
 
+## How do I send notifications?
+
+Notifications are durable application events routed through one or more delivery channels.
+Applications decide what happened. AppPort Services decides how a durable notification is delivered.
+
+```
+Application       = meaning
+AppPort Services  = delivery infrastructure
+FeltDB            = durable state and evidence
+Attn              = attention and judgment
+```
+
+```ts
+const { notification, deliveries } = await app.notifications.notify({
+  tenantId: 'tenant-a',
+  recipient: 'user-1',
+  type: 'monitor.triggered',
+  title: 'Status changed',
+  source: { type: 'monitor', id: 'monitor-7', eventId: 'observation-123' },
+  channels: ['browser', 'in-app'],
+}, principal);
+
+await app.notifications.markRead('tenant-a', notification.id, recipientPrincipal);
+await app.notifications.acknowledge('tenant-a', notification.id, recipientPrincipal);
+```
+
+- Each channel has its own durable delivery record (`pending`, `delivered`, `failed`, `retrying`).
+- Repeating the same source event returns the same notification.
+- Retries run on the existing job infrastructure.
+- `expiresAt` stops obsolete deliveries but keeps the record as evidence.
+- Credentials (passwords, cookies, authorization headers, tokens, API keys, private keys) are rejected.
+- Closing a browser does not destroy notifications. The browser is one delivery channel, and a new
+  session catches up from `GET /notifications?unread=true`.
+
+Email, mobile push, SMS, and webhook channels are adapters registered with `registerChannel()`.
+See [docs/notifications.md](docs/notifications.md) for the resource model, lifecycle, HTTP API,
+authorization, and the sensitive-data boundary.
+
 ## Where does durable state live?
 
-AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.11.2`.
+AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.11.6`.
 
 ```text
 feltdb.flow (generated Flow contract)
@@ -590,7 +628,7 @@ AppPort Services
       └─→ Secrets protocol (Secrets, SecretVersions, SecretAuditEvents)
       │
       ▼
- @feltdb/core@0.11.2
+ @feltdb/core@0.11.6
       │
       ▼
  real FeltDB

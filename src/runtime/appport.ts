@@ -12,6 +12,7 @@ import { FeltDbWebhookAuditSink, FeltDbWebhookDeliveryStore, FeltDbWebhookEndpoi
 import { EncryptedWebhookSecretStore } from '../webhooks/secrets.js';
 import { WebhookService } from '../webhooks/service.js';
 import { NotificationService } from '../notifications/service.js';
+import { BROWSER_NOTIFICATION_EVENT, BrowserNotificationChannel, InAppNotificationChannel } from '../notifications/channels.js';
 import { FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNotificationStore } from '../storage/notifications.js';
 import { FileService } from '../files/service.js';
 import { FeltDbFileAuditSink, FeltDbFileStore } from '../storage/files.js';
@@ -46,7 +47,7 @@ export type AppPortRouteHandler = (context: AppPortRouteContext) => unknown | Pr
 export interface AppPortApiKeys extends Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'getApiKey' | 'revokeApiKey' | 'authenticateApiKey'> {}
 export interface AppPortWebhooks extends Pick<WebhookService, 'createWebhookEndpoint' | 'getWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint' | 'emitWebhookEvent' | 'getWebhookDelivery' | 'listWebhookDeliveries' | 'replayWebhookDelivery'> {}
 export interface AppPortJobs extends Pick<JobService, 'enqueue' | 'schedule' | 'scheduleRecurring' | 'getJob' | 'listJobs' | 'getSchedule' | 'listSchedules' | 'disableSchedule' | 'retry'> {}
-export interface AppPortNotifications extends Pick<NotificationService, 'create' | 'get' | 'list' | 'markRead' | 'dismiss' | 'delete' | 'deliveries'> {}
+export interface AppPortNotifications extends Pick<NotificationService, 'notify' | 'create' | 'get' | 'list' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete' | 'deliveries' | 'retryDelivery' | 'recoverDeliveries' | 'registerChannel' | 'channelTypes'> {}
 export interface AppPortFiles extends Pick<FileService, 'create' | 'get' | 'list' | 'update' | 'delete'> {}
 export interface AppPortSchedules extends Pick<ScheduleService, 'create' | 'get' | 'list' | 'disable'> {}
 export interface AppPortTenantServices {
@@ -68,6 +69,10 @@ export interface AppPortTenantServices {
   readonly files: {
     create(input: Omit<import('../files/models.js').CreateFileInput, 'tenantId'>, principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<FileService['create']>;
     list(principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<FileService['list']>;
+  };
+  readonly notifications: {
+    notify(input: Omit<import('../notifications/models.js').CreateNotificationInput, 'tenantId'>, principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<NotificationService['notify']>;
+    list(options: import('../notifications/models.js').NotificationListOptions, principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<NotificationService['list']>;
   };
   readonly schedules: {
     create(input: Omit<import('../schedules/models.js').CreateScheduleInput, 'tenantId' | 'createdBy'>, principal: import('../contract/principals.js').AuthenticatedPrincipal): ReturnType<ScheduleService['create']>;
@@ -133,7 +138,13 @@ type CapabilityFactory = (
   config: AppPortConfig,
   services: InitializedCapabilities,
   runtime: ReturnType<typeof createFeltDbRuntime>,
+  context: CapabilityContext,
 ) => void;
+
+/** Runtime facilities shared with capability factories. */
+interface CapabilityContext {
+  readonly events: AppPortEvents;
+}
 
 export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, CapabilityFactory>> = {
   api(db, config, services, runtime) {
@@ -167,11 +178,21 @@ export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, Capabili
   },
   // Secrets is a contract capability only. AppBoundry supplies execution.
   secrets() {},
-  notifications(db, _config, services) {
+  notifications(db, config, services, _runtime, context) {
     services.notifications = new NotificationService({
       store: new FeltDbNotificationStore(db),
       deliveryStore: new FeltDbNotificationDeliveryStore(db),
       auditSink: new FeltDbNotificationAuditSink(db),
+      // Browser delivery rides the AppPort event stream that browsers and extensions subscribe to.
+      channels: [
+        new InAppNotificationChannel(),
+        new BrowserNotificationChannel({ push: (message) => { context.events.publish(BROWSER_NOTIFICATION_EVENT, message, message.tenantId); } }),
+      ],
+      defaultChannels: [config.notifications.default_channel],
+      defaultPriority: config.notifications.default_priority,
+      maxDeliveryAttempts: config.notifications.delivery.max_attempts,
+      // Retries use the application's job infrastructure when it is declared.
+      ...(services.jobs ? { jobs: services.jobs } : {}),
     });
   },
   files(db, _config, services) {
@@ -193,16 +214,16 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const feltDbOptions = runtimeOptionsFromContract(config, explicitFeltDbOptions, dirname(configPath));
   const runtime = createFeltDbRuntime(feltDbOptions);
   const services: InitializedCapabilities = {};
+  const events = new AppPortEvents();
 
   for (const capability of plan.capabilities) {
-    capabilityRegistry[capability](runtime.db, config, services, runtime);
+    capabilityRegistry[capability](runtime.db, config, services, runtime, { events });
   }
   if (services.jobs) services.schedules = new ScheduleService({ jobs: services.jobs });
 
   await runtime.db.deployFlowSpec(flow);
   for (const [type, handler] of Object.entries({ ...jobHandlers, ...jobs })) services.jobs?.register(type, handler);
 
-  const events = new AppPortEvents();
   const tenant = new AppPortTenantContext(config.tenant.default);
   const state: AppPortState = {
     collection: <T>(name: string) => runtime.db.collection<T>(name),
@@ -216,7 +237,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const apiKeysFacade: AppPortApiKeys | undefined = services.apiKeys ? bindMethods(services.apiKeys, ['createApiKey', 'listApiKeys', 'getApiKey', 'revokeApiKey', 'authenticateApiKey']) : undefined;
   const webhooksFacade: AppPortWebhooks | undefined = services.webhooks ? bindMethods(services.webhooks, ['createWebhookEndpoint', 'getWebhookEndpoint', 'listWebhookEndpoints', 'disableWebhookEndpoint', 'emitWebhookEvent', 'getWebhookDelivery', 'listWebhookDeliveries', 'replayWebhookDelivery']) : undefined;
   const jobsFacade: AppPortJobs | undefined = services.jobs ? bindMethods(services.jobs, ['enqueue', 'schedule', 'scheduleRecurring', 'getJob', 'listJobs', 'getSchedule', 'listSchedules', 'disableSchedule', 'retry']) : undefined;
-  const notificationsFacade: AppPortNotifications | undefined = services.notifications ? bindMethods(services.notifications, ['create', 'get', 'list', 'markRead', 'dismiss', 'delete', 'deliveries']) : undefined;
+  const notificationsFacade: AppPortNotifications | undefined = services.notifications ? bindMethods(services.notifications, ['notify', 'create', 'get', 'list', 'markRead', 'acknowledge', 'dismiss', 'delete', 'deliveries', 'retryDelivery', 'recoverDeliveries', 'registerChannel', 'channelTypes']) : undefined;
   const filesFacade: AppPortFiles | undefined = services.files ? bindMethods(services.files, ['create', 'get', 'list', 'update', 'delete']) : undefined;
   const schedulesFacade: AppPortSchedules | undefined = services.schedules ? bindMethods(services.schedules, ['create', 'get', 'list', 'disable']) : undefined;
 
@@ -261,8 +282,10 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
       if (started) return;
       started = true;
       if (config.http.enabled) http = await startHttpRuntime(application, routes);
-      if (config.lifecycle.managed && config.tenant.default && services.jobs && config.jobs.execution.enabled) workerTimers.push(startManagedLoop(async () => { await services.jobs?.processRecurringSchedules(config.tenant.default!); const queued = await services.jobs?.listJobs(config.tenant.default!); for (const job of queued ?? []) if (job.status === 'pending' || job.status === 'retrying') await services.jobs?.executeJob(job.tenantId, job.id, `${config.application.name}:runtime`); }));
+      if (config.lifecycle.managed && config.tenant.default && services.jobs && config.jobs.execution.enabled) workerTimers.push(startManagedLoop(async () => { await services.jobs?.processRecurringSchedules(config.tenant.default!); const due = await services.jobs?.listDueJobs(config.tenant.default!); for (const job of due ?? []) await services.jobs?.executeJob(job.tenantId, job.id, `${config.application.name}:runtime`); }));
       if (config.lifecycle.managed && config.tenant.default && services.webhooks && config.webhooks.delivery.enabled) workerTimers.push(startManagedLoop(async () => { const deliveries = await services.webhooks?.listWebhookDeliveries(config.tenant.default!); for (const delivery of deliveries ?? []) if (delivery.status === 'pending' || delivery.status === 'retrying') await services.webhooks?.deliverWebhook(delivery.tenantId, delivery.id); }));
+      // Resume deliveries persisted before a restart but never attempted.
+      if (config.tenant.default && services.notifications) await services.notifications.recoverDeliveries(config.tenant.default);
       if (config.lifecycle.managed) { process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown); }
     },
     overview(): Record<string, unknown> {
@@ -288,6 +311,10 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
         files: {
           create: (input, principal) => application.files.create({ ...input, tenantId }, principal),
           list: (principal) => application.files.list(tenantId, principal),
+        },
+        notifications: {
+          notify: (input, principal) => application.notifications.notify({ ...input, tenantId }, principal),
+          list: (options, principal) => application.notifications.list(tenantId, options, principal),
         },
         schedules: {
           create: (input, principal) => application.schedules.create({ ...input, tenantId, createdBy: principal.principalId }, principal),
