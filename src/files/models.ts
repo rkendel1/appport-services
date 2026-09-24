@@ -26,8 +26,10 @@ export interface FileAuditEvent {
 }
 
 export interface CreateFileInput {
-  readonly tenantId: string;
-  readonly owner: string;
+  /** Optional; must equal the caller's tenant. */
+  readonly tenantId?: string;
+  /** Defaults to the caller. Passed to AuthBoundry as a resource attribute; not trusted as identity. */
+  readonly owner?: string;
   readonly name: string;
   readonly contentType?: string;
   readonly size: number;
@@ -37,7 +39,7 @@ export interface CreateFileInput {
 }
 
 export interface UpdateFileInput {
-  readonly tenantId: string;
+  readonly tenantId?: string;
   readonly id: string;
   readonly name?: string;
   readonly contentType?: string;

@@ -12,7 +12,10 @@ import {
   JobService,
   ScheduleService,
 } from '../src/_internal.js';
-import type { AuthenticatedPrincipal } from '../src/contract/principals.js';
+import { ServiceMigrationError } from '../src/authority/errors.js';
+import { principal as verified, testGateway } from './support/authority.js';
+
+const caller = (tenantId: string) => verified({ principalId: 'user-1', principalType: 'api_key', tenantId, credentialId: 'key' });
 
 async function createLocalJobService(now?: () => Date) {
   const path = await mkdtemp(join(tmpdir(), 'appport-jobs-test-'));
@@ -26,15 +29,14 @@ async function createLocalJobService(now?: () => Date) {
     jobStore: new FeltDbJobStore(runtime.db),
     scheduleStore: new FeltDbJobScheduleStore(runtime.db),
     auditSink: new FeltDbJobAuditSink(runtime.db),
+    authority: testGateway(runtime.db),
     now,
   });
 
   return { service, runtime };
 }
 
-const principal = (id = 'user-1', scopes = ['schedules.create', 'schedules.read', 'schedules.write']): AuthenticatedPrincipal => ({
-  principalId: id, principalType: 'api_key', tenantId: 'tenant-a', scopes, credentialId: 'key',
-});
+const principal = (id = 'user-1') => verified({ principalId: id, principalType: 'api_key', tenantId: 'tenant-a', credentialId: 'key' });
 
 test('enqueue creates pending job', async () => {
   const { service, runtime } = await createLocalJobService();
@@ -43,7 +45,7 @@ test('enqueue creates pending job', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: { data: 'test' },
-  });
+  }, caller('tenant-a'));
 
   assert.ok(job.id);
   assert.equal(job.tenantId, 'tenant-a');
@@ -70,7 +72,7 @@ test('schedule creates scheduled job', async () => {
     type: 'test.job',
     payload: {},
     runAt: futureTime,
-  });
+  }, caller('tenant-a'));
 
   assert.equal(job.status, 'scheduled');
   assert.equal(job.runAt, futureTime);
@@ -85,7 +87,7 @@ test('tenant isolation prevents cross-tenant access', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   const fetched = await service.getJob('tenant-b', job.id);
   assert.equal(fetched, null);
@@ -100,19 +102,19 @@ test('list jobs filtered by tenant', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   await service.enqueue({
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   await service.enqueue({
     tenantId: 'tenant-b',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-b'));
 
   const jobsA = await service.listJobs('tenant-a');
   const jobsB = await service.listJobs('tenant-b');
@@ -137,7 +139,7 @@ test('register and execute handler', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: { value: 42 },
-  });
+  }, caller('tenant-a'));
 
   const result = await service.executeJob('tenant-a', job.id, 'worker-1');
   assert.equal(result, true);
@@ -164,7 +166,7 @@ test('handler failure triggers retry', async () => {
     type: 'test.job',
     payload: {},
     maxAttempts: 3,
-  });
+  }, caller('tenant-a'));
 
   const result1 = await service.executeJob('tenant-a', job.id, 'worker-1');
   assert.equal(result1, false);
@@ -191,7 +193,7 @@ test('max attempts marks job as failed', async () => {
     type: 'test.job',
     payload: {},
     maxAttempts: 2,
-  });
+  }, caller('tenant-a'));
 
   await service.executeJob('tenant-a', job.id, 'worker-1');
   let fetched = await service.getJob('tenant-a', job.id);
@@ -219,13 +221,13 @@ test('manual retry resets failed job', async () => {
     type: 'test.job',
     payload: {},
     maxAttempts: 2,
-  });
+  }, caller('tenant-a'));
 
   await service.executeJob('tenant-a', job.id, 'worker-1');
   let fetched = await service.getJob('tenant-a', job.id);
   assert.equal(fetched?.status, 'retrying');
 
-  const retried = await service.retry('tenant-a', job.id);
+  const retried = await service.retry('tenant-a', job.id, caller('tenant-a'));
   assert.ok(retried);
   assert.equal(retried.status, 'pending');
   assert.equal(retried.attemptCount, 0);
@@ -243,8 +245,7 @@ test('schedule recurring creates execution jobs', async () => {
     type: 'test.recurring',
     payload: { id: 123 },
     interval: '1h',
-    createdBy: 'user-1',
-  });
+  }, caller('tenant-a'));
 
   assert.ok(schedule.id);
   assert.equal(schedule.interval, '1h');
@@ -262,40 +263,38 @@ test('restart preserves jobs and schedules', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-jobs-restart-'));
   const namespace = 'restart-' + Math.random().toString(16).slice(2);
 
+  const firstRuntime = createFeltDbRuntime({ mode: 'local', namespace, path });
   const first = new JobService({
-    jobStore: new FeltDbJobStore(
-      createFeltDbRuntime({ mode: 'local', namespace, path }).db,
-    ),
-    scheduleStore: new FeltDbJobScheduleStore(
-      createFeltDbRuntime({ mode: 'local', namespace, path }).db,
-    ),
-    auditSink: new FeltDbJobAuditSink(
-      createFeltDbRuntime({ mode: 'local', namespace, path }).db,
-    ),
+    jobStore: new FeltDbJobStore(firstRuntime.db),
+    scheduleStore: new FeltDbJobScheduleStore(firstRuntime.db),
+    auditSink: new FeltDbJobAuditSink(firstRuntime.db),
+    authority: testGateway(firstRuntime.db),
   });
 
   const job = await first.enqueue({
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   const schedule = await first.scheduleRecurring({
     tenantId: 'tenant-a',
     type: 'test.recurring',
     payload: {},
     interval: '1h',
-    createdBy: 'user-1',
-  });
+  }, caller('tenant-a'));
 
+  await firstRuntime.db.close();
   const runtime = createFeltDbRuntime({ mode: 'local', namespace, path });
   const second = new JobService({
     jobStore: new FeltDbJobStore(runtime.db),
     scheduleStore: new FeltDbJobScheduleStore(runtime.db),
     auditSink: new FeltDbJobAuditSink(runtime.db),
+    authority: testGateway(runtime.db),
   });
 
   const fetchedJob = await second.getJob('tenant-a', job.id);
+  assert.equal(fetchedJob?.principal?.principalId, 'user-1');
   const fetchedSchedule = await second.getSchedule('tenant-a', schedule.id);
 
   assert.ok(fetchedJob);
@@ -314,10 +313,9 @@ test('disable schedule stops generating jobs', async () => {
     type: 'test.recurring',
     payload: {},
     interval: '1h',
-    createdBy: 'user-1',
-  });
+  }, caller('tenant-a'));
 
-  const disabled = await service.disableSchedule('tenant-a', schedule.id);
+  const disabled = await service.disableSchedule('tenant-a', schedule.id, caller('tenant-a'));
   assert.ok(disabled);
   assert.equal(disabled.enabled, false);
 
@@ -329,13 +327,19 @@ test('disable schedule stops generating jobs', async () => {
 
 test('schedules service exposes recurring schedules as a first-class authorized surface', async () => {
   const { service: jobs, runtime } = await createLocalJobService();
-  const schedules = new ScheduleService({ jobs });
+  const schedules = new ScheduleService({ jobs, authority: testGateway(runtime.db) });
+  await assert.rejects(schedules.create({
+    tenantId: 'tenant-a',
+    type: 'test.recurring',
+    payload: { ok: true },
+    interval: '1h',
+    createdBy: 'someone-else',
+  }, principal()), ServiceMigrationError);
   const created = await schedules.create({
     tenantId: 'tenant-a',
     type: 'test.recurring',
     payload: { ok: true },
     interval: '1h',
-    createdBy: 'ignored',
   }, principal());
   assert.equal(created.createdBy, 'user-1');
   assert.equal((await schedules.list('tenant-a', principal())).length, 1);

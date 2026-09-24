@@ -1,3 +1,7 @@
+import type { DurablePrincipal } from '../authority/principal.js';
+
+export type { DurablePrincipal };
+
 export type JobStatus = 'scheduled' | 'pending' | 'running' | 'retrying' | 'completed' | 'failed';
 
 export interface Job {
@@ -24,6 +28,13 @@ export interface Job {
 
   lastError?: string;
 
+  /**
+   * Durable execution identity captured from the authorized enqueue. The
+   * worker process is never the authority; every run is authorized as this
+   * principal (and its delegation) at execution time.
+   */
+  principal?: DurablePrincipal;
+
   __version: number;
 }
 
@@ -42,6 +53,9 @@ export interface JobSchedule {
   createdAt: string;
   createdBy: string;
 
+  /** Durable execution identity inherited by every job the schedule creates. */
+  principal?: DurablePrincipal;
+
   __version: number;
 }
 
@@ -58,19 +72,27 @@ export interface JobAuditEvent {
 }
 
 export interface CreateJobInput {
-  tenantId: string;
+  /** Optional; must equal the caller's tenant. */
+  tenantId?: string;
   type: string;
   payload: unknown;
   runAt?: string;
   maxAttempts?: number;
+  /**
+   * AuthBoundry delegation the job runs under. Not authority by itself:
+   * AuthBoundry checks it on every execution, so revoking it stops future runs.
+   */
+  delegationId?: string;
 }
 
 export interface ScheduleRecurringInput {
-  tenantId: string;
+  tenantId?: string;
   type: string;
   payload: unknown;
   interval: string;
-  createdBy: string;
+  delegationId?: string;
+  /** @deprecated Must equal the verified caller when supplied. */
+  createdBy?: string;
 }
 
 export interface JobHandlerResult {

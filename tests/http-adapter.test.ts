@@ -13,10 +13,13 @@ import {
   RequestContext,
   type HttpRequest,
 } from '../src/_internal.js';
+import { principal as operator, TestAuthority } from './support/authority.js';
+
+const allowAll = new TestAuthority({ allowAll: true });
 
 async function createLocalService() {
   const path = await mkdtemp(join(tmpdir(), 'appport-adapter-test-'));
-  const service = createApiKeyService({ mode: 'local', namespace: 'adapter-' + Math.random().toString(16).slice(2), path });
+  const service = createApiKeyService({ mode: 'local', namespace: 'adapter-' + Math.random().toString(16).slice(2), path, authorizer: allowAll });
   return { service, path };
 }
 
@@ -26,9 +29,7 @@ test('authenticateRequest with valid Bearer token returns principal', async () =
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'test',
-    scopes: ['read', 'write'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-a' }));
 
   const request: HttpRequest = {
     headers: { authorization: `Bearer ${created.secret}` },
@@ -37,7 +38,7 @@ test('authenticateRequest with valid Bearer token returns principal', async () =
 
   assert.ok(result.principal);
   assert.equal(result.principal.tenantId, 'tenant-a');
-  assert.deepEqual(result.principal.scopes, ['read', 'write']);
+  assert.equal('scopes' in result.principal, false);
   assert.equal(result.reason, undefined);
   await service.close();
 });
@@ -143,16 +144,12 @@ test('tenant isolation: request A with tenant A and request B with tenant B run 
   const keyA = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'test-a',
-    scopes: ['read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-a' }));
 
   const keyB = await service.createApiKey({
     tenantId: 'tenant-b',
     name: 'test-b',
-    scopes: ['write'],
-    createdBy: 'user-2',
-  });
+  }, operator({ principalId: 'user-2', tenantId: 'tenant-b' }));
 
   const requestA: HttpRequest = { headers: { authorization: `Bearer ${keyA.secret}` } };
   const requestB: HttpRequest = { headers: { authorization: `Bearer ${keyB.secret}` } };
@@ -166,8 +163,8 @@ test('tenant isolation: request A with tenant A and request B with tenant B run 
   assert.ok(resultB.principal);
   assert.equal(resultA.principal.tenantId, 'tenant-a');
   assert.equal(resultB.principal.tenantId, 'tenant-b');
-  assert.deepEqual(resultA.principal.scopes, ['read']);
-  assert.deepEqual(resultB.principal.scopes, ['write']);
+  assert.equal(resultA.principal.credentialId, keyA.id);
+  assert.equal(resultB.principal.credentialId, keyB.id);
   await service.close();
 });
 
@@ -178,15 +175,11 @@ test('repeated concurrent authentication does not lose valid principals', async 
     await service.createApiKey({
       tenantId: 'tenant-a',
       name: 'stress-a',
-      scopes: ['read'],
-      createdBy: 'user-1',
-    }),
+    }, operator({ principalId: 'user-1', tenantId: 'tenant-a' })),
     await service.createApiKey({
       tenantId: 'tenant-b',
       name: 'stress-b',
-      scopes: ['write'],
-      createdBy: 'user-2',
-    }),
+    }, operator({ principalId: 'user-2', tenantId: 'tenant-b' })),
   ];
 
   const results = await Promise.all(
@@ -217,11 +210,9 @@ test('revoked credential fails authentication', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'test',
-    scopes: ['read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-a' }));
 
-  await service.revokeApiKey({ tenantId: 'tenant-a', id: created.id, revokedBy: 'user-2' });
+  await service.revokeApiKey({ tenantId: 'tenant-a', id: created.id }, operator({ principalId: 'user-2', tenantId: 'tenant-a' }));
 
   const request: HttpRequest = { headers: { authorization: `Bearer ${created.secret}` } };
   const result = await auth.authenticateRequest(request);
@@ -238,10 +229,8 @@ test('expired credential fails authentication', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'test',
-    scopes: ['read'],
     expiresAt: new Date(Date.now() - 5000),
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-a' }));
 
   const request: HttpRequest = { headers: { authorization: `Bearer ${created.secret}` } };
   const result = await auth.authenticateRequest(request);
@@ -256,21 +245,9 @@ test('RequestContext maintains principal state without global mutation', async (
   const context1 = new RequestContext();
   const context2 = new RequestContext();
 
-  const principal1 = {
-    principalId: 'id-1',
-    principalType: 'api_key' as const,
-    tenantId: 'tenant-1',
-    scopes: ['read'],
-    credentialId: 'cred-1',
-  };
+  const principal1 = operator({ principalId: 'id-1', principalType: 'api_key', tenantId: 'tenant-1', credentialId: 'cred-1' });
 
-  const principal2 = {
-    principalId: 'id-2',
-    principalType: 'api_key' as const,
-    tenantId: 'tenant-2',
-    scopes: ['write'],
-    credentialId: 'cred-2',
-  };
+  const principal2 = operator({ principalId: 'id-2', principalType: 'api_key', tenantId: 'tenant-2', credentialId: 'cred-2' });
 
   context1.setPrincipal(principal1);
   context2.setPrincipal(principal2);
@@ -286,13 +263,7 @@ test('RequestContext maintains principal state without global mutation', async (
 });
 
 test('assertTenant throws TenantMismatchError when tenants do not match', () => {
-  const principal = {
-    principalId: 'id-1',
-    principalType: 'api_key' as const,
-    tenantId: 'tenant-a',
-    scopes: ['read'],
-    credentialId: 'cred-1',
-  };
+  const principal = operator({ principalId: 'id-1', principalType: 'api_key', tenantId: 'tenant-a', credentialId: 'cred-1' });
 
   assert.throws(
     () => assertTenant(principal, 'tenant-b'),
@@ -307,13 +278,7 @@ test('assertTenant throws TenantMismatchError when tenants do not match', () => 
 });
 
 test('assertTenant does not throw when tenants match', () => {
-  const principal = {
-    principalId: 'id-1',
-    principalType: 'api_key' as const,
-    tenantId: 'tenant-a',
-    scopes: ['read'],
-    credentialId: 'cred-1',
-  };
+  const principal = operator({ principalId: 'id-1', principalType: 'api_key', tenantId: 'tenant-a', credentialId: 'cred-1' });
 
   assert.doesNotThrow(() => assertTenant(principal, 'tenant-a'));
 });
@@ -327,9 +292,7 @@ test('no cross-request principal leakage through multiple concurrent requests', 
       service.createApiKey({
         tenantId: `tenant-${suffix}`,
         name: `test-${suffix}`,
-        scopes: [suffix],
-        createdBy: 'user-1',
-      }),
+      }, operator({ principalId: 'user-1', tenantId: `tenant-${suffix}` })),
     ),
   );
 
@@ -343,7 +306,7 @@ test('no cross-request principal leakage through multiple concurrent requests', 
   for (let i = 0; i < results.length; i++) {
     assert.ok(results[i].principal);
     assert.equal(results[i].principal?.tenantId, `tenant-${String.fromCharCode(97 + i)}`);
-    assert.deepEqual(results[i].principal?.scopes, [String.fromCharCode(97 + i)]);
+    assert.equal(results[i].principal?.credentialId, keys[i].id);
   }
 
   await service.close();
@@ -356,9 +319,7 @@ test('authorization header as array is handled correctly', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'test',
-    scopes: ['read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-a' }));
 
   const request: HttpRequest = {
     headers: { authorization: [`Bearer ${created.secret}`] },
@@ -371,22 +332,18 @@ test('authorization header as array is handled correctly', async () => {
   await service.close();
 });
 
-test('scopes are preserved exactly and returned in principal', async () => {
+test('API key scopes are rejected with a migration error and never reach the principal', async () => {
   const { service } = await createLocalService();
   const auth = createApiKeyAuth({ service });
 
-  const scopes = ['invoices.read', 'invoices.write', 'users.read'];
-  const created = await service.createApiKey({
-    tenantId: 'tenant-a',
-    name: 'test',
-    scopes,
-    createdBy: 'user-1',
-  });
-
-  const request: HttpRequest = { headers: { authorization: `Bearer ${created.secret}` } };
-  const result = await auth.authenticateRequest(request);
+  await assert.rejects(
+    () => service.createApiKey({ tenantId: 'tenant-a', name: 'test', scopes: ['files.admin', 'notifications.admin'] }, operator({ principalId: 'user-1', tenantId: 'tenant-a' })),
+    /API key scopes are no longer authority/,
+  );
+  const created = await service.createApiKey({ tenantId: 'tenant-a', name: 'test' }, operator({ principalId: 'user-1', tenantId: 'tenant-a' }));
+  const result = await auth.authenticateRequest({ headers: { authorization: `Bearer ${created.secret}` } });
 
   assert.ok(result.principal);
-  assert.deepEqual(result.principal.scopes, scopes);
+  assert.equal('scopes' in result.principal, false);
   await service.close();
 });

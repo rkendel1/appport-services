@@ -10,6 +10,7 @@ import { parseFlowSpec } from '@feltdb/core';
 import { runCli } from '../src/cli.js';
 import { parseAppPortConfig } from '../src/runtime/dsl.js';
 import { appport } from '../src/runtime/appport.js';
+import { TestAuthority } from './support/authority.js';
 
 function capture(): { stream: Writable; output: () => string } {
   let value = '';
@@ -173,7 +174,22 @@ test('operational CLI and runtime use the same contract-derived state', async ()
   const configPath = join(cwd, 'appport.toml');
   await writeFile(configPath, (await readFile(configPath, 'utf8')).replace('enabled = true\nhost = "127.0.0.1"', 'enabled = false\nhost = "127.0.0.1"'));
   const createdOut = capture();
-  await runCli(['api-key', 'create', '--tenant', 'development', '--name', 'bootstrap', '--scope', 'example.read', '--created-by', 'init'], { stdout: createdOut.stream, stderr: stderr.stream }, undefined, cwd);
+  await assert.rejects(
+    runCli(['api-key', 'create', '--tenant', 'development', '--name', 'bootstrap', '--created-by', 'init'], { stdout: createdOut.stream, stderr: stderr.stream }, undefined, cwd),
+    /--created-by is no longer accepted/,
+  );
+  await assert.rejects(
+    runCli(['api-key', 'create', '--tenant', 'development', '--name', 'bootstrap', '--scope', 'example.read'], { stdout: createdOut.stream, stderr: stderr.stream }, undefined, cwd),
+    /--scope is no longer accepted/,
+  );
+  await assert.rejects(
+    runCli(['api-key', 'create', '--tenant', 'development', '--name', 'bootstrap'], { stdout: createdOut.stream, stderr: stderr.stream }, undefined, cwd),
+    /require an operator identity/,
+  );
+  const authorizer = new TestAuthority();
+  await authorizer.grant({ subject: 'operator@example.com', capability: 'apikeys.create', tenantId: 'development' });
+  const operator = { authorizer, identify: () => ({ principalId: 'operator@example.com', principalType: 'operator', tenantId: 'development' }) };
+  await runCli(['api-key', 'create', '--tenant', 'development', '--name', 'bootstrap'], { stdout: createdOut.stream, stderr: stderr.stream }, undefined, cwd, operator);
   const secret = /^secret: (.+)$/m.exec(createdOut.output())?.[1];
   assert.ok(secret);
   const application = await appport({ config: configPath });

@@ -13,25 +13,39 @@ import {
   createManagementRouter,
   createServices,
   type ApiKeyManagementCapability,
-  type AuthenticatedPrincipal,
+  type PrincipalClaims,
 } from '../src/index.js';
+import { TestAuthority } from './support/authority.js';
 
-const principals: Record<string, AuthenticatedPrincipal> = {
-  alice: { principalId: 'alice', principalType: 'host_session', tenantId: 'tenant-a', scopes: [] },
-  bob: { principalId: 'bob', principalType: 'host_session', tenantId: 'tenant-b', scopes: [] },
+// Host identity claims. Scopes are not part of identity; AuthBoundry holds permissions.
+const principals: Record<string, PrincipalClaims> = {
+  alice: { principalId: 'alice', principalType: 'host_session', tenantId: 'tenant-a' },
+  bob: { principalId: 'bob', principalType: 'host_session', tenantId: 'tenant-b' },
 };
+const PUBLIC_DESTINATIONS = { lookup: async () => [{ address: '93.184.216.34', family: 4 as const }] };
 
-async function startHost(permissions: Readonly<Record<string, readonly ApiKeyManagementCapability[]>>) {
-  const services = createServices({ memory: true, namespace: `management-${crypto.randomUUID()}` });
-  return { services, ...await mountHost(services, permissions) };
+type Permissions = Readonly<Record<string, readonly string[]>>;
+
+/** Test AuthBoundry whose grants are the given subject -> capability table. */
+function authority(permissions: Permissions): TestAuthority {
+  const authorizer = new TestAuthority();
+  for (const [subject, capabilities] of Object.entries(permissions)) {
+    for (const capability of capabilities) void authorizer.grant({ subject, capability });
+  }
+  return authorizer;
 }
 
-async function mountHost(services: ReturnType<typeof createServices>, permissions: Readonly<Record<string, readonly ApiKeyManagementCapability[]>>) {
+async function startHost(permissions: Permissions) {
+  const services = createServices({ memory: true, namespace: `management-${crypto.randomUUID()}`, authorizer: authority(permissions), webhookDestinationPolicy: PUBLIC_DESTINATIONS });
+  return { services, ...await mountHost(services) };
+}
+
+async function mountHost(services: ReturnType<typeof createServices>) {
   const app = express();
   app.use(createManagementRouter({
     services,
+    authority: services.gateway,
     authenticate: (request) => principals[String(request.headers['x-test-principal'])] ?? null,
-    authorize: (capability, { principal }) => permissions[principal.principalId]?.includes(capability) ?? false,
     includeConfiguration: false,
     includeUi: false,
   }));
@@ -49,13 +63,25 @@ async function stopHost(server: Server, services: ReturnType<typeof createServic
 
 const allCapabilities = Object.values(API_KEY_MANAGEMENT_CAPABILITIES);
 
-test('exported management router composes an existing service instance with host authorization and tenant isolation', async () => {
+test('exported management router composes an existing service instance with AuthBoundry authorization and tenant isolation', async () => {
   const { services, server, base } = await startHost({ alice: allCapabilities, bob: allCapabilities });
   try {
+    for (const body of [
+      { name: 'production', scopes: ['invoices.read'] },
+      { name: 'production', tenantId: 'tenant-b' },
+      { name: 'production', createdBy: 'attacker' },
+    ]) {
+      const refused = await fetch(`${base}/_appport/api/keys`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-test-principal': 'alice' },
+        body: JSON.stringify(body),
+      });
+      assert.ok(refused.status === 400 || refused.status === 403, `caller-controlled ${Object.keys(body).join(',')} must be refused`);
+    }
     const creation = await fetch(`${base}/_appport/api/keys`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-test-principal': 'alice' },
-      body: JSON.stringify({ name: 'production', scopes: ['invoices.read'], tenantId: 'tenant-b', createdBy: 'attacker' }),
+      body: JSON.stringify({ name: 'production' }),
     });
     assert.equal(creation.status, 201);
     const created = await creation.json() as { id: string; secret: string };
@@ -101,7 +127,7 @@ test('management API rejects missing principals and enforces each operation capa
       const init: RequestInit = {
         method,
         headers: { 'content-type': 'application/json', 'x-test-principal': 'alice' },
-        ...(method === 'POST' ? { body: JSON.stringify({ name: 'allowed', scopes: [] }) } : {}),
+        ...(method === 'POST' ? { body: JSON.stringify({ name: 'allowed' }) } : {}),
       };
       const allowed = await fetch(base + path, init);
       assert.notEqual(allowed.status, 403, `${capability} should allow its operation`);
@@ -134,13 +160,14 @@ test('API key UI contribution declares the exact capabilities used by the page',
 });
 
 test('packaged API-key UI requires its complete capability set and unsupported surfaces are not mounted', async () => {
-  const services = createServices({ memory: true, namespace: `management-ui-${crypto.randomUUID()}` });
-  let permissions: readonly ApiKeyManagementCapability[] = [API_KEY_MANAGEMENT_CAPABILITIES.read];
+  const authorizer = authority({ alice: [API_KEY_MANAGEMENT_CAPABILITIES.read] });
+  const services = createServices({ memory: true, namespace: `management-ui-${crypto.randomUUID()}`, authorizer });
   const app = express();
+  assert.throws(() => createManagementRouter({ services, authority: services.gateway, authenticate: () => principals.alice, authorize: () => true }), /no longer accepts an authorize adapter/);
   app.use(createManagementRouter({
     services: { apiKeys: services.apiKeys },
+    authority: services.gateway,
     authenticate: () => principals.alice,
-    authorize: (capability) => permissions.includes(capability),
     includeConfiguration: false,
   }));
   const server = createServer(app);
@@ -149,7 +176,7 @@ test('packaged API-key UI requires its complete capability set and unsupported s
   const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
   try {
     assert.equal((await fetch(`${base}/api-keys`)).status, 403);
-    permissions = allCapabilities;
+    for (const capability of allCapabilities) await authorizer.grant({ subject: 'alice', capability });
     const page = await fetch(`${base}/api-keys`);
     assert.equal(page.status, 200);
     assert.match(await page.text(), /Create API key/);
@@ -160,11 +187,15 @@ test('packaged API-key UI requires its complete capability set and unsupported s
 });
 
 test('composable runtime mounts existing webhook and job contracts against the supplied services', async () => {
-  const { services, server, base } = await startHost({ alice: allCapabilities });
+  const { services, server, base } = await startHost({ alice: ['webhooks.register', 'webhooks.read', 'jobs.create', 'jobs.read'] });
   try {
     const headers = { 'content-type': 'application/json', 'x-test-principal': 'alice' };
+    const crossTenant = await fetch(`${base}/_appport/webhooks`, {
+      method: 'POST', headers, body: JSON.stringify({ url: 'https://example.com/hook', events: ['invoice.created'], signingCredentialRef: 'credential-ref:whsec_1', tenantId: 'tenant-b' }),
+    });
+    assert.equal(crossTenant.status, 403);
     const webhook = await fetch(`${base}/_appport/webhooks`, {
-      method: 'POST', headers, body: JSON.stringify({ url: 'https://example.com/hook', events: ['invoice.created'], tenantId: 'tenant-b' }),
+      method: 'POST', headers, body: JSON.stringify({ url: 'https://example.com/hook', events: ['invoice.created'], signingCredentialRef: 'credential-ref:whsec_1' }),
     });
     assert.equal(webhook.status, 201);
     const webhooks = await fetch(`${base}/_appport/webhooks`, { headers }).then((response) => response.json()) as { tenantId: string }[];
@@ -172,7 +203,7 @@ test('composable runtime mounts existing webhook and job contracts against the s
     assert.equal(webhooks[0].tenantId, 'tenant-a');
 
     const job = await fetch(`${base}/_appport/jobs`, {
-      method: 'POST', headers, body: JSON.stringify({ type: 'invoice.process', payload: { id: 'one' }, tenantId: 'tenant-b' }),
+      method: 'POST', headers, body: JSON.stringify({ type: 'invoice.process', payload: { id: 'one' } }),
     });
     assert.equal(job.status, 201);
     const jobs = await fetch(`${base}/_appport/jobs`, { headers }).then((response) => response.json()) as { tenantId: string }[];
@@ -186,18 +217,18 @@ test('composable runtime mounts existing webhook and job contracts against the s
 test('management API-key state remains durable across service recreation and revoke', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-management-durable-'));
   const namespace = `management-durable-${crypto.randomUUID()}`;
-  const first = createServices({ mode: 'local', path, namespace });
-  const firstHost = await mountHost(first, { alice: allCapabilities });
+  const first = createServices({ mode: 'local', path, namespace, authorizer: authority({ alice: allCapabilities }) });
+  const firstHost = await mountHost(first);
   const creation = await fetch(`${firstHost.base}/_appport/api/keys`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-test-principal': 'alice' },
-    body: JSON.stringify({ name: 'durable', scopes: [] }),
+    body: JSON.stringify({ name: 'durable' }),
   });
   const created = await creation.json() as { id: string; secret: string };
   await stopHost(firstHost.server, first);
 
-  const second = createServices({ mode: 'local', path, namespace });
-  const secondHost = await mountHost(second, { alice: allCapabilities });
+  const second = createServices({ mode: 'local', path, namespace, authorizer: authority({ alice: allCapabilities }) });
+  const secondHost = await mountHost(second);
   try {
     const listed = await fetch(`${secondHost.base}/_appport/api/keys`, { headers: { 'x-test-principal': 'alice' } }).then((response) => response.json()) as { id: string }[];
     assert.equal(listed.some((key) => key.id === created.id), true);

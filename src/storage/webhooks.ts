@@ -7,11 +7,26 @@ import type {
   WebhookEndpoint,
   WebhookDelivery,
   WebhookAuditEvent,
+  WebhookIntegration,
 } from '../webhooks/models.js';
 
 const WEBHOOK_ENDPOINTS_COLLECTION = 'webhook_endpoints';
 const WEBHOOK_DELIVERIES_COLLECTION = 'webhook_deliveries';
 const WEBHOOK_AUDIT_COLLECTION = 'webhook_audit_events';
+const WEBHOOK_INTEGRATIONS_COLLECTION = 'webhook_integrations';
+const INBOUND_WEBHOOK_EVENTS_COLLECTION = 'inbound_webhook_events';
+
+export interface WebhookIntegrationStore {
+  create(integration: WebhookIntegration): Promise<void>;
+  get(id: string): Promise<WebhookIntegration | null>;
+  list(tenantId: string): Promise<readonly WebhookIntegration[]>;
+}
+
+/** Accepted inbound event identities. Durable, so replay protection survives restart. */
+export interface InboundWebhookReplayStore {
+  /** Returns false when the event identity was already accepted. */
+  accept(record: { readonly id: string; readonly integrationId: string; readonly provider: string; readonly eventId: string; readonly eventTimestamp: string; readonly acceptedAt: string; readonly tenantId: string }): Promise<boolean>;
+}
 
 export interface WebhookEndpointStore {
   create(endpoint: WebhookEndpoint): Promise<void>;
@@ -181,4 +196,38 @@ export function webhookAuditCollectionName(): string {
 
 export function isConditionalConflict(error: unknown): error is ConditionalConflictError {
   return error instanceof ConditionalConflictError;
+}
+
+export class FeltDbWebhookIntegrationStore implements WebhookIntegrationStore {
+  private readonly integrations;
+
+  constructor(private readonly db: StateFirstDB) {
+    this.integrations = db.collection<WebhookIntegration>(WEBHOOK_INTEGRATIONS_COLLECTION);
+  }
+
+  async create(integration: WebhookIntegration): Promise<void> {
+    await this.db.transaction({ operations: [{ collection: WEBHOOK_INTEGRATIONS_COLLECTION, id: integration.id, requireAbsent: true, value: { ...integration } }] });
+  }
+
+  get(id: string): Promise<WebhookIntegration | null> {
+    return this.integrations.get(id);
+  }
+
+  list(tenantId: string): Promise<readonly WebhookIntegration[]> {
+    return this.integrations.find({ tenantId });
+  }
+}
+
+export class FeltDbInboundWebhookReplayStore implements InboundWebhookReplayStore {
+  constructor(private readonly db: StateFirstDB) {}
+
+  async accept(record: Parameters<InboundWebhookReplayStore['accept']>[0]): Promise<boolean> {
+    try {
+      await this.db.transaction({ operations: [{ collection: INBOUND_WEBHOOK_EVENTS_COLLECTION, id: record.id, requireAbsent: true, value: { ...record } }] });
+      return true;
+    } catch (error) {
+      if (error instanceof ConditionalConflictError) return false;
+      throw error;
+    }
+  }
 }

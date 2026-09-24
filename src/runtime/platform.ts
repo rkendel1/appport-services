@@ -41,10 +41,12 @@ export async function startHttpRuntime(application: AppPortApplication, routes: 
   const config = application.contract;
   const host = express();
   const services = managementServices(application);
+  // Identity only. Authorization for every management operation is an
+  // AuthBoundry decision made by the service gateway.
   const management = createManagementRouter({
     services,
+    authority: application.gateway,
     authenticate: (request) => authenticate(application, request),
-    authorize: (capability, { principal }) => principal.scopes.includes(capability),
     includeConfiguration: false,
     includeUi: false,
   });
@@ -81,12 +83,19 @@ async function dispatch(application: AppPortApplication, routes: Readonly<Record
   try {
     const url = new URL(request.url ?? '/', 'http://appport.local');
     if (url.pathname === '/_appport/health') { json(response, 200, { ok: true, application: application.contract.application.name }); return; }
+    const inbound = /^\/_appport\/webhooks\/inbound\/([^/]+)$/.exec(url.pathname);
+    if (inbound && request.method === 'POST') {
+      // Inbound webhooks carry no caller identity; the registered integration is the principal.
+      const result = await application.receiveWebhook({ integrationId: decodeURIComponent(inbound[1]), headers: request.headers, rawBody: await readRaw(request) });
+      json(response, 202, result);
+      return;
+    }
     const principal = await authenticate(application, request);
     const tenantId = principal?.tenantId ?? header(request, 'x-appport-tenant') ?? application.contract.tenant.default;
     if (!tenantId && application.contract.tenant.mode === 'required') throw httpError(400, 'TENANT_REQUIRED', 'A tenant is required');
     if (url.pathname === '/_appport/events' && request.method === 'GET' && application.contract.events.streaming.enabled) { streamEvents(application, request, response, tenantId ?? 'default'); return; }
     if (url.pathname === '/_appport/overview') { json(response, 200, application.overview()); return; }
-    if (url.pathname === '/_appport/events' && request.method === 'POST') { const body = record(await readJson(request)); const event = await application.publish(text(body.type, 'type'), record(body.data ?? {}), tenantId!); json(response, 201, event); return; }
+    if (url.pathname === '/_appport/events' && request.method === 'POST') { const body = record(await readJson(request)); const event = await application.publish(text(body.type, 'type'), record(body.data ?? {}), principal ? { principal } : { tenantId: tenantId! }); json(response, 201, event); return; }
     const handler = routes[`${request.method ?? 'GET'} ${url.pathname}`];
     if (!handler) throw httpError(404, 'NOT_FOUND', 'Route not found');
     const body = await readJson(request);
@@ -103,10 +112,11 @@ async function dispatch(application: AppPortApplication, routes: Readonly<Record
 async function authenticate(application: AppPortApplication, request: IncomingMessage): Promise<AuthenticatedPrincipal | null> {
   if (!application.contract.authorization.enabled) return null;
   const authorization = header(request, 'authorization');
-  if (!authorization?.startsWith('Bearer ')) { if (application.contract.authorization.default === 'deny') throw httpError(401, 'UNAUTHENTICATED', 'Bearer credential required'); return null; }
-  const principal = await application.api.keys.authenticateApiKey(authorization.slice(7));
-  if (!principal) throw httpError(403, 'INVALID_CREDENTIAL', 'Credential is invalid');
-  return principal;
+  const principal = await application.authenticate(request);
+  if (principal) return principal;
+  if (authorization?.startsWith('Bearer ')) throw httpError(403, 'INVALID_CREDENTIAL', 'Credential is invalid');
+  if (application.contract.authorization.default === 'deny') throw httpError(401, 'UNAUTHENTICATED', 'Bearer credential required');
+  return null;
 }
 function streamEvents(application: AppPortApplication, request: IncomingMessage, response: ServerResponse, tenantId: string): void {
   response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
@@ -117,6 +127,7 @@ function streamEvents(application: AppPortApplication, request: IncomingMessage,
 }
 function applyCors(application: AppPortApplication, request: IncomingMessage, response: ServerResponse): void { if (!application.contract.cors.enabled) return; const origin = header(request, 'origin'); const origins = application.contract.cors.origins; if (origins.includes('*')) response.setHeader('access-control-allow-origin', '*'); else if (origin && origins.includes(origin)) response.setHeader('access-control-allow-origin', origin); response.setHeader('access-control-allow-headers', 'authorization, content-type, x-appport-tenant'); response.setHeader('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS'); }
 function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name]; return Array.isArray(value) ? value[0] : value; }
+async function readRaw(request: IncomingMessage): Promise<string> { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); return Buffer.concat(chunks).toString('utf8'); }
 async function readJson(request: IncomingMessage): Promise<unknown> { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); if (!chunks.length) return undefined; try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw httpError(400, 'INVALID_JSON', 'Request body must be valid JSON'); } }
 function json(response: ServerResponse, status: number, value: unknown): void { response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' }); response.end(JSON.stringify(value)); }
 function httpError(status: number, code: string, message: string): Error & { status: number; code: string } { return Object.assign(new Error(message), { status, code }); }

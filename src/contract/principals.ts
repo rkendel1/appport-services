@@ -1,9 +1,8 @@
-export interface AuthenticatedPrincipal {
-  readonly principalId: string;
-  /** Host-defined identity kind. AppPort Services never grants authority from it. */
-  readonly principalType: string;
-  readonly tenantId: string;
-  readonly scopes: readonly string[];
-  /** Present for principals authenticated with an AppPort API key. */
-  readonly credentialId?: string;
-}
+import type { VerifiedPrincipal } from '../authority/principal.js';
+
+/**
+ * A principal produced by an authentication path (API key, host adapter,
+ * durable job or integration record). Identity only: it carries no scopes and
+ * grants nothing. AuthBoundry authorizes every capability.
+ */
+export type AuthenticatedPrincipal = VerifiedPrincipal;

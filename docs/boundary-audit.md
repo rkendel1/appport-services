@@ -103,3 +103,16 @@ dependencies to Secrets.
 
 These migrations should be separate PRs because they would change established
 runtime APIs and are outside the Secrets boundary audit.
+
+## Authority update
+
+The follow-up in recommendation 4 is implemented. `@appport/services` is now a
+Policy Enforcement Point: every API key, webhook, job, schedule, notification,
+file, and configuration effect passes through `ServiceGateway`, which asks
+AuthBoundry (`ServiceAuthorizer`) before any effect or credential resolution
+and writes durable evidence to FeltDB. Services still contain no policy
+engine: they send principal, capability, resource, and context, and enforce
+the answer. `createdBy`, `disabledBy`, and similar fields are no longer
+accepted as identity; the actor is the verified principal. See
+[AUTHORITY.md](./AUTHORITY.md), [WEBHOOK-SECURITY.md](./WEBHOOK-SECURITY.md),
+and [JOB-SECURITY.md](./JOB-SECURITY.md).

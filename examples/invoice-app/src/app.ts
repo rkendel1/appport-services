@@ -2,6 +2,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { createServices, apiKeyAuth } from '@appport/services';
 import type { Invoice, Customer, InvoiceRequest } from './models.js';
+import { authorizeInvoiceEffects, DEVELOPMENT_DESTINATIONS, developmentAuthorizer } from './authority.js';
 
 const app = express();
 app.use(express.json());
@@ -12,9 +13,13 @@ const services = createServices({
   namespace: 'invoice-app',
   path: './.feltdb/invoice-app',
   config: './appport.toml',
+  application: 'invoice-app',
+  // AuthBoundry decides every effect. Replace the development stand-in with your AuthBoundry client.
+  authorizer: developmentAuthorizer,
+  webhookDestinationPolicy: DEVELOPMENT_DESTINATIONS,
 });
 
-// Middleware: API Key authentication
+// Middleware: API Key authentication (identity only; keys carry no scopes)
 app.use(apiKeyAuth(services.apiKeys));
 
 // ============================================================================
@@ -135,6 +140,10 @@ app.post('/invoices', async (req, res) => {
       updated_at: now,
     };
 
+    // AuthBoundry authorizes the webhook fan-out and the job before anything is written.
+    // The job durably records this principal and is authorized again when it runs.
+    const { emit, enqueue } = await authorizeInvoiceEffects(services, principal);
+
     // ATOMIC COMPOSITION: invoice + webhook + job in ONE transaction
     await services.transaction(async (tx) => {
       // 1. Create invoice (application-owned state)
@@ -162,6 +171,7 @@ app.post('/invoices', async (req, res) => {
               items_count: items.length,
             },
           },
+          emit,
         );
       }
 
@@ -171,7 +181,7 @@ app.post('/invoices', async (req, res) => {
         type: 'invoice.process',
         payload: { invoiceId },
         maxAttempts: 3,
-      });
+      }, enqueue);
     });
 
     // All three persisted atomically; respond with invoice

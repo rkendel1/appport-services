@@ -53,7 +53,7 @@ await app.api.keys.createApiKey(/* ... */);
 
 `appport()` reads `./appport.toml` by default and owns service construction, persistence, audit infrastructure, and lifecycle. Call `await app.close()` during graceful shutdown. Accessing an undeclared capability throws a `CapabilityNotDeclaredError` with the declaration needed to enable it.
 
-`appport.toml` is the authoritative application contract. It is parsed, validated, normalized, and frozen once at startup. It declares application identity, deployment and state authority, tenancy, HTTP/CORS, API scopes, webhook delivery, job types, events, authorization, observability, lifecycle, and development defaults. The sibling `feltdb.flow` is deployed into FeltDB as the authoritative state contract.
+`appport.toml` is the authoritative application contract. It is parsed, validated, normalized, and frozen once at startup. It declares application identity, deployment and state authority, tenancy, HTTP/CORS, API keys, webhook delivery, job types, events, authorization, observability, lifecycle, and development defaults. The sibling `feltdb.flow` is deployed into FeltDB as the authoritative state contract.
 
 Legacy files containing only `use api`, `use webhooks`, and `use jobs` remain supported. Expand one to the canonical contract with a recoverable backup using:
 
@@ -128,15 +128,15 @@ Existing authenticated Express applications can mount the supported management r
 ```javascript
 import { createManagementRouter, createServices } from '@appport/services';
 
-const services = createServices({ path: '.appport' });
+const services = createServices({ path: '.appport', application: 'invoices', authorizer: authBoundry, credentials: authBoundryCustody });
 app.use(createManagementRouter({
   services,
-  authenticate: (request) => hostAuthentication(request),
-  authorize: (capability, context) => hostAuthorization(capability, context),
+  authority: services.gateway,
+  authenticate: (request) => hostAuthentication(request), // identity only
 }));
 ```
 
-The host owns authentication and authorization; AppPort Services owns service behavior and durable state. API-key management requires `apikeys.read`, `apikeys.create`, and `apikeys.revoke`, always uses the authenticated tenant, and returns a plaintext credential only in the creation response. See [Composable management runtime](docs/management.md) for the full contract and standalone/embedded behavior.
+The host owns authentication, AuthBoundry owns authorization, and AppPort Services enforces AuthBoundry's decisions before any effect. **@appport/services executes effects. It does not decide who is allowed to cause them.** See [the authority model](docs/AUTHORITY.md), [webhook security](docs/WEBHOOK-SECURITY.md), and [job security](docs/JOB-SECURITY.md). API-key management requires `apikeys.read`, `apikeys.create`, and `apikeys.revoke`, always uses the authenticated tenant, and returns a plaintext credential only in the creation response. See [Composable management runtime](docs/management.md) for the full contract and standalone/embedded behavior.
 
 Outbound credentials use a server-only scoped protocol. AppPort defines the reference, context, lifecycle, audit, errors, and callback contract; AuthBoundry authorizes and AppBoundry resolves provider-held material. AppPort ships no resolver, secret store, provider adapter, or policy engine, and exposes no browser-facing credential-value route.
 
@@ -154,31 +154,27 @@ The contract determines which runtime APIs are available:
 ```javascript
 import { appport } from '@appport/runtime';
 
-const app = await appport();
+const app = await appport({ authorizer: authBoundry, credentials: authBoundryCustody });
 
-// Machine identity & tenant scoping
-await app.api.keys.createApiKey({
-  tenantId: 'acme-corp',
-  name: 'server-key',
-  scopes: ['invoices.write'],
-  createdBy: 'operator',
-});
+// Identity comes from authentication; AuthBoundry authorizes each capability.
+const principal = await app.authenticate(request);
 
-// Durable outbound notifications
-await app.webhooks.createWebhookEndpoint({
-  tenantId: 'acme-corp',
+// Machine identity (an API key identifies a caller; it carries no scopes)
+await app.invoke('apikeys.create', { name: 'server-key' }, { principal });
+
+// Durable outbound notifications, bound to a signing credential in AuthBoundry custody
+await app.invoke('webhooks.register', {
   url: 'https://acme.example.com/webhooks',
   events: ['invoice.created'],
-  createdBy: 'operator',
-});
+  signingCredentialRef: 'credential-ref:whsec_acme',
+}, { principal });
 
-// Durable deferred execution
-await app.jobs.enqueue({
-  tenantId: 'acme-corp',
+// Durable deferred execution; the job runs as this principal and is re-authorized on every run
+await app.invoke('jobs.create', {
   type: 'invoice.process',
   payload: { invoiceId: 'inv-123' },
   maxAttempts: 3,
-});
+}, { principal });
 ```
 
 The consumer does not need to know that FeltDB exists underneath. Only declared capabilities are constructed, and they share one durable runtime.
@@ -293,20 +289,20 @@ Remote FeltDB deployments can use the same exported deployment fields that `reso
 ## How do I create one?
 
 ```ts
-const created = await service.createApiKey({
-  tenantId: 'tenant-123',
-  name: 'production',
-  scopes: ['invoices.read'],
-  createdBy: 'ops-user-1'
-});
+// `operator` is a verified principal (host authentication or an existing API key).
+const created = await service.createApiKey({ name: 'production' }, operator);
 
 console.log(created.secret); // only returned once
 ```
 
-CLI:
+An API key identifies a caller and its application. It carries no scopes:
+AuthBoundry decides what the caller may do. Passing `scopes` is rejected with
+a migration error ([docs/AUTHORITY.md](docs/AUTHORITY.md#migration)).
+
+CLI (the operator is identified through `APPPORT_AUTHORITY` or `APPPORT_API_KEY`):
 
 ```bash
-appport api-key create --tenant tenant-123 --name production --scope invoices.read --created-by ops-user-1
+APPPORT_AUTHORITY=./authority.mjs appport api-key create --tenant tenant-123 --name production
 ```
 
 ## How does an application authenticate?
@@ -334,10 +330,14 @@ interface AuthenticatedPrincipal {
   principalId: string;
   principalType: 'api_key';
   tenantId: string;
-  scopes: readonly string[];
+  applicationId: string;
   credentialId: string;
+  verifiedBy: 'api_key';
 }
 ```
+
+Principals are branded: services accept only principals minted by an
+authentication path, never object literals or actor strings.
 
 ### Option 2: Express middleware
 
@@ -395,7 +395,10 @@ const principal = await authenticateBearerToken(
 
 ## How does authorization happen?
 
-Authentication returns a machine principal plus scopes. Authorization still belongs to AuthPort.
+Authentication returns an identity. Authorization belongs to AuthBoundry: every
+service effect is authorized by the configured `ServiceAuthorizer` before it
+runs, credentials are resolved only after that decision, and evidence is
+written to FeltDB. See [docs/AUTHORITY.md](docs/AUTHORITY.md).
 
 ## How do I use webhooks?
 
@@ -404,38 +407,33 @@ Webhooks provide durable signed delivery to external HTTP endpoints.
 ### Setup
 
 ```ts
-import { createFeltDbRuntime, FeltDbWebhookEndpointStore, FeltDbWebhookDeliveryStore, FeltDbWebhookAuditSink, WebhookService, EncryptedWebhookSecretStore } from '@appport/services';
+import { createServices } from '@appport/services';
 
-const runtime = createFeltDbRuntime({ mode: 'local', namespace: 'webhooks', path: './.feltdb' });
-const service = new WebhookService({
-  endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
-  deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
-  auditSink: new FeltDbWebhookAuditSink(runtime.db),
-  secretStore: new EncryptedWebhookSecretStore(),
-});
+const services = createServices({ path: './.appport', application: 'invoices', authorizer: authBoundry, credentials: authBoundryCustody });
+const service = services.webhooks;
 ```
 
 ### Register endpoint
 
 ```ts
-const { endpoint, secret } = await service.createWebhookEndpoint({
-  tenantId: 'tenant-123',
+const endpoint = await service.createWebhookEndpoint({
   url: 'https://customer.example.com/webhooks',
   events: ['invoice.created', 'invoice.paid'],
-  createdBy: 'ops-user-1'
-});
+  // The signing secret lives in AuthBoundry custody; the endpoint stores only the reference.
+  signingCredentialRef: 'credential-ref:whsec_customer',
+}, principal);
 
-// Save secret securely; it is only returned once
+// Private, loopback, link-local, and metadata destinations are rejected; redirects are never followed.
+// See docs/WEBHOOK-SECURITY.md.
 ```
 
 ### Emit event
 
 ```ts
 await service.emitWebhookEvent({
-  tenantId: 'tenant-123',
   type: 'invoice.created',
   payload: { id: 'inv-456', amount: 100 }
-});
+}, principal);
 
 // Delivery records created automatically for matching endpoints
 ```
@@ -473,8 +471,9 @@ Consumer verification:
 import crypto from 'node:crypto';
 
 function verify(payload, signature, secret) {
-  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  return expected === signature;
+  const expected = Buffer.from(crypto.createHmac('sha256', secret).update(payload).digest('hex'));
+  const actual = Buffer.from(signature);
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
 }
 ```
 
@@ -482,23 +481,22 @@ function verify(payload, signature, secret) {
 
 - **2xx** → delivered
 - **408 / 429 / 5xx / network failure** → retry with bounded exponential backoff
+- **3xx** → failed (terminal): redirects are never followed
 - **other 4xx** → failed (terminal)
+- **AuthBoundry denial** → failed; the provider is never called
+- **AuthBoundry unavailable / timeout** → retried later; the provider is never called
 - **Max attempts** → 5 (configurable)
 
 Failed deliveries can be manually replayed:
 
 ```ts
-await service.replayWebhookDelivery(tenantId, deliveryId, 'user-replay');
+await service.replayWebhookDelivery(tenantId, deliveryId, principal); // webhooks.replay
 ```
 
 ### Disable endpoint
 
 ```ts
-await service.disableWebhookEndpoint({
-  tenantId: 'tenant-123',
-  id: endpoint.id,
-  disabledBy: 'ops-user-1'
-});
+await service.disableWebhookEndpoint({ id: endpoint.id }, principal); // webhooks.remove
 
 // No new deliveries created; existing pending deliveries blocked
 ```
@@ -512,22 +510,19 @@ Jobs provide reliable background task execution with retry support, concurrency 
 ### Setup
 
 ```ts
-import { createFeltDbRuntime, FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink, JobService } from '@appport/services';
+import { createServices } from '@appport/services';
 
-const runtime = createFeltDbRuntime({ mode: 'local', namespace: 'jobs', path: './.feltdb' });
-const service = new JobService({
-  jobStore: new FeltDbJobStore(runtime.db),
-  scheduleStore: new FeltDbJobScheduleStore(runtime.db),
-  auditSink: new FeltDbJobAuditSink(runtime.db),
-});
+const services = createServices({ path: './.appport', application: 'invoices', authorizer: authBoundry });
+const service = services.jobs;
 ```
 
 ### Register handler
 
 ```ts
-service.register('invoice.process', async (job) => {
+service.register('invoice.process', async (job, execution) => {
   const { invoiceId } = job.payload as { invoiceId: string };
-  // Process the invoice
+  // The job runs as its durable principal; every effect is authorized again.
+  await services.invoke('notifications.send', { recipient: 'finance', type: 'invoice.processed', title: invoiceId }, { principal: execution.principal });
 });
 ```
 
@@ -535,12 +530,15 @@ service.register('invoice.process', async (job) => {
 
 ```ts
 const job = await service.enqueue({
-  tenantId: 'tenant-123',
   type: 'invoice.process',
   payload: { invoiceId: 'inv-456' },
-  maxAttempts: 3
-});
+  maxAttempts: 3,
+  delegationId: 'del_quote_agent', // optional AuthBoundry delegation, checked on every run
+}, principal);
 ```
+
+A job without a durable principal is never executed, and a revoked delegation
+stops the next run. See [docs/JOB-SECURITY.md](docs/JOB-SECURITY.md).
 
 ### Execute job (worker)
 
@@ -555,12 +553,10 @@ if (result) {
 
 ```ts
 const schedule = await service.scheduleRecurring({
-  tenantId: 'tenant-123',
   type: 'invoice.reconcile',
   payload: { batchSize: 100 },
   interval: '1h',
-  createdBy: 'ops-user-1'
-});
+}, principal);
 ```
 
 ### Retry policy
@@ -618,7 +614,8 @@ AppPort is declarative: it defines what the Secrets capability means. AppBoundry
 
 - `appport.flow` — Internal package template used to generate consumer `feltdb.flow` contracts
 - `/src/api-keys` — API-key models and semantic service
-- `/src/webhooks` — Webhook models, service, and secret handling
+- `/src/authority` — Policy Enforcement Point: capability manifest, verified principals, execution contexts, AuthBoundry protocol, destination policy, effect evidence
+- `/src/webhooks` — Webhook models, service, and signing helpers
   - `models.ts` — Endpoint, delivery, event contracts
   - `service.ts` — Webhook lifecycle and delivery orchestration
   - `secrets.ts` — Secret generation, encryption, HMAC signing

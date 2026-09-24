@@ -11,6 +11,9 @@ import type {
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import type { AuditSink, FeltDbServiceRuntime, ApiKeyStore } from '../storage/api-keys.js';
 import { isConditionalConflict } from '../storage/api-keys.js';
+import { ServiceAuthorityError, ServiceMigrationError } from '../authority/errors.js';
+import type { ServiceGateway } from '../authority/gateway.js';
+import { mintVerifiedPrincipal, rejectCallerActor, requireVerifiedPrincipal, resolveTenant, type VerifiedPrincipal } from '../authority/principal.js';
 
 const API_KEY_SCHEME = 'app_live';
 const SECRET_BYTES = 32;
@@ -24,7 +27,19 @@ interface ApiKeyServiceOptions {
   readonly auditSink: AuditSink;
   readonly runtime?: FeltDbServiceRuntime;
   readonly now?: () => Date;
+  /** Application whose callers these keys identify. Defaults to "default". */
+  readonly applicationId?: string;
+  /** Policy Enforcement Point. Without it, key management fails closed. */
+  readonly authority?: ServiceGateway;
+  /** @deprecated Rejected when non-empty: API key scopes are not authority. */
   readonly allowedScopes?: readonly string[];
+}
+
+export class ApiKeyScopesNotSupportedError extends ServiceMigrationError {
+  constructor() {
+    super('API key scopes are no longer authority. Old: API key + scopes -> service authority. New: API key -> identity; AuthBoundry -> authorization. Create the key without scopes and grant capabilities in AuthBoundry.');
+    this.name = 'ApiKeyScopesNotSupportedError';
+  }
 }
 
 export class ApiKeyService {
@@ -34,15 +49,30 @@ export class ApiKeyService {
   private authenticationQueue: Promise<void> = Promise.resolve();
   private readonly knownPrefixes = new Map<string, string>();
   private readonly locallyCreatedKeys = new Map<string, ApiKey>();
-  private readonly allowedScopes?: ReadonlySet<string>;
+  readonly applicationId: string;
 
   constructor(private readonly options: ApiKeyServiceOptions) {
+    if (options.allowedScopes?.length) throw new ApiKeyScopesNotSupportedError();
     this.runtime = options.runtime;
     this.now = options.now ?? (() => new Date());
-    this.allowedScopes = options.allowedScopes?.length ? new Set(options.allowedScopes) : undefined;
+    this.applicationId = options.applicationId ?? options.authority?.application ?? 'default';
   }
 
-  async createApiKey(input: CreateApiKeyInput): Promise<CreatedApiKey> {
+  async createApiKey(input: CreateApiKeyInput, caller: VerifiedPrincipal): Promise<CreatedApiKey> {
+    if (input.scopes?.length) throw new ApiKeyScopesNotSupportedError();
+    const principal = requireVerifiedPrincipal(caller);
+    rejectCallerActor({ createdBy: input.createdBy }, principal);
+    const tenantId = resolveTenant(input, principal);
+    return this.gateway().execute('apikeys.create', principal, { type: 'api_key', tenantId }, { service: 'api-keys' },
+      () => this.serialCreate({ ...input, tenantId, createdBy: principal.principalId }));
+  }
+
+  private gateway(): ServiceGateway {
+    if (!this.options.authority) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'API key management has no AuthBoundry authority configured');
+    return this.options.authority;
+  }
+
+  private async serialCreate(input: { tenantId: string; name: string; expiresAt?: Date; createdBy: string }): Promise<CreatedApiKey> {
     const previous = this.creationQueue;
     let release!: () => void;
     this.creationQueue = new Promise<void>((resolve) => {
@@ -57,9 +87,8 @@ export class ApiKeyService {
     }
   }
 
-  private async createApiKeyWithSideEffects(input: CreateApiKeyInput): Promise<CreatedApiKey> {
-    const undeclaredScopes = this.allowedScopes ? input.scopes.filter((scope) => !this.allowedScopes?.has(scope)) : [];
-    if (undeclaredScopes.length) throw new Error(`API scopes are not declared in appport.toml: ${undeclaredScopes.join(', ')}`);
+  private async createApiKeyWithSideEffects(input: { tenantId: string; name: string; expiresAt?: Date; createdBy: string }): Promise<CreatedApiKey> {
+    if (typeof input.name !== 'string' || !input.name.trim()) throw new ServiceAuthorityError('INVALID_REQUEST', 'name must be a non-empty string');
     for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
       const createdAt = this.now().toISOString();
       const prefix = `${API_KEY_SCHEME}_${randomBytes(3).toString('hex')}`;
@@ -67,10 +96,11 @@ export class ApiKeyService {
       const apiKey: ApiKey = {
         id: randomUUID(),
         tenantId: input.tenantId,
+        applicationId: this.applicationId,
         name: input.name,
         keyPrefix: prefix,
         secretHash: hashSecret(secret),
-        scopes: [...input.scopes],
+        scopes: [],
         createdAt,
         expiresAt: input.expiresAt?.toISOString(),
         revokedAt: undefined,
@@ -122,7 +152,16 @@ export class ApiKeyService {
     return toView(apiKey);
   }
 
-  async revokeApiKey(input: RevokeApiKeyInput): Promise<ApiKeyView | null> {
+  async revokeApiKey(input: RevokeApiKeyInput, caller: VerifiedPrincipal): Promise<ApiKeyView | null> {
+    const principal = requireVerifiedPrincipal(caller);
+    rejectCallerActor({ revokedBy: input.revokedBy }, principal);
+    const tenantId = resolveTenant(input, principal);
+    // Authorize before looking the key up, so existence is not disclosed to unauthorized callers.
+    return this.gateway().execute('apikeys.revoke', principal, { type: 'api_key', tenantId, id: input.id }, { service: 'api-keys' },
+      () => this.revoke({ tenantId, id: input.id, revokedBy: principal.principalId }));
+  }
+
+  private async revoke(input: { tenantId: string; id: string; revokedBy: string }): Promise<ApiKeyView | null> {
     for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt += 1) {
       const current = await this.options.store.get(input.id);
       if (!current || current.tenantId !== input.tenantId) {
@@ -195,7 +234,7 @@ export class ApiKeyService {
       }
 
       const now = this.now();
-      const failure = authenticationFailure(current, secret, now);
+      const failure = authenticationFailure(current, secret, now, this.applicationId);
       if (failure) {
         await this.recordAuthEvent(current, failure, now.toISOString());
         return null;
@@ -230,7 +269,7 @@ export class ApiKeyService {
       return null;
     }
     const now = this.now();
-    const failure = authenticationFailure(current, secret, now);
+    const failure = authenticationFailure(current, secret, now, this.applicationId);
     if (failure) {
       await this.recordAuthEvent(current, failure, now.toISOString());
       return null;
@@ -307,23 +346,25 @@ async function waitForUpdateRetry(attempt: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 }
 
+/** An API key identifies its caller and application. It carries no scopes and grants nothing. */
 function toPrincipal(apiKey: ApiKey): AuthenticatedPrincipal {
-  return {
+  return mintVerifiedPrincipal({
     principalId: apiKey.id,
     principalType: 'api_key',
     tenantId: apiKey.tenantId,
-    scopes: [...apiKey.scopes],
+    applicationId: apiKey.applicationId,
     credentialId: apiKey.id,
-  };
+  }, 'api_key');
 }
 
 function toView(apiKey: ApiKey): ApiKeyView {
   return {
     id: apiKey.id,
     tenantId: apiKey.tenantId,
+    ...(apiKey.applicationId ? { applicationId: apiKey.applicationId } : {}),
     name: apiKey.name,
     keyPrefix: apiKey.keyPrefix,
-    scopes: [...apiKey.scopes],
+    scopes: [],
     createdAt: apiKey.createdAt,
     expiresAt: apiKey.expiresAt,
     revokedAt: apiKey.revokedAt,
@@ -355,7 +396,7 @@ function verifySecret(secret: string, encodedHash: string): boolean {
   return timingSafeEqual(actual, expected);
 }
 
-function authenticationFailure(apiKey: ApiKey, secret: string, now: Date): ApiKeyAuditEvent['result'] | null {
+function authenticationFailure(apiKey: ApiKey, secret: string, now: Date, applicationId: string): ApiKeyAuditEvent['result'] | null {
   if (apiKey.revokedAt) {
     return 'revoked';
   }
@@ -364,6 +405,10 @@ function authenticationFailure(apiKey: ApiKey, secret: string, now: Date): ApiKe
   }
   if (!verifySecret(secret, apiKey.secretHash)) {
     return 'invalid_secret';
+  }
+  // A key from another application (or a legacy key bound to none) identifies no caller here.
+  if (apiKey.applicationId !== applicationId) {
+    return 'application_mismatch';
   }
   return null;
 }

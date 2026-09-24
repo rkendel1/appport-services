@@ -7,10 +7,13 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { createApiKeyService, createApiKeyAuth, assertTenant } from '../src/_internal.js';
+import { principal as operator, TestAuthority } from './support/authority.js';
+
+const allowAll = new TestAuthority({ allowAll: true });
 
 async function createLocalService() {
   const path = await mkdtemp(join(tmpdir(), 'appport-integration-'));
-  const service = createApiKeyService({ mode: 'local', namespace: 'integration-' + Math.random().toString(16).slice(2), path });
+  const service = createApiKeyService({ mode: 'local', namespace: 'integration-' + Math.random().toString(16).slice(2), path, authorizer: allowAll });
   return { service, path };
 }
 
@@ -36,7 +39,6 @@ function createTestApp(auth: ReturnType<typeof createApiKeyAuth>) {
         res.end(
           JSON.stringify({
             tenant: result.principal.tenantId,
-            scopes: result.principal.scopes,
             credentialId: result.principal.credentialId,
             invoices: ['inv-1', 'inv-2'],
           }),
@@ -106,9 +108,7 @@ test('integration: valid key authenticates and returns principal data', async ()
   const created = await service.createApiKey({
     tenantId: 'tenant-123',
     name: 'test',
-    scopes: ['invoices.read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-123' }));
 
   await new Promise<void>((resolve) => server.listen(0, 'localhost', () => resolve()));
   const addr = server.address() as net.AddressInfo;
@@ -119,7 +119,7 @@ test('integration: valid key authenticates and returns principal data', async ()
 
     assert.equal(response.statusCode, 200);
     assert.equal(data.tenant, 'tenant-123');
-    assert.deepEqual(data.scopes, ['invoices.read']);
+    assert.equal(data.scopes, undefined);
     assert.equal(data.credentialId, created.id);
     assert.ok(Array.isArray(data.invoices));
   } finally {
@@ -168,11 +168,9 @@ test('integration: revoked key is rejected', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-123',
     name: 'test',
-    scopes: ['invoices.read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-123' }));
 
-  await service.revokeApiKey({ tenantId: 'tenant-123', id: created.id, revokedBy: 'user-2' });
+  await service.revokeApiKey({ tenantId: 'tenant-123', id: created.id }, operator({ principalId: 'user-2', tenantId: 'tenant-123' }));
 
   await new Promise<void>((resolve) => server.listen(0, 'localhost', () => resolve()));
 
@@ -193,10 +191,8 @@ test('integration: expired key is rejected', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-123',
     name: 'test',
-    scopes: ['invoices.read'],
     expiresAt: new Date(Date.now() - 5000),
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-123' }));
 
   await new Promise<void>((resolve) => server.listen(0, 'localhost', () => resolve()));
 
@@ -233,9 +229,7 @@ test('integration: require() on protected endpoint accepts valid credential', as
   const created = await service.createApiKey({
     tenantId: 'tenant-123',
     name: 'test',
-    scopes: ['read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-123' }));
 
   await new Promise<void>((resolve) => server.listen(0, 'localhost', () => resolve()));
 

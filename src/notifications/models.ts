@@ -53,7 +53,8 @@ export interface NotificationAuditEvent {
 }
 
 export interface CreateNotificationInput {
-  readonly tenantId: string;
+  /** Optional; must equal the caller's tenant. */
+  readonly tenantId?: string;
   readonly recipient: string;
   readonly type: string;
   readonly title: string;

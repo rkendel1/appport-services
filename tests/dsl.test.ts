@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import { parseAppPortConfig } from '../src/runtime/dsl.js';
 import { createServices } from '../src/index.js';
+import { TestAuthority } from './support/authority.js';
 
 test('DSL: parse minimal configuration', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'dsl-test-'));
@@ -241,17 +242,20 @@ use jobs
     namespace: 'dsl-transaction-test',
     path: join(path, '.feltdb'),
     config: configPath,
+    authorizer: new TestAuthority({ allowAll: true }),
+    webhookDestinationPolicy: { lookup: async () => [{ address: '93.184.216.34', family: 4 as const }] },
   });
 
   const tenantId = 'test-tenant';
+  const principal = services.identify({ principalId: 'test', principalType: 'user', tenantId })!;
 
   // Pre-create webhook endpoint
   await services.webhooks.createWebhookEndpoint({
-    tenantId,
     url: 'https://example.com/webhook',
     events: ['test.event'],
-    createdBy: 'test',
-  });
+    signingCredentialRef: 'credential-ref:whsec_dsl',
+  }, principal);
+  const emit = await services.authorize('webhooks.emit', principal, { type: 'webhook_event', attributes: { eventType: 'test.event' } });
 
   // Transaction should work
   let transactionExecuted = false;
@@ -264,6 +268,7 @@ use jobs
         type: 'test.event',
         payload: { test: true },
       },
+      emit,
     );
     transactionExecuted = true;
   });

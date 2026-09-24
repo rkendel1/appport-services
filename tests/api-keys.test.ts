@@ -5,6 +5,13 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { createApiKeyService, createFeltDbRuntime, FeltDbAuditSink, FeltDbApiKeyStore, ApiKeyService, authenticateBearerToken, auditCollectionName, parseApiKeyPrefix } from '../src/_internal.js';
+import { isVerifiedPrincipal } from '../src/authority/principal.js';
+import { principal as operator, testGateway, TestAuthority } from './support/authority.js';
+
+const allowAll = new TestAuthority({ allowAll: true });
+
+const opsA = () => operator({ principalId: 'ops-1', tenantId: 'tenant-a' });
+const opsB = () => operator({ principalId: 'ops-2', tenantId: 'tenant-b' });
 
 test('API key prefix parsing accepts base64url payloads beginning with underscore', () => {
   assert.equal(parseApiKeyPrefix('app_live_abcdef__payload'), 'app_live_abcdef');
@@ -19,25 +26,26 @@ async function createLocalService(prefix = 'appport-services-test-'): Promise<{ 
     store: new FeltDbApiKeyStore(runtime.db),
     auditSink: new FeltDbAuditSink(runtime.db),
     runtime,
+    applicationId: 'test-app',
+    authority: testGateway(runtime.db),
   });
   return { service, path };
 }
 
-test('creates key, returns secret once, persists hash, tenant, and scopes', async () => {
+test('creates key, returns secret once, persists hash and tenant, and carries no scopes', async () => {
   const { service } = await createLocalService();
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read', 'users.read'],
-    createdBy: 'ops-1',
-  });
+  }, opsA());
 
   const fetched = await service.getApiKey('tenant-a', created.id);
   const stored = await service.runtime?.db.collection('api_keys').get(created.id) as Record<string, unknown> | null;
 
   assert.ok(fetched);
   assert.equal(fetched?.tenantId, 'tenant-a');
-  assert.deepEqual(fetched?.scopes, ['invoices.read', 'users.read']);
+  assert.deepEqual(fetched?.scopes, []);
+  assert.equal(fetched?.applicationId, 'test-app');
   assert.ok(created.secret.startsWith(`${created.prefix}_`));
   assert.ok(stored);
   assert.equal('secret' in (stored ?? {}), false);
@@ -51,9 +59,7 @@ test('get and list never return raw secrets', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
-    createdBy: 'ops-1',
-  });
+  }, opsA());
 
   const fetched = await service.getApiKey('tenant-a', created.id);
   const listed = await service.listApiKeys('tenant-a');
@@ -70,21 +76,22 @@ test('valid secret authenticates a machine principal and updates last used', asy
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
     expiresAt: new Date(Date.now() + 60_000),
-    createdBy: 'ops-1',
-  });
+  }, opsA());
 
   const principal = await service.authenticateApiKey(created.secret);
   const stored = await service.runtime?.db.collection('api_keys').get(created.id) as Record<string, unknown> | null;
 
-  assert.deepEqual(principal, {
+  assert.deepEqual({ ...principal }, {
     principalId: created.id,
     principalType: 'api_key',
     tenantId: 'tenant-a',
-    scopes: ['invoices.read'],
+    applicationId: 'test-app',
     credentialId: created.id,
+    verifiedBy: 'api_key',
   });
+  assert.ok(isVerifiedPrincipal(principal));
+  assert.equal('scopes' in (principal ?? {}), false);
   assert.ok(stored?.lastUsedAt);
   assert.equal('isAllowed' in (principal ?? {}), false);
   await service.close();
@@ -95,19 +102,15 @@ test('invalid, unknown, revoked, and expired keys fail', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
     expiresAt: new Date(Date.now() + 5_000),
-    createdBy: 'ops-1',
-  });
+  }, opsA());
   const expired = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'expired',
-    scopes: ['invoices.read'],
     expiresAt: new Date(Date.now() - 5_000),
-    createdBy: 'ops-1',
-  });
+  }, opsA());
 
-  await service.revokeApiKey({ tenantId: 'tenant-a', id: created.id, revokedBy: 'ops-2' });
+  await service.revokeApiKey({ tenantId: 'tenant-a', id: created.id }, operator({ principalId: 'ops-2', tenantId: 'tenant-a' }));
 
   assert.equal(await service.authenticateApiKey(`${created.secret}x`), null);
   assert.equal(await service.authenticateApiKey('app_live_missing_secret'), null);
@@ -121,18 +124,14 @@ test('tenant isolation prevents cross-tenant access and preserves owning tenant 
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
-    createdBy: 'ops-1',
-  });
+  }, opsA());
   const other = await service.createApiKey({
     tenantId: 'tenant-b',
     name: 'staging',
-    scopes: ['users.read'],
-    createdBy: 'ops-2',
-  });
+  }, opsB());
 
   assert.equal(await service.getApiKey('tenant-b', created.id), null);
-  assert.equal(await service.revokeApiKey({ tenantId: 'tenant-b', id: created.id, revokedBy: 'ops-2' }), null);
+  assert.equal(await service.revokeApiKey({ tenantId: 'tenant-b', id: created.id }, opsB()), null);
   assert.deepEqual((await service.listApiKeys('tenant-a')).map((item) => item.id), [created.id]);
   assert.deepEqual((await service.listApiKeys('tenant-b')).map((item) => item.id), [other.id]);
   assert.equal((await service.authenticateApiKey(created.secret))?.tenantId, 'tenant-a');
@@ -144,9 +143,7 @@ test('bearer adapter authenticates without tenant override input', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
-    createdBy: 'ops-1',
-  });
+  }, opsA());
 
   const principal = await authenticateBearerToken('Bearer ' + created.secret, service);
 
@@ -159,9 +156,7 @@ test('raw secret is absent from FeltDB records and durable audit records', async
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
-    createdBy: 'ops-1',
-  });
+  }, opsA());
   await service.authenticateApiKey(created.secret);
 
   const auditRecords = await service.runtime?.db.collection(auditCollectionName()).list() as Array<Record<string, unknown>>;
@@ -177,9 +172,7 @@ test('generated secrets have high entropy and wrong secrets fail', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
-    createdBy: 'ops-1',
-  });
+  }, opsA());
 
   assert.ok(created.secret.length >= 40);
   assert.equal(await service.authenticateApiKey(created.secret.replace(/.$/, 'x')), null);
@@ -189,16 +182,14 @@ test('generated secrets have high entropy and wrong secrets fail', async () => {
 test('restart preserves credentials with real FeltDB file persistence', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-services-restart-'));
   const namespace = 'restart-' + Math.random().toString(16).slice(2);
-  const first = createApiKeyService({ mode: 'local', namespace, path });
+  const first = createApiKeyService({ mode: 'local', namespace, path, authorizer: allowAll });
   const created = await first.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
-    createdBy: 'ops-1',
-  });
+  }, opsA());
   await first.close();
 
-  const second = createApiKeyService({ mode: 'local', namespace, path });
+  const second = createApiKeyService({ mode: 'local', namespace, path, authorizer: allowAll });
   const principal = await second.authenticateApiKey(created.secret);
 
   assert.equal(principal?.credentialId, created.id);
@@ -208,20 +199,18 @@ test('restart preserves credentials with real FeltDB file persistence', async ()
 test('restart then revoke then restart fails authentication', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-services-revoke-'));
   const namespace = 'revoke-' + Math.random().toString(16).slice(2);
-  const first = createApiKeyService({ mode: 'local', namespace, path });
+  const first = createApiKeyService({ mode: 'local', namespace, path, authorizer: allowAll });
   const created = await first.createApiKey({
     tenantId: 'tenant-a',
     name: 'production',
-    scopes: ['invoices.read'],
-    createdBy: 'ops-1',
-  });
+  }, opsA());
   await first.close();
 
-  const second = createApiKeyService({ mode: 'local', namespace, path });
-  await second.revokeApiKey({ tenantId: 'tenant-a', id: created.id, revokedBy: 'ops-2' });
+  const second = createApiKeyService({ mode: 'local', namespace, path, authorizer: allowAll });
+  await second.revokeApiKey({ tenantId: 'tenant-a', id: created.id }, operator({ principalId: 'ops-2', tenantId: 'tenant-a' }));
   await second.close();
 
-  const third = createApiKeyService({ mode: 'local', namespace, path });
+  const third = createApiKeyService({ mode: 'local', namespace, path, authorizer: allowAll });
   assert.equal(await third.authenticateApiKey(created.secret), null);
   await third.close();
 });

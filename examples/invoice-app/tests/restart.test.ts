@@ -6,6 +6,10 @@ import { writeFileSync } from 'node:fs';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { createServices } from '@appport/services';
+import { authorizeInvoiceEffects, DEMO_SIGNING_REF, developmentAuthorizer, invoiceAppPrincipal } from '../src/authority.js';
+
+// Tests resolve every webhook host to a public address so no DNS is needed.
+const TEST_DESTINATIONS = { lookup: async () => [{ address: '93.184.216.34', family: 4 as const }] };
 
 test('Restart durability: data survives process restart', async () => {
   const path = await mkdtemp(join(tmpdir(), 'invoice-restart-test-'));
@@ -33,17 +37,19 @@ max_attempts = 3
       namespace: 'invoice-restart-test',
       path: feeldbPath,
       config: configPath,
+      application: 'invoice-app',
+      authorizer: developmentAuthorizer,
+      webhookDestinationPolicy: TEST_DESTINATIONS,
     });
 
     const db1 = (services1 as any)['_getDb'];
 
     // Create webhook endpoint
-    const { endpoint } = await services1.webhooks.createWebhookEndpoint({
-      tenantId,
+    const endpoint = await services1.webhooks.createWebhookEndpoint({
       url: 'https://example.com/webhook',
       events: ['invoice.created'],
-      createdBy: 'test',
-    });
+      signingCredentialRef: DEMO_SIGNING_REF,
+    }, invoiceAppPrincipal(services1, tenantId));
 
     // Create invoice with webhook + job in transaction
     const invoiceId = randomUUID();
@@ -63,6 +69,9 @@ max_attempts = 3
       __version: 1,
     };
 
+    const effects = await authorizeInvoiceEffects(services1, invoiceAppPrincipal(services1, tenantId));
+
+
     await services1.transaction(async (tx) => {
       await tx.collection('invoices').insert(invoice, invoiceId);
 
@@ -70,14 +79,14 @@ max_attempts = 3
         tenantId,
         type: 'invoice.created',
         payload: { id: invoiceId, total_amount: 500 },
-      });
+      }, effects.emit);
 
       tx.queueJob({
         tenantId,
         type: 'invoice.process',
         payload: { invoiceId },
         maxAttempts: 3,
-      });
+      }, effects.enqueue);
     });
 
     // Verify before shutdown
@@ -100,6 +109,9 @@ max_attempts = 3
       namespace: 'invoice-restart-test',
       path: feeldbPath,
       config: configPath,
+      application: 'invoice-app',
+      authorizer: developmentAuthorizer,
+      webhookDestinationPolicy: TEST_DESTINATIONS,
     });
 
     const db2 = (services2 as any)['_getDb'];
@@ -129,6 +141,9 @@ max_attempts = 3
       namespace: 'invoice-restart-test',
       path: feeldbPath,
       config: configPath,
+      application: 'invoice-app',
+      authorizer: developmentAuthorizer,
+      webhookDestinationPolicy: TEST_DESTINATIONS,
     });
 
     const db3 = (services3 as any)['_getDb'];
@@ -154,6 +169,9 @@ max_attempts = 3
       __version: 1,
     };
 
+    const effects = await authorizeInvoiceEffects(services3, invoiceAppPrincipal(services3, tenantId));
+
+
     await services3.transaction(async (tx) => {
       await tx.collection('invoices').insert(invoice2, invoiceId2);
 
@@ -161,14 +179,14 @@ max_attempts = 3
         tenantId,
         type: 'invoice.created',
         payload: { id: invoiceId2, total_amount: 750 },
-      });
+      }, effects.emit);
 
       tx.queueJob({
         tenantId,
         type: 'invoice.process',
         payload: { invoiceId: invoiceId2 },
         maxAttempts: 3,
-      });
+      }, effects.enqueue);
     });
 
     // Verify both invoices exist
