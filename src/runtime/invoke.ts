@@ -45,6 +45,13 @@ export async function invokeService(services: InvokableServices, capability: str
   return HANDLERS[capability](services, (input ?? {}) as Input, principal);
 }
 
+/** Restrict tenant-keyed observations to records of this application. */
+export function ownedBy(application: string, value: unknown): unknown {
+  const owned = (record: unknown) => !!record && typeof record === 'object' && (record as { applicationId?: unknown }).applicationId === application;
+  if (Array.isArray(value)) return value.filter(owned);
+  return value === null || owned(value) ? value : null;
+}
+
 function need<T>(service: T | undefined, name: string): T {
   if (!service) throw new ServiceAuthorityError('INVALID_REQUEST', `The ${name} capability is not enabled for this application`);
   return service;
@@ -58,7 +65,8 @@ function id(input: Input): string {
 /** Wrap a tenant-keyed observation API with an explicit read authorization. */
 function observe(services: InvokableServices, capability: string, type: string, input: Input, principal: VerifiedPrincipal, read: (tenantId: string) => Promise<unknown>): Promise<unknown> {
   const tenantId = resolveTenant(input, principal);
-  return services.gateway.execute(capability, principal, { type, tenantId, ...(typeof input.id === 'string' ? { id: input.id } : {}) }, { service: type }, () => read(tenantId));
+  const application = services.gateway.application;
+  return services.gateway.execute(capability, principal, { type, tenantId, ...(typeof input.id === 'string' ? { id: input.id } : {}) }, { service: type }, async () => ownedBy(application, await read(tenantId)));
 }
 
 const HANDLERS: Readonly<Record<string, Handler>> = {

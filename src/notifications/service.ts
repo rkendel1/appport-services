@@ -39,8 +39,20 @@ export class NotificationService {
     validateInput({ ...input, tenantId });
     return this.gateway().execute('notifications.send', principal, { type: 'notification', tenantId, attributes: { recipient: input.recipient, channel: input.channel ?? 'in-app' } }, { service: 'notifications', provider: input.channel ?? 'in-app' }, async () => {
       const createdAt = this.now().toISOString();
-      const { channel: _channel, ...fields } = input;
-      const item: Notification = { ...fields, tenantId, id: randomUUID(), priority: input.priority ?? 'normal', createdAt, __version: 1 };
+      const item: Notification = {
+        recipient: input.recipient,
+        type: input.type,
+        title: input.title,
+        ...(input.body === undefined ? {} : { body: input.body }),
+        ...(input.data === undefined ? {} : { data: input.data }),
+        ...(input.source === undefined ? {} : { source: input.source }),
+        tenantId,
+        applicationId: this.gateway().application,
+        id: randomUUID(),
+        priority: input.priority ?? 'normal',
+        createdAt,
+        __version: 1,
+      };
       await this.options.store.create(item);
       if (this.options.deliveryStore) {
         await this.options.deliveryStore.create({ id: randomUUID(), tenantId: item.tenantId, notificationId: item.id, channel: input.channel ?? 'in-app', status: 'pending', __version: 1 });
@@ -53,7 +65,7 @@ export class NotificationService {
   async get(tenantId: string, id: string, caller: AuthenticatedPrincipal): Promise<Notification> {
     const principal = requireVerifiedPrincipal(caller);
     const item = await this.options.store.get(resolveTenant({ tenantId }, principal), id);
-    if (!item) throw new NotificationNotFoundError();
+    if (!item || !this.owned(item)) throw new NotificationNotFoundError();
     return this.gateway().execute('notifications.read', principal, notificationResource(item), { service: 'notifications' }, async () => item);
   }
 
@@ -66,6 +78,7 @@ export class NotificationService {
     return this.gateway().execute('notifications.read', principal, { type: 'notification', tenantId: tenant, attributes: { recipient: options.recipient ?? '*' } }, { service: 'notifications' }, async () => {
       const all = await this.options.store.list(tenant);
       const items = all.filter((item) =>
+        this.owned(item) &&
         (!options.recipient || item.recipient === options.recipient) &&
         (!options.unread || !item.readAt) &&
         (!options.type || item.type === options.type) &&
@@ -87,7 +100,7 @@ export class NotificationService {
   async delete(tenantId: string, id: string, caller: AuthenticatedPrincipal): Promise<void> {
     const principal = requireVerifiedPrincipal(caller);
     const item = await this.options.store.get(resolveTenant({ tenantId }, principal), id);
-    if (!item) return;
+    if (!item || !this.owned(item)) return;
     await this.gateway().execute('notifications.delete', principal, notificationResource(item), { service: 'notifications' }, async () => {
       await this.options.store.delete(id);
       await this.audit('notification.deleted', item, principal);
@@ -101,13 +114,16 @@ export class NotificationService {
   private async mutate(type: 'notification.read' | 'notification.dismissed', tenantId: string, id: string, caller: AuthenticatedPrincipal, updates: () => Partial<Notification>): Promise<Notification> {
     const principal = requireVerifiedPrincipal(caller);
     const item = await this.options.store.get(resolveTenant({ tenantId }, principal), id);
-    if (!item) throw new NotificationNotFoundError();
+    if (!item || !this.owned(item)) throw new NotificationNotFoundError();
     return this.gateway().execute('notifications.update', principal, notificationResource(item), { service: 'notifications' }, async () => {
       const updated = await this.options.store.update(item.id, item.__version, updates());
       if (!updated) throw new NotificationValidationError('Notification was modified concurrently');
       await this.audit(type, updated, principal);
       return updated;
     });
+  }
+  private owned(item: Notification): boolean {
+    return item.applicationId === this.gateway().application;
   }
   private gateway(): ServiceGateway {
     if (!this.options.authority) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'Notifications have no AuthBoundry authority configured');

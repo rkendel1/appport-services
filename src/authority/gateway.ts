@@ -78,6 +78,9 @@ export class ServiceGateway {
   async authorize(capabilityName: string, principalInput: unknown, resource: ServiceResource, requestId: string = randomUUID()): Promise<ServiceExecutionContext> {
     const capability = getServiceCapability(capabilityName);
     if (!capability) throw new ServiceAuthorityError('INVALID_REQUEST', `Capability "${capabilityName}" is not declared in the service capability manifest`);
+    if (resource?.type !== capability.authorization.resource) {
+      throw new ServiceAuthorityError('INVALID_REQUEST', `Capability "${capability.name}" applies to ${capability.authorization.resource} resources, not ${String(resource?.type)}`, { capability: capability.name });
+    }
     const principal = requireVerifiedPrincipal(principalInput);
     this.assertOwnership(principal, resource, capabilityName);
     const uri = resourceUri(this.application, resource);
@@ -178,7 +181,7 @@ export class ServiceGateway {
       tenantId: context.tenantId,
       principalId: context.principal.principalId,
       principalType: context.principal.principalType,
-      ...(context.principal.delegationId ? { delegationId: context.principal.delegationId } : {}),
+      ...(effectiveDelegation(context) ? { delegationId: effectiveDelegation(context) } : {}),
       ...(context.principal.runId ? { runId: context.principal.runId } : {}),
       capability: context.capability,
       capabilityVersion: context.capabilityVersion,
@@ -201,6 +204,10 @@ export class ServiceGateway {
    */
   async withCredential<T>(contextInput: ServiceExecutionContext, ref: CredentialRef, purpose: string, use: (secret: ResolvedSecret) => T | Promise<T>, provider?: string): Promise<T> {
     const context = assertExecutionContext(contextInput, contextInput?.capability, undefined, this.now());
+    // A context resolves only the credential it was authorized for.
+    if (context.resource.attributes?.credentialRef !== ref) {
+      throw new ServiceAuthorityError('DENIED', 'Credential reference was not part of the authorized resource', { capability: context.capability, decisionId: context.authorization.decisionId, reason: 'credential_not_authorized' });
+    }
     if (!this.credentials) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'No AuthBoundry credential resolver is configured', { capability: context.capability });
     const reference: SecretReference = credentialReference(ref, context.tenantId, provider);
     const marker = { failed: false as boolean, error: undefined as unknown };
@@ -238,6 +245,7 @@ export class ServiceGateway {
       && row.tenantId === durable.tenantId
       && row.principalId === durable.principalId
       && row.principalType === durable.principalType
+      && (row.delegationId ?? undefined) === (durable.delegationId ?? undefined)
       && creatingCapabilities.includes(row.capability)
       && (row.outcome === 'started' || row.outcome === 'succeeded'));
     if (!attested) {
@@ -312,6 +320,11 @@ export class ServiceGateway {
       failureCode: error.code,
     }).catch(() => undefined);
   }
+}
+
+/** Delegation bound by an authorized request: an explicit resource attribute, else the principal's own. */
+function effectiveDelegation(context: ServiceExecutionContext): string | undefined {
+  return context.resource.attributes?.delegationId ?? context.principal.delegationId;
 }
 
 function refUpdate(options: ExecuteOptions, resolved: readonly CredentialRef[]): { credentialRef?: CredentialRef } {

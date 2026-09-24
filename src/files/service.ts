@@ -45,7 +45,7 @@ export class FileService {
     validateCreate({ ...input, tenantId, owner });
     return this.gateway().execute('files.write', principal, { type: 'file', tenantId, attributes: { owner } }, { service: 'files' }, async () => {
       const now = this.now().toISOString();
-      const item: File = { ...input, tenantId, owner, id: randomUUID(), createdAt: now, updatedAt: now, __version: 1 };
+      const item: File = { ...mutableFields(input), name: input.name, size: input.size, storageKey: input.storageKey, tenantId, applicationId: this.gateway().application, owner, id: randomUUID(), createdAt: now, updatedAt: now, __version: 1 };
       await this.options.store.create(item);
       await this.audit('file.created', item, principal);
       return item;
@@ -55,7 +55,7 @@ export class FileService {
   async get(tenantId: string, id: string, caller: AuthenticatedPrincipal): Promise<File> {
     const principal = requireVerifiedPrincipal(caller);
     const item = await this.options.store.get(resolveTenant({ tenantId }, principal), id);
-    if (!item || item.deletedAt) throw new FileNotFoundError();
+    if (!item || item.deletedAt || !this.owned(item)) throw new FileNotFoundError();
     return this.gateway().execute('files.read', principal, fileResource(item), { service: 'files' }, async () => item);
   }
 
@@ -65,7 +65,7 @@ export class FileService {
     const tenant = resolveTenant({ tenantId }, principal);
     return this.gateway().execute('files.read', principal, { type: 'file', tenantId: tenant, attributes: { owner: options.owner ?? '*' } }, { service: 'files' }, async () =>
       (await this.options.store.list(tenant))
-        .filter((item) => !item.deletedAt && (!options.owner || item.owner === options.owner))
+        .filter((item) => !item.deletedAt && this.owned(item) && (!options.owner || item.owner === options.owner))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)));
   }
 
@@ -74,10 +74,10 @@ export class FileService {
     const tenantId = resolveTenant(input, principal);
     validateUpdate({ ...input, tenantId });
     const current = await this.options.store.get(tenantId, input.id);
-    if (!current || current.deletedAt) throw new FileNotFoundError();
+    if (!current || current.deletedAt || !this.owned(current)) throw new FileNotFoundError();
     return this.gateway().execute('files.write', principal, fileResource(current), { service: 'files' }, async () => {
-      const { tenantId: _tenant, id: _id, ...changes } = input;
-      const updated = await this.options.store.update(current.id, current.__version, { ...changes, updatedAt: this.now().toISOString() });
+      // Only the mutable metadata fields; owner, tenant, application, and lifecycle fields are not caller-writable.
+      const updated = await this.options.store.update(current.id, current.__version, { ...mutableFields(input), updatedAt: this.now().toISOString() });
       if (!updated) throw new FileValidationError('File was modified concurrently');
       await this.audit('file.updated', updated, principal);
       return updated;
@@ -87,12 +87,16 @@ export class FileService {
   async delete(tenantId: string, id: string, caller: AuthenticatedPrincipal): Promise<void> {
     const principal = requireVerifiedPrincipal(caller);
     const current = await this.options.store.get(resolveTenant({ tenantId }, principal), id);
-    if (!current || current.deletedAt) return;
+    if (!current || current.deletedAt || !this.owned(current)) return;
     await this.gateway().execute('files.delete', principal, fileResource(current), { service: 'files' }, async () => {
       const updated = await this.options.store.update(current.id, current.__version, { deletedAt: this.now().toISOString(), updatedAt: this.now().toISOString() });
       if (!updated) throw new FileValidationError('File was modified concurrently');
       await this.audit('file.deleted', updated, principal);
     });
+  }
+
+  private owned(item: File): boolean {
+    return item.applicationId === this.gateway().application;
   }
 
   private gateway(): ServiceGateway {
@@ -112,6 +116,14 @@ export class FileService {
       result: 'success',
     });
   }
+}
+
+const MUTABLE_FILE_FIELDS = ['name', 'contentType', 'size', 'checksum', 'storageKey', 'metadata'] as const;
+
+function mutableFields(input: Partial<Record<(typeof MUTABLE_FILE_FIELDS)[number], unknown>>): Partial<File> {
+  const changes: Record<string, unknown> = {};
+  for (const field of MUTABLE_FILE_FIELDS) if (input[field] !== undefined) changes[field] = input[field];
+  return changes as Partial<File>;
 }
 
 function fileResource(item: File): ServiceResource {

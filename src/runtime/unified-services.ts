@@ -181,10 +181,11 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
      */
     async transaction<T>(callback: (tx: TransactionContextImpl) => Promise<T>): Promise<T> {
       const builder = new TransactionBuilder();
-      const context = new TransactionContextImpl(builder, gateway);
+      const context = new TransactionContextImpl(builder, gateway, (tenantId) => webhookService.listWebhookEndpoints(tenantId));
 
-      // Execute callback to collect operations
+      // Execute callback to collect operations, then wait for queued validations
       const result = await callback(context);
+      await context._settle();
 
       // Commit all operations in a single FeltDB transaction
       await builder.commit(db);

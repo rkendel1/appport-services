@@ -85,6 +85,7 @@ export class JobService {
     const job: Job = {
       id,
       tenantId: input.tenantId,
+      applicationId: this.gateway().application,
       type: input.type,
       payload: input.payload,
       status,
@@ -138,6 +139,7 @@ export class JobService {
     const schedule: JobSchedule = {
       id,
       tenantId: input.tenantId,
+      applicationId: this.gateway().application,
       type: input.type,
       payload: input.payload,
       interval: input.interval,
@@ -184,7 +186,7 @@ export class JobService {
   async disableSchedule(tenantId: string, scheduleId: string, caller: VerifiedPrincipal): Promise<JobSchedule | null> {
     const principal = requireVerifiedPrincipal(caller);
     const schedule = await this.scheduleStore.get(resolveTenant({ tenantId }, principal), scheduleId);
-    if (!schedule) {
+    if (!schedule || schedule.applicationId !== this.gateway().application) {
       return null;
     }
 
@@ -208,7 +210,7 @@ export class JobService {
   async retry(tenantId: string, jobId: string, caller: VerifiedPrincipal): Promise<Job | null> {
     const principal = requireVerifiedPrincipal(caller);
     const job = await this.jobStore.get(resolveTenant({ tenantId }, principal), jobId);
-    if (!job) {
+    if (!job || job.applicationId !== this.gateway().application) {
       return null;
     }
     return this.gateway().execute('jobs.retry', principal, { type: 'job', tenantId, id: job.id, attributes: { jobType: job.type } }, { service: 'jobs' }, () => this.resetJob(job, principal));
@@ -400,6 +402,7 @@ export class JobService {
       const job: Job = {
         id: jobId,
         tenantId: schedule.tenantId,
+        ...(schedule.applicationId ? { applicationId: schedule.applicationId } : {}),
         type: schedule.type,
         payload: schedule.payload,
         status: 'pending',

@@ -144,7 +144,7 @@ export class WebhookService {
     rejectCallerActor(input, principal);
     const tenantId = resolveTenant(input, principal);
     const endpoint = await this.getWebhookEndpoint(tenantId, input.id);
-    if (!endpoint) return null;
+    if (!endpoint || endpoint.applicationId !== this.gateway().application) return null;
     if (endpoint.disabledAt) return endpoint;
 
     return this.gateway().execute('webhooks.remove', principal,
@@ -178,7 +178,7 @@ export class WebhookService {
       { service: 'webhooks' },
       async (context) => {
         const endpoints = await this.endpointStore.list(tenantId);
-        const matching = endpoints.filter((endpoint) => !endpoint.disabledAt && endpoint.events.includes(input.type));
+        const matching = endpoints.filter((endpoint) => endpoint.applicationId === context.application && !endpoint.disabledAt && endpoint.events.includes(input.type));
         if (matching.length === 0) return [];
         const eventId = randomUUID();
         const createdAt = this.now().toISOString();
@@ -228,6 +228,7 @@ export class WebhookService {
 
     const endpoint = await this.endpointStore.get(delivery.endpointId);
     if (!endpoint || endpoint.tenantId !== tenantId) return { success: false, error: 'Endpoint not found', code: 'INVALID_REQUEST' };
+    if (endpoint.applicationId !== this.gateway().application) return { success: false, error: 'Endpoint belongs to a different application', code: 'DENIED' };
     if (endpoint.disabledAt) {
       await this.deliveryStore.updateDelivery(deliveryId, delivery.__version, { status: 'failed', lastError: 'Endpoint is disabled' });
       return { success: false, error: 'Endpoint is disabled', code: 'INVALID_REQUEST' };
@@ -258,7 +259,7 @@ export class WebhookService {
     let result: WebhookDeliveryResult;
     try {
       result = await this.gateway().execute('webhooks.deliver', principal,
-        { type: 'webhook_delivery', tenantId, id: delivery.id, attributes: { endpointId: endpoint.id, destination: new URL(endpoint.url).origin, eventType: delivery.eventType } },
+        { type: 'webhook_delivery', tenantId, id: delivery.id, attributes: { endpointId: endpoint.id, destination: new URL(endpoint.url).origin, eventType: delivery.eventType, credentialRef } },
         { service: 'webhooks', provider: 'webhook', credentialRef },
         async (_context, tools) => {
           // Re-resolve and re-check the bound destination on every attempt so a DNS change cannot redirect it.
@@ -282,7 +283,7 @@ export class WebhookService {
     const delivery = await this.getWebhookDelivery(tenantId, deliveryId);
     if (!delivery) return null;
     const endpoint = await this.endpointStore.get(delivery.endpointId);
-    if (!endpoint || endpoint.disabledAt) return null;
+    if (!endpoint || endpoint.disabledAt || endpoint.applicationId !== this.gateway().application) return null;
 
     return this.gateway().execute('webhooks.replay', principal,
       { type: 'webhook_delivery', tenantId, id: delivery.id, attributes: { endpointId: endpoint.id } },
@@ -380,7 +381,7 @@ export class WebhookService {
 
     try {
       const result = await this.gateway().execute('webhooks.receive', principal,
-        { type: 'webhook_integration', tenantId: integration.tenantId, id: integration.id, attributes: { provider: integration.provider, eventId } },
+        { type: 'webhook_integration', tenantId: integration.tenantId, id: integration.id, attributes: { provider: integration.provider, eventId, credentialRef: integration.signingCredentialRef } },
         { service: 'webhooks', provider: integration.provider, credentialRef: integration.signingCredentialRef },
         async (context, tools) => {
           const valid = await tools.withCredential(integration.signingCredentialRef, 'webhook.verify',

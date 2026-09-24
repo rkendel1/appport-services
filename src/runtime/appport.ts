@@ -414,8 +414,9 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
     },
     async transaction<T>(callback: (tx: TransactionContextImpl) => Promise<T>): Promise<T> {
       const builder = new TransactionBuilder();
-      const context = capabilityAwareTransactionContext(new TransactionContextImpl(builder, gateway), config);
+      const context = capabilityAwareTransactionContext(new TransactionContextImpl(builder, gateway, services.webhooks ? (tenantId) => services.webhooks!.listWebhookEndpoints(tenantId) : undefined), config);
       const result = await callback(context);
+      await context._settle();
       await builder.commit(runtime.db);
       return result;
     },

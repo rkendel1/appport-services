@@ -1,6 +1,8 @@
 export interface File {
   readonly id: string;
   readonly tenantId: string;
+  /** Owning application. Records without one (created before application scoping) are not served. */
+  readonly applicationId?: string;
   readonly owner: string;
   readonly name: string;
   readonly contentType?: string;

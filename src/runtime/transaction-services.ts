@@ -5,6 +5,7 @@ import { evidenceCollectionName } from '../authority/evidence.js';
 import type { ServiceGateway } from '../authority/gateway.js';
 import { toDurablePrincipal } from '../authority/principal.js';
 import { assertApplicationCollection } from '../authority/reserved.js';
+import type { WebhookEndpoint } from '../webhooks/models.js';
 
 /**
  * Transaction context for atomic composition of application state, webhooks, and jobs.
@@ -18,9 +19,20 @@ import { assertApplicationCollection } from '../authority/reserved.js';
  */
 export class TransactionContextImpl {
   private readonly builder: TransactionBuilder;
+  private readonly pending: Promise<void>[] = [];
 
-  constructor(builder: TransactionBuilder, private readonly gateway?: ServiceGateway) {
+  constructor(
+    builder: TransactionBuilder,
+    private readonly gateway?: ServiceGateway,
+    /** Registered endpoints for a tenant; used to validate caller-supplied endpoint ids. */
+    private readonly endpoints?: (tenantId: string) => Promise<readonly WebhookEndpoint[]>,
+  ) {
     this.builder = builder;
+  }
+
+  /** @internal Wait for queued validations. The transaction commits only after this resolves. */
+  async _settle(): Promise<void> {
+    await Promise.all(this.pending);
   }
 
   /**
@@ -59,22 +71,39 @@ export class TransactionContextImpl {
   }
 
   /**
-   * Queue a webhook event emission (creates delivery records for matching endpoints).
-   *
-   * Note: This currently requires manually finding matching endpoints beforehand.
-   * A more ergonomic API would be: `tx.webhooks.emitWebhookEvent(input)` with
-   * endpoint resolution, but that requires calling the existing webhookService
-   * outside the transaction.
+   * Queue deliveries of an event to the given endpoints. Each id must be a
+   * registered, enabled endpoint of this tenant and application that
+   * subscribes to the event; ids are validated before the transaction
+   * commits, so callers cannot target arbitrary destinations.
    */
   queueWebhookDeliveries(
     endpointIds: readonly string[],
     event: { tenantId: string; type: string; payload: unknown },
     context: ServiceExecutionContext,
-  ): void {
+  ): Promise<void> {
     const authorized = this.authorized(context, 'webhooks.emit', event.tenantId, 'webhook_event');
-    if (authorized.resource.attributes?.eventType !== undefined && authorized.resource.attributes.eventType !== event.type) {
-      throw new ServiceAuthorityError('DENIED', `Execution context was issued for event ${authorized.resource.attributes.eventType}`);
+    if (authorized.resource.attributes?.eventType !== event.type) {
+      throw new ServiceAuthorityError('DENIED', `Execution context was not issued for event ${event.type}`);
     }
+    if (!this.endpoints) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'Transactions cannot validate webhook endpoints without the webhook service');
+    const lookup = this.endpoints;
+    const work = (async () => {
+      const registered = await lookup(event.tenantId);
+      for (const endpointId of endpointIds) {
+        const endpoint = registered.find((candidate) => candidate.id === endpointId);
+        if (!endpoint || endpoint.tenantId !== event.tenantId || endpoint.applicationId !== authorized.application || endpoint.disabledAt || !endpoint.events.includes(event.type)) {
+          throw new ServiceAuthorityError('DENIED', `Endpoint ${endpointId} is not a registered, enabled subscriber to ${event.type} for this tenant`);
+        }
+      }
+      this.addDeliveries(endpointIds, event, authorized);
+    })();
+    // Handled here so an abandoned transaction cannot raise an unhandled rejection; _settle still observes it.
+    work.catch(() => undefined);
+    this.pending.push(work);
+    return work;
+  }
+
+  private addDeliveries(endpointIds: readonly string[], event: { tenantId: string; type: string; payload: unknown }, authorized: ServiceExecutionContext): void {
     const eventId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
 
@@ -130,8 +159,13 @@ export class TransactionContextImpl {
     delegationId?: string;
   }, context: ServiceExecutionContext): string {
     const authorized = this.authorized(context, 'jobs.create', input.tenantId, 'job');
-    if (authorized.resource.attributes?.jobType !== undefined && authorized.resource.attributes.jobType !== input.type) {
-      throw new ServiceAuthorityError('DENIED', `Execution context was issued for job type ${authorized.resource.attributes.jobType}`);
+    if (authorized.resource.attributes?.jobType !== input.type) {
+      throw new ServiceAuthorityError('DENIED', `Execution context was not issued for job type ${input.type}`);
+    }
+    // The delegation must be the one AuthBoundry authorized, never chosen afterwards.
+    const delegationId = authorized.resource.attributes?.delegationId ?? authorized.principal.delegationId;
+    if (input.delegationId !== undefined && input.delegationId !== delegationId) {
+      throw new ServiceAuthorityError('DENIED', 'Execution context was not issued for this delegation');
     }
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -149,7 +183,8 @@ export class TransactionContextImpl {
       maxAttempts: input.maxAttempts ?? 3,
       nextAttemptAt: runAt,
       createdAt: now,
-      principal: toDurablePrincipal(authorized.principal, input.delegationId ?? authorized.principal.delegationId, authorized.authorization.decisionId),
+      applicationId: authorized.application,
+      principal: toDurablePrincipal(authorized.principal, delegationId, authorized.authorization.decisionId),
       __version: 1,
     };
 
@@ -190,12 +225,24 @@ export class TransactionContextImpl {
     priority?: 'low' | 'normal' | 'high' | 'urgent';
   }, context: ServiceExecutionContext): string {
     const authorized = this.authorized(context, 'notifications.send', input.tenantId, 'notification');
-    if (authorized.resource.attributes?.recipient !== undefined && authorized.resource.attributes.recipient !== input.recipient) {
-      throw new ServiceAuthorityError('DENIED', 'Execution context was issued for a different recipient');
+    if (authorized.resource.attributes?.recipient !== input.recipient) {
+      throw new ServiceAuthorityError('DENIED', 'Execution context was not issued for this recipient');
     }
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const notification = { ...input, id, priority: input.priority ?? 'normal', createdAt: now, __version: 1 };
+    const notification = {
+      id,
+      tenantId: input.tenantId,
+      applicationId: authorized.application,
+      recipient: input.recipient,
+      type: input.type,
+      title: input.title,
+      ...(input.body === undefined ? {} : { body: input.body }),
+      ...(input.data === undefined ? {} : { data: input.data }),
+      priority: input.priority ?? 'normal',
+      createdAt: now,
+      __version: 1,
+    };
     this.builder.addOperation({ collection: 'notifications', id, requireAbsent: true, value: notification });
     const auditId = crypto.randomUUID();
     this.builder.addOperation({

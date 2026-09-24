@@ -2,7 +2,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { createServices, apiKeyAuth } from '@appport/services';
 import type { Invoice, Customer, InvoiceRequest } from './models.js';
-import { authorizeInvoiceEffects, DEVELOPMENT_DESTINATIONS, developmentAuthorizer } from './authority.js';
+import { authorizeInvoiceEffects, DEVELOPMENT_DESTINATIONS, developmentAuthorizer, developmentCredentials } from './authority.js';
 
 const app = express();
 app.use(express.json());
@@ -16,6 +16,7 @@ const services = createServices({
   application: 'invoice-app',
   // AuthBoundry decides every effect. Replace the development stand-in with your AuthBoundry client.
   authorizer: developmentAuthorizer,
+  credentials: developmentCredentials,
   webhookDestinationPolicy: DEVELOPMENT_DESTINATIONS,
 });
 

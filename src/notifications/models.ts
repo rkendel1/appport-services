@@ -8,6 +8,8 @@ export interface NotificationSource {
 export interface Notification {
   readonly id: string;
   readonly tenantId: string;
+  /** Owning application. Records without one (created before application scoping) are not served. */
+  readonly applicationId?: string;
   readonly recipient: string;
   readonly type: string;
   readonly title: string;

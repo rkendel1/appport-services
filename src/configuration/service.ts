@@ -101,7 +101,11 @@ export class ConfigurationService {
     return this.gateway().execute('credential.rotate', principal, resource(owned, input.name, 'credential', credentialRef), { service: 'configuration', credentialRef }, async () => {
       const current = await this.options.store.getSecret(owned, input.name);
       if (!current) throw new ConfigurationValidationError(`Configuration ${input.name} not found`);
-      const item: ConfigurationSecret = { ...current, credentialRef, required: input.required ?? current.required, updatedAt: this.now().toISOString(), __version: current.__version + 1 };
+      // Legacy rows stored raw values; rotation drops them so only the reference remains durable.
+      const { value: _legacyValue, ...binding } = current as ConfigurationSecret & { value?: unknown };
+      const item: ConfigurationSecret = { ...binding, credentialRef, required: input.required ?? current.required, updatedAt: this.now().toISOString(), __version: current.__version + 1 };
+      // FeltDB updates merge fields; an explicit undefined is what deletes the legacy key.
+      if ('value' in current) Object.assign(item, { value: undefined });
       await this.options.store.saveSecret(item, current.__version);
       await this.record('secret.rotated', item, 'secret', principal.principalId, 'rotated', 'configured');
       return secretView(item);

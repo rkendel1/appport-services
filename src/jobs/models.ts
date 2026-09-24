@@ -7,6 +7,8 @@ export type JobStatus = 'scheduled' | 'pending' | 'running' | 'retrying' | 'comp
 export interface Job {
   id: string;
   tenantId: string;
+  /** Owning application. */
+  applicationId?: string;
 
   type: string;
   payload: unknown;
@@ -41,6 +43,7 @@ export interface Job {
 export interface JobSchedule {
   id: string;
   tenantId: string;
+  applicationId?: string;
 
   type: string;
   payload: unknown;

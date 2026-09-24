@@ -13,6 +13,7 @@ import type { WebhookService } from '../webhooks/service.js';
 import { ServiceAuthorityError, ServiceMigrationError, isServiceAuthorityError } from '../authority/errors.js';
 import type { ServiceGateway } from '../authority/gateway.js';
 import { isVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
+import { ownedBy } from './invoke.js';
 
 export const API_KEY_MANAGEMENT_CAPABILITIES = {
   read: 'apikeys.read',
@@ -187,7 +188,7 @@ function mountExistingServiceRoutes(router: Router, services: ManagementServices
     };
   // Tenant-keyed observation APIs are wrapped in an explicit AuthBoundry read authorization.
   const read = <T>(capability: string, type: string, principal: VerifiedPrincipal, work: () => Promise<T>) =>
-    gateway.execute(capability, principal, { type, tenantId: principal.tenantId }, { service: type }, work);
+    gateway.execute(capability, principal, { type, tenantId: principal.tenantId }, { service: type }, async () => ownedBy(gateway.application, await work()) as T);
 
   if (services.apiKeys) {
     const keys = services.apiKeys;

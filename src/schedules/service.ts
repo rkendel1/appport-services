@@ -31,7 +31,7 @@ export class ScheduleService {
     const principal = requireVerifiedPrincipal(caller);
     const tenant = resolveTenant({ tenantId }, principal);
     const schedule = await this.options.jobs.getSchedule(tenant, id);
-    if (!schedule) return null;
+    if (!schedule || schedule.applicationId !== this.gateway().application) return null;
     return this.gateway().execute('schedules.read', principal, { type: 'schedule', tenantId: tenant, id, attributes: { createdBy: schedule.createdBy } }, { service: 'schedules' }, async () => schedule);
   }
 
@@ -40,7 +40,7 @@ export class ScheduleService {
     const principal = requireVerifiedPrincipal(caller);
     const tenant = resolveTenant({ tenantId }, principal);
     return this.gateway().execute('schedules.read', principal, { type: 'schedule', tenantId: tenant, attributes: { createdBy: options.createdBy ?? '*' } }, { service: 'schedules' }, async () => {
-      const schedules = await this.options.jobs.listSchedules(tenant);
+      const schedules = (await this.options.jobs.listSchedules(tenant)).filter((schedule) => schedule.applicationId === this.gateway().application);
       return options.createdBy ? schedules.filter((schedule) => schedule.createdBy === options.createdBy) : schedules;
     });
   }

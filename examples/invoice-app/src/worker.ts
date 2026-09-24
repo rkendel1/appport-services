@@ -1,5 +1,5 @@
 import { createServices, type Job, type JobExecution } from '@appport/services';
-import { DEVELOPMENT_DESTINATIONS, developmentAuthorizer } from './authority.js';
+import { DEVELOPMENT_DESTINATIONS, developmentAuthorizer, developmentCredentials } from './authority.js';
 
 /**
  * Invoice processing worker.
@@ -16,6 +16,7 @@ const services = createServices({
   config: './appport.toml',
   application: 'invoice-app',
   authorizer: developmentAuthorizer,
+  credentials: developmentCredentials,
   webhookDestinationPolicy: DEVELOPMENT_DESTINATIONS,
 });
 

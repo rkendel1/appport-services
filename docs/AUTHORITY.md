@@ -69,7 +69,13 @@ Every protected operation goes through `ServiceGateway` in this fixed order:
 8. record durable evidence
 
 A credential is never resolved before authorization. `withCredential`
-accepts only a live execution context that the gateway issued.
+accepts only a live execution context that the gateway issued, and only for
+the `credentialRef` that was part of the authorized resource. An allowed
+effect cannot fetch a different credential, even one in the same tenant.
+
+Each capability is bound to its declared resource type: requesting
+`jobs.create` for a `file` resource is `INVALID_REQUEST`, and AuthBoundry is
+never asked.
 
 ## Verified principals
 
@@ -136,6 +142,12 @@ The context has these properties:
 - **Frozen.** The principal cannot be replaced after authorization.
 - **Bound to one capability and tenant.** Using it for anything else is denied.
 - **Short-lived.** It expires 60 seconds after issue.
+- **Bound to the resource it authorized.** Transaction helpers require the
+  context's `eventType`, `jobType`, `recipient`, and `delegationId` to match
+  what is queued. `tx.queueWebhookDeliveries` validates every endpoint id:
+  each must be a registered, enabled subscriber of this tenant and
+  application. It returns a promise, and the transaction does not commit
+  until that validation completes.
 - **Single-use for transactions.** `tx.queueJob`, `tx.queueNotification`,
   and `tx.queueWebhookDeliveries` each consume one context issued by
   `services.authorize(...)`. Its evidence commits in the same FeltDB
@@ -218,6 +230,16 @@ service/provider call
   service no longer generates, encrypts, or holds signing secrets.
 - Configuration is not authority. Attaching `credential-ref:cred_123` means
   the credential is configured. It does not let anyone use it.
+
+## Application scoping
+
+Several applications may share one FeltDB namespace. Files, notifications,
+jobs, schedules, webhook endpoints, and API keys record their owning
+`applicationId`. Every service read and mutation only sees records of the
+gateway's application. Records created before application scoping carry no
+`applicationId`; they are not served, so backfill them if you need to keep
+them. A durable principal's attestation also records its delegation, so a
+decision cannot be reused under a different delegation.
 
 ## Evidence
 

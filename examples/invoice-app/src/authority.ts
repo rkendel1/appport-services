@@ -1,5 +1,8 @@
 import type {
   AppPortServices,
+  ResolvedSecret,
+  ScopedResolveSecretInput,
+  ScopedSecretsResolver,
   ServiceAuthorizationDecision,
   ServiceAuthorizationRequest,
   ServiceAuthorizer,
@@ -41,6 +44,22 @@ export const developmentAuthorizer: ServiceAuthorizer = {
 
 /** The demo signs webhooks with a credential held outside service configuration. */
 export const DEMO_SIGNING_REF = 'credential-ref:invoice-demo-webhook-signing';
+
+/**
+ * DEVELOPMENT ONLY. A stand-in for AuthBoundry credential custody. It
+ * resolves the demo signing secret from the environment, and only for a
+ * request that carries an authorization decision. Replace it with your
+ * AuthBoundry credential resolver.
+ */
+export const developmentCredentials: ScopedSecretsResolver = {
+  async withSecret<T>(input: ScopedResolveSecretInput, use: (secret: ResolvedSecret) => T | Promise<T>): Promise<T> {
+    if (!input.context.authorizationRef) throw new Error('credential resolution requires an authorization decision');
+    if (`credential-ref:${input.reference.secretId}` !== DEMO_SIGNING_REF) throw new Error(`unknown credential ${input.reference.secretId}`);
+    const value = process.env.INVOICE_WEBHOOK_SIGNING_SECRET;
+    if (!value) throw new Error('INVOICE_WEBHOOK_SIGNING_SECRET is not set');
+    return use({ value, secretId: input.reference.secretId, version: 1 });
+  },
+};
 
 /** Local development delivers to localhost; never set this in production. */
 export const DEVELOPMENT_DESTINATIONS: WebhookDestinationPolicy = { allowPrivateNetworks: true };
