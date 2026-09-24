@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from '../src/configuration/service.js';
+import { ConfigurationService, ConfigurationValidationError } from '../src/configuration/service.js';
+import { createFeltDbRuntime } from '../src/_internal.js';
+import { ServiceAuthorityError, ServiceMigrationError } from '../src/authority/errors.js';
+import { principal as verified, testGateway } from './support/authority.js';
 import type { ConfigurationAuditEvent, ConfigurationSecret, ConfigurationVariable } from '../src/configuration/models.js';
 import type { ConfigurationStore } from '../src/configuration/storage.js';
-import type { AuthenticatedPrincipal } from '../src/contract/principals.js';
 
 class MemoryConfigurationStore implements ConfigurationStore {
   variables: ConfigurationVariable[] = [];
@@ -20,29 +22,32 @@ class MemoryConfigurationStore implements ConfigurationStore {
   async audit(event: ConfigurationAuditEvent) { this.auditEvents.push(event); }
 }
 
-const principal = (tenantId = 'tenant-a', scopes = ['configuration.read', 'configuration.write', 'configuration.delete', 'secret.rotate']): AuthenticatedPrincipal => ({ principalId: 'actor', principalType: 'api_key', tenantId, scopes, credentialId: 'key' });
+const principal = (tenantId = 'tenant-a') => verified({ principalId: 'actor', principalType: 'api_key', tenantId, credentialId: 'key' });
+const authority = () => testGateway(createFeltDbRuntime({ memory: true, namespace: `configuration-${Math.random()}` }).db, { application: 'app' });
+const isDenied = (error: unknown) => error instanceof ServiceAuthorityError && error.code === 'DENIED';
 const input = { tenantId: 'tenant-a', applicationId: 'app', environment: 'production' as const };
 
 test('configuration variables and secrets have separate safe read models', async () => {
   const store = new MemoryConfigurationStore();
-  const service = new ConfigurationService({ store, now: () => new Date('2026-09-19T00:00:00Z') });
+  const service = new ConfigurationService({ store, authority: authority(), now: () => new Date('2026-09-19T00:00:00Z') });
   const variable = await service.createVariable({ ...input, name: 'LOG_LEVEL', value: 'info' }, principal());
-  const secret = await service.createSecret({ ...input, name: 'API_TOKEN', value: 'never-return-this' }, principal());
+  await assert.rejects(service.createSecret({ ...input, name: 'API_TOKEN', value: 'never-store-this' } as never, principal()), ServiceMigrationError);
+  const secret = await service.createSecret({ ...input, name: 'API_TOKEN', credentialRef: 'credential-ref:cred_1' }, principal());
   assert.equal(variable.value, 'info');
   assert.equal('value' in secret, false);
-  assert.equal(JSON.stringify(await service.list(input, principal())).includes('never-return-this'), false);
-  assert.equal(JSON.stringify(store.auditEvents).includes('never-return-this'), false);
-  await service.rotateSecret({ ...input, name: 'API_TOKEN', value: 'also-never-return-this' }, principal());
-  assert.equal(JSON.stringify(store.auditEvents).includes('also-never-return-this'), false);
+  assert.equal(JSON.stringify(store.secrets).includes('never-store-this'), false);
+  await service.rotateSecret({ ...input, name: 'API_TOKEN', credentialRef: 'credential-ref:cred_2' }, principal());
+  assert.equal(store.secrets[0]?.credentialRef, 'credential-ref:cred_2');
 });
 
 test('configuration enforces names, duplicate scope, authorization, and tenant isolation', async () => {
   const store = new MemoryConfigurationStore();
-  const service = new ConfigurationService({ store });
+  const service = new ConfigurationService({ store, authority: authority() });
   await service.createVariable({ ...input, name: 'PORT', value: '8080' }, principal());
-  await assert.rejects(() => service.createSecret({ ...input, name: 'PORT', value: 'secret' }, principal()), ConfigurationValidationError);
+  await assert.rejects(() => service.createSecret({ ...input, name: 'PORT', credentialRef: 'credential-ref:x' }, principal()), ConfigurationValidationError);
   await assert.rejects(() => service.createVariable({ ...input, name: 'bad-name', value: 'x' }, principal()), ConfigurationValidationError);
-  await assert.rejects(() => service.list(input, principal('other-tenant')), ConfigurationAuthorizationError);
-  await assert.rejects(() => service.createVariable({ ...input, name: 'OTHER', value: 'x' }, principal('other-tenant')), ConfigurationAuthorizationError);
+  await assert.rejects(() => service.list(input, principal('other-tenant')), isDenied);
+  await assert.rejects(() => service.createVariable({ ...input, name: 'OTHER', value: 'x' }, principal('other-tenant')), isDenied);
+  await assert.rejects(() => service.list({ ...input, applicationId: 'someone-else' }, principal()), isDenied);
   assert.equal((await service.list({ ...input, tenantId: 'other-tenant' }, principal('other-tenant'))).variables.length, 0);
 });

@@ -8,9 +8,13 @@ import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationVal
 import { FileAuthorizationError, type FileService } from '../files/service.js';
 import type { JobService } from '../jobs/service.js';
 import { notificationListOptions } from '../notifications/http.js';
-import { NotificationAuthorizationError, NotificationNotFoundError, NotificationSensitiveDataError, NotificationValidationError, type NotificationService } from '../notifications/service.js';
+import { NotificationAuthorizationError, type NotificationService } from '../notifications/service.js';
 import { ScheduleAuthorizationError, type ScheduleService } from '../schedules/service.js';
 import type { WebhookService } from '../webhooks/service.js';
+import { ServiceAuthorityError, ServiceMigrationError, isServiceAuthorityError } from '../authority/errors.js';
+import type { ServiceGateway } from '../authority/gateway.js';
+import { isVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
+import { ownedBy } from './invoke.js';
 
 export const API_KEY_MANAGEMENT_CAPABILITIES = {
   read: 'apikeys.read',
@@ -20,14 +24,22 @@ export const API_KEY_MANAGEMENT_CAPABILITIES = {
 
 export type ApiKeyManagementCapability = typeof API_KEY_MANAGEMENT_CAPABILITIES[keyof typeof API_KEY_MANAGEMENT_CAPABILITIES];
 
+/** @deprecated Management authorization is performed by AuthBoundry through the service gateway. */
 export interface ManagementAuthorizationContext {
   readonly principal: AuthenticatedPrincipal;
   readonly tenantId: string;
   readonly request: Request;
 }
 
-export type ManagementAuthenticationAdapter = (request: Request) => AuthenticatedPrincipal | null | Promise<AuthenticatedPrincipal | null>;
+/**
+ * Trusted host authentication adapter. It returns the identity the host
+ * verified (a session, SSO token, or an API-key principal). It never returns
+ * permissions; any scopes on the claims are ignored.
+ */
+export type ManagementAuthenticationAdapter = (request: Request) => PrincipalClaims | VerifiedPrincipal | null | Promise<PrincipalClaims | VerifiedPrincipal | null>;
+/** @deprecated */
 export type ManagementAuthorizationResult = boolean | { readonly allowed: boolean };
+/** @deprecated Rejected: a second authorization layer beside AuthBoundry is not permitted. */
 export type ManagementAuthorizationAdapter = (
   capability: ApiKeyManagementCapability,
   context: ManagementAuthorizationContext,
@@ -38,7 +50,7 @@ export interface ManagementServices {
   readonly configuration?: ConfigurationService;
   readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'>;
   readonly jobs?: Pick<JobService, 'enqueue' | 'listJobs' | 'retry'>;
-  readonly notifications?: Pick<NotificationService, 'notify' | 'get' | 'list' | 'deliveries' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete'>;
+  readonly notifications?: Pick<NotificationService, 'notify' | 'get' | 'list' | 'deliveries' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete' | 'retryDelivery'>;
   readonly files?: Pick<FileService, 'create' | 'list' | 'update' | 'delete'>;
   readonly schedules?: Pick<ScheduleService, 'create' | 'list' | 'disable'>;
 }
@@ -46,10 +58,12 @@ export interface ManagementServices {
 export interface CreateManagementRouterOptions {
   /** The existing service instance. No services or persistence runtimes are created by this router. */
   readonly services: ManagementServices;
+  /** The services' Policy Enforcement Point. Reads and identity branding go through it. */
+  readonly authority: ServiceGateway;
   /** Authenticates the host request. Return null when no host identity is present. */
   readonly authenticate: ManagementAuthenticationAdapter;
-  /** Host authorization authority. Principal scopes are not treated as authorization decisions. */
-  readonly authorize: ManagementAuthorizationAdapter;
+  /** @deprecated Rejected with a migration error. AuthBoundry authorizes every operation through the gateway. */
+  readonly authorize?: ManagementAuthorizationAdapter;
   /** Serve the packaged management UI and configuration routes. Defaults to true. */
   readonly includeConfiguration?: boolean;
   readonly includeUi?: boolean;
@@ -67,6 +81,7 @@ export class ManagementAuthenticationError extends Error {
   constructor() { super('Authentication is required'); this.name = 'ManagementAuthenticationError'; }
 }
 
+/** @deprecated Denials are reported as ServiceAuthorityError with code DENIED. */
 export class ManagementAuthorizationError extends Error {
   readonly status = 403;
   readonly code = 'FORBIDDEN';
@@ -76,86 +91,37 @@ export class ManagementAuthorizationError extends Error {
   }
 }
 
-interface ApiKeyOperationContext {
-  readonly principal: AuthenticatedPrincipal | null;
-  readonly authorize: (capability: ApiKeyManagementCapability, principal: AuthenticatedPrincipal) => ManagementAuthorizationResult | Promise<ManagementAuthorizationResult>;
-}
-
-export async function executeApiKeyManagementOperation(
-  service: NonNullable<ManagementServices['apiKeys']>,
-  context: ApiKeyOperationContext,
-  operation: 'list' | 'create' | 'revoke',
-  input: { readonly name?: unknown; readonly scopes?: unknown; readonly id?: string },
-): Promise<{ readonly status: number; readonly body?: unknown }> {
-  const principal = context.principal;
-  if (!principal) throw new ManagementAuthenticationError();
-  const capability = API_KEY_MANAGEMENT_CAPABILITIES[operation === 'list' ? 'read' : operation];
-  const decision = await context.authorize(capability, principal);
-  if (!(typeof decision === 'boolean' ? decision : decision.allowed)) throw new ManagementAuthorizationError(capability);
-
-  if (operation === 'list') {
-    const keys = await service.listApiKeys(principal.tenantId);
-    return { status: 200, body: keys.filter((key) => !key.revokedAt) };
-  }
-  if (operation === 'create') {
-    const name = requiredText(input.name, 'name');
-    const scopes = stringList(input.scopes, 'scopes');
-    return {
-      status: 201,
-      body: await service.createApiKey({ tenantId: principal.tenantId, name, scopes, createdBy: principal.principalId }),
-    };
-  }
-  await service.revokeApiKey({ tenantId: principal.tenantId, id: input.id!, revokedBy: principal.principalId });
-  return { status: 204 };
-}
-
 /** Mount AppPort Services management routes into an existing authenticated Express host. */
 export function createManagementRouter(options: CreateManagementRouterOptions): Router {
+  if (options.authorize !== undefined) {
+    throw new ServiceMigrationError('createManagementRouter no longer accepts an authorize adapter. Configure the AuthBoundry authorizer on the services; the router is a thin adapter.');
+  }
+  if (!options.authority) throw new Error('createManagementRouter requires the services\' authority (ServiceGateway)');
+  const gateway = options.authority;
   const router = Router();
 
   router.use(jsonBody());
 
   router.use(async (req, _res, next) => {
     try {
-      const principal = await options.authenticate(req);
-      if (principal) req.auth = principal;
+      const identity = await options.authenticate(req);
+      if (identity) req.auth = isVerifiedPrincipal(identity) ? identity : gateway.identify(identity) ?? undefined;
       next();
     } catch (error) { next(error); }
   });
 
-  const run = (operation: 'list' | 'create' | 'revoke') => async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const result = await executeApiKeyManagementOperation(options.services.apiKeys!, {
-        principal: req.auth ?? null,
-        authorize: (capability, principal) => options.authorize(capability, {
-          principal,
-          tenantId: principal.tenantId,
-          request: req,
-        }),
-      }, operation, { name: req.body?.name, scopes: req.body?.scopes, id: req.params.id });
-      if (result.status === 204) res.status(204).end();
-      else res.status(result.status).json(result.body);
-    } catch (error) { next(error); }
-  };
-
-  if (options.services.apiKeys) {
-    router.get('/_appport/api/keys', run('list'));
-    router.post('/_appport/api/keys', run('create'));
-    router.delete('/_appport/api/keys/:id', run('revoke'));
-  }
-
   if (options.services.apiKeys) router.get('/api-keys', async (req, _res, next) => {
     try {
-      if (!req.auth) throw new ManagementAuthenticationError();
+      const principal = requirePrincipal(req);
+      // The packaged page drives all three operations; AuthBoundry must allow each.
       for (const capability of Object.values(API_KEY_MANAGEMENT_CAPABILITIES)) {
-        const decision = await options.authorize(capability, { principal: req.auth, tenantId: req.auth.tenantId, request: req });
-        if (!(typeof decision === 'boolean' ? decision : decision.allowed)) throw new ManagementAuthorizationError(capability);
+        await gateway.authorize(capability, principal, { type: 'api_key', tenantId: principal.tenantId });
       }
       next();
     } catch (error) { next(error); }
   });
 
-  mountExistingServiceRoutes(router, options.services);
+  mountExistingServiceRoutes(router, options.services, gateway);
 
   if (options.includeConfiguration !== false && options.services.configuration) {
     router.use('/v1/configuration', createConfigurationRouter(options.services.configuration));
@@ -180,6 +146,10 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
 }
 
 export function managementErrorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction): void {
+  if (isServiceAuthorityError(error)) {
+    res.status(error.status).json({ error: { code: error.code, message: error.message } });
+    return;
+  }
   if (error instanceof ManagementAuthenticationError || error instanceof ManagementAuthorizationError) {
     res.status(error.status).json({ error: { code: error.code, message: error.message } });
     return;
@@ -196,71 +166,82 @@ export function managementErrorHandler(error: unknown, _req: Request, res: Respo
     res.status(403).json({ error: { code: 'FORBIDDEN', message: error.message } });
     return;
   }
-  if (error instanceof NotificationValidationError || error instanceof NotificationSensitiveDataError) {
-    res.status(400).json({ error: { code: 'INVALID_INPUT', message: error.message } });
-    return;
-  }
-  if (error instanceof NotificationNotFoundError) {
-    res.status(404).json({ error: { code: 'NOT_FOUND', message: error.message } });
-    return;
-  }
   const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : 500;
   const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : 'MANAGEMENT_OPERATION_FAILED';
   const message = status < 500 && error instanceof Error ? error.message : 'Management operation failed';
   res.status(status).json({ error: { code, message } });
 }
 
-function mountExistingServiceRoutes(router: Router, services: ManagementServices): void {
-  const handler = (work: (req: Request, principal: AuthenticatedPrincipal) => Promise<{ status?: number; body?: unknown }>) =>
+function mountExistingServiceRoutes(router: Router, services: ManagementServices, gateway: ServiceGateway): void {
+  const handler = (work: (req: Request, principal: VerifiedPrincipal) => Promise<{ status?: number; body?: unknown }>) =>
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         const principal = requirePrincipal(req);
+        // Ownership comes from the verified principal; a different caller-supplied tenant is refused, not ignored.
+        if (req.body?.tenantId !== undefined && req.body.tenantId !== principal.tenantId) {
+          throw new ServiceAuthorityError('DENIED', 'Cross-tenant service operation denied', { reason: 'tenant_mismatch' });
+        }
         const result = await work(req, principal);
         const status = result.status ?? 200;
         if (status === 204) res.status(204).end();
         else res.status(status).json(result.body);
       } catch (error) { next(error); }
     };
+  // Tenant-keyed observation APIs are wrapped in an explicit AuthBoundry read authorization.
+  const read = <T>(capability: string, type: string, principal: VerifiedPrincipal, work: () => Promise<T>) =>
+    gateway.execute(capability, principal, { type, tenantId: principal.tenantId }, { service: type }, async () => ownedBy(gateway.application, await work()) as T);
 
+  if (services.apiKeys) {
+    const keys = services.apiKeys;
+    router.get('/_appport/api/keys', handler(async (_req, principal) => ({ body: (await read('apikeys.read', 'api_key', principal, () => keys.listApiKeys(principal.tenantId))).filter((key) => !key.revokedAt) })));
+    router.post('/_appport/api/keys', handler(async (req, principal) => ({ status: 201, body: await keys.createApiKey({ name: requiredText(req.body?.name, 'name'), ...(req.body?.scopes === undefined ? {} : { scopes: stringList(req.body.scopes, 'scopes') }), ...(req.body?.tenantId === undefined ? {} : { tenantId: req.body.tenantId }), ...(req.body?.createdBy === undefined ? {} : { createdBy: req.body.createdBy }) }, principal) })));
+    router.delete('/_appport/api/keys/:id', handler(async (req, principal) => { await keys.revokeApiKey({ id: req.params.id }, principal); return { status: 204 }; }));
+  }
   if (services.webhooks) {
-    router.get('/_appport/webhooks', handler(async (_req, principal) => ({ body: await services.webhooks!.listWebhookEndpoints(principal.tenantId) })));
-    router.post('/_appport/webhooks', handler(async (req, principal) => ({ status: 201, body: await services.webhooks!.createWebhookEndpoint({ tenantId: principal.tenantId, url: requiredText(req.body?.url, 'url'), events: stringList(req.body?.events, 'events'), createdBy: principal.principalId }) })));
-    router.delete('/_appport/webhooks/:id', handler(async (req, principal) => { await services.webhooks!.disableWebhookEndpoint({ tenantId: principal.tenantId, id: req.params.id, disabledBy: principal.principalId }); return { status: 204 }; }));
+    const hooks = services.webhooks;
+    router.get('/_appport/webhooks', handler(async (_req, principal) => ({ body: await read('webhooks.read', 'webhook_endpoint', principal, () => hooks.listWebhookEndpoints(principal.tenantId)) })));
+    router.post('/_appport/webhooks', handler(async (req, principal) => ({ status: 201, body: await hooks.createWebhookEndpoint({ url: requiredText(req.body?.url, 'url'), events: stringList(req.body?.events, 'events'), signingCredentialRef: requiredText(req.body?.signingCredentialRef, 'signingCredentialRef') }, principal) })));
+    router.delete('/_appport/webhooks/:id', handler(async (req, principal) => { await hooks.disableWebhookEndpoint({ id: req.params.id }, principal); return { status: 204 }; }));
   }
   if (services.jobs) {
-    router.get('/_appport/jobs', handler(async (_req, principal) => ({ body: await services.jobs!.listJobs(principal.tenantId) })));
-    router.post('/_appport/jobs', handler(async (req, principal) => ({ status: 201, body: await services.jobs!.enqueue({ tenantId: principal.tenantId, type: requiredText(req.body?.type, 'type'), payload: objectValue(req.body?.payload ?? {}, 'payload'), ...(req.body?.maxAttempts === undefined ? {} : { maxAttempts: nonNegativeInteger(req.body.maxAttempts, 'maxAttempts') }) }) })));
-    router.post('/_appport/jobs/:id/retry', handler(async (req, principal) => ({ body: await services.jobs!.retry(principal.tenantId, req.params.id) })));
+    const jobs = services.jobs;
+    router.get('/_appport/jobs', handler(async (_req, principal) => ({ body: await read('jobs.read', 'job', principal, () => jobs.listJobs(principal.tenantId)) })));
+    router.post('/_appport/jobs', handler(async (req, principal) => ({ status: 201, body: await jobs.enqueue({ type: requiredText(req.body?.type, 'type'), payload: objectValue(req.body?.payload ?? {}, 'payload'), ...(req.body?.maxAttempts === undefined ? {} : { maxAttempts: nonNegativeInteger(req.body.maxAttempts, 'maxAttempts') }) }, principal) })));
+    router.post('/_appport/jobs/:id/retry', handler(async (req, principal) => ({ body: await jobs.retry(principal.tenantId, req.params.id, principal) })));
   }
   if (services.schedules) {
-    router.get('/_appport/schedules', handler(async (_req, principal) => ({ body: await services.schedules!.list(principal.tenantId, principal) })));
-    router.post('/_appport/schedules', handler(async (req, principal) => ({ status: 201, body: await services.schedules!.create({ tenantId: principal.tenantId, type: requiredText(req.body?.type, 'type'), payload: objectValue(req.body?.payload ?? {}, 'payload'), interval: requiredText(req.body?.interval, 'interval'), createdBy: principal.principalId }, principal) })));
-    router.delete('/_appport/schedules/:id', handler(async (req, principal) => ({ body: await services.schedules!.disable(principal.tenantId, req.params.id, principal) })));
+    const schedules = services.schedules;
+    router.get('/_appport/schedules', handler(async (_req, principal) => ({ body: await schedules.list(principal.tenantId, principal) })));
+    router.post('/_appport/schedules', handler(async (req, principal) => ({ status: 201, body: await schedules.create({ type: requiredText(req.body?.type, 'type'), payload: objectValue(req.body?.payload ?? {}, 'payload'), interval: requiredText(req.body?.interval, 'interval'), ...(req.body?.createdBy === undefined ? {} : { createdBy: req.body.createdBy }) }, principal) })));
+    router.delete('/_appport/schedules/:id', handler(async (req, principal) => ({ body: await schedules.disable(principal.tenantId, req.params.id, principal) })));
   }
   if (services.files) {
-    router.get('/_appport/files', handler(async (req, principal) => ({ body: await services.files!.list(principal.tenantId, principal, { ...(typeof req.query.owner === 'string' ? { owner: req.query.owner } : {}) }) })));
-    router.post('/_appport/files', handler(async (req, principal) => ({ status: 201, body: await services.files!.create({ tenantId: principal.tenantId, owner: typeof req.body?.owner === 'string' ? req.body.owner : principal.principalId, name: requiredText(req.body?.name, 'name'), size: nonNegativeInteger(req.body?.size, 'size'), storageKey: requiredText(req.body?.storageKey, 'storageKey'), ...(req.body?.contentType === undefined ? {} : { contentType: requiredText(req.body.contentType, 'contentType') }), ...(req.body?.checksum === undefined ? {} : { checksum: requiredText(req.body.checksum, 'checksum') }), ...(req.body?.metadata === undefined ? {} : { metadata: objectValue(req.body.metadata, 'metadata') }) }, principal) })));
-    const updateFile = handler(async (req, principal) => ({ body: await services.files!.update({ tenantId: principal.tenantId, id: req.params.id, ...(req.body?.name === undefined ? {} : { name: requiredText(req.body.name, 'name') }), ...(req.body?.storageKey === undefined ? {} : { storageKey: requiredText(req.body.storageKey, 'storageKey') }), ...(req.body?.size === undefined ? {} : { size: nonNegativeInteger(req.body.size, 'size') }), ...(req.body?.contentType === undefined ? {} : { contentType: requiredText(req.body.contentType, 'contentType') }), ...(req.body?.checksum === undefined ? {} : { checksum: requiredText(req.body.checksum, 'checksum') }), ...(req.body?.metadata === undefined ? {} : { metadata: objectValue(req.body.metadata, 'metadata') }) }, principal) }));
+    const files = services.files;
+    router.get('/_appport/files', handler(async (req, principal) => ({ body: await files.list(principal.tenantId, principal, { ...(typeof req.query.owner === 'string' ? { owner: req.query.owner } : {}) }) })));
+    router.post('/_appport/files', handler(async (req, principal) => ({ status: 201, body: await files.create({ ...(typeof req.body?.owner === 'string' ? { owner: req.body.owner } : {}), name: requiredText(req.body?.name, 'name'), size: nonNegativeInteger(req.body?.size, 'size'), storageKey: requiredText(req.body?.storageKey, 'storageKey'), ...(req.body?.contentType === undefined ? {} : { contentType: requiredText(req.body.contentType, 'contentType') }), ...(req.body?.checksum === undefined ? {} : { checksum: requiredText(req.body.checksum, 'checksum') }), ...(req.body?.metadata === undefined ? {} : { metadata: objectValue(req.body.metadata, 'metadata') }) }, principal) })));
+    const updateFile = handler(async (req, principal) => ({ body: await files.update({ id: req.params.id, ...(req.body?.name === undefined ? {} : { name: requiredText(req.body.name, 'name') }), ...(req.body?.storageKey === undefined ? {} : { storageKey: requiredText(req.body.storageKey, 'storageKey') }), ...(req.body?.size === undefined ? {} : { size: nonNegativeInteger(req.body.size, 'size') }), ...(req.body?.contentType === undefined ? {} : { contentType: requiredText(req.body.contentType, 'contentType') }), ...(req.body?.checksum === undefined ? {} : { checksum: requiredText(req.body.checksum, 'checksum') }), ...(req.body?.metadata === undefined ? {} : { metadata: objectValue(req.body.metadata, 'metadata') }) }, principal) }));
     router.patch('/_appport/files/:id', updateFile);
     router.put('/_appport/files/:id', updateFile);
-    router.delete('/_appport/files/:id', handler(async (req, principal) => { await services.files!.delete(principal.tenantId, req.params.id, principal); return { status: 204 }; }));
+    router.delete('/_appport/files/:id', handler(async (req, principal) => { await files.delete(principal.tenantId, req.params.id, principal); return { status: 204 }; }));
   }
   if (services.notifications) {
-    router.get('/_appport/notifications', handler(async (req, principal) => ({ body: await services.notifications!.list(principal.tenantId, notificationListOptions(req.query), principal) })));
+    const notifications = services.notifications;
+    router.get('/_appport/notifications', handler(async (req, principal) => ({ body: await notifications.list(principal.tenantId, notificationListOptions(req.query), principal) })));
     router.post('/_appport/notifications', handler(async (req, principal) => {
-      const result = await services.notifications!.notify({ ...objectValue(req.body, 'body'), tenantId: principal.tenantId } as unknown as Parameters<NotificationService['notify']>[0], principal);
+      const result = await notifications.notify({ ...objectValue(req.body ?? {}, 'body'), tenantId: principal.tenantId } as never, principal);
       return { status: result.created ? 201 : 200, body: { notification: result.notification, deliveries: result.deliveries } };
     }));
-    router.get('/_appport/notifications/:id', handler(async (req, principal) => ({ body: await services.notifications!.get(principal.tenantId, req.params.id, principal) })));
-    router.get('/_appport/notifications/:id/deliveries', handler(async (req, principal) => ({ body: { items: await services.notifications!.deliveries(principal.tenantId, req.params.id, principal) } })));
-    router.post('/_appport/notifications/:id/read', handler(async (req, principal) => ({ body: await services.notifications!.markRead(principal.tenantId, req.params.id, principal) })));
-    router.post('/_appport/notifications/:id/acknowledge', handler(async (req, principal) => ({ body: await services.notifications!.acknowledge(principal.tenantId, req.params.id, principal) })));
-    router.post('/_appport/notifications/:id/dismiss', handler(async (req, principal) => ({ body: await services.notifications!.dismiss(principal.tenantId, req.params.id, principal) })));
-    router.delete('/_appport/notifications/:id', handler(async (req, principal) => { await services.notifications!.delete(principal.tenantId, req.params.id, principal); return { status: 204 }; }));
+    router.get('/_appport/notifications/:id', handler(async (req, principal) => ({ body: await notifications.get(principal.tenantId, req.params.id, principal) })));
+    router.get('/_appport/notifications/:id/deliveries', handler(async (req, principal) => ({ body: { items: await notifications.deliveries(principal.tenantId, req.params.id, principal) } })));
+    router.post('/_appport/notifications/:id/read', handler(async (req, principal) => ({ body: await notifications.markRead(principal.tenantId, req.params.id, principal) })));
+    router.post('/_appport/notifications/:id/acknowledge', handler(async (req, principal) => ({ body: await notifications.acknowledge(principal.tenantId, req.params.id, principal) })));
+    router.post('/_appport/notifications/:id/dismiss', handler(async (req, principal) => ({ body: await notifications.dismiss(principal.tenantId, req.params.id, principal) })));
+    router.post('/_appport/notifications/:id/deliveries/:channel/retry', handler(async (req, principal) => ({ body: await notifications.retryDelivery(principal.tenantId, req.params.id, req.params.channel, principal) })));
+    router.delete('/_appport/notifications/:id', handler(async (req, principal) => { await notifications.delete(principal.tenantId, req.params.id, principal); return { status: 204 }; }));
   }
 }
 
-function requirePrincipal(request: Request): AuthenticatedPrincipal {
+function requirePrincipal(request: Request): VerifiedPrincipal {
   if (!request.auth) throw new ManagementAuthenticationError();
   return request.auth;
 }

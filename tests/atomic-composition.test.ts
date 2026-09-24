@@ -6,25 +6,38 @@ import test from 'node:test';
 
 import {
   createServices,
-  FeltDbWebhookEndpointStore,
+  evidenceCollectionName,
 } from '../src/_internal.js';
+import { ServiceAuthorityError } from '../src/authority/errors.js';
+import { TestAuthority } from './support/authority.js';
+
+const PUBLIC_DESTINATIONS = { lookup: async () => [{ address: '93.184.216.34', family: 4 as const }] };
+const options = { authorizer: new TestAuthority({ allowAll: true }), webhookDestinationPolicy: PUBLIC_DESTINATIONS };
 
 test('Atomic composition: application state + webhook + job in one transaction', async () => {
   const path = await mkdtemp(join(tmpdir(), 'atomic-test-'));
-  const services = createServices({ mode: 'local', namespace: 'atomic-test', path });
+  const services = createServices({ mode: 'local', namespace: 'atomic-test', path, ...options });
 
   const tenantId = 'test-tenant';
+  const principal = services.identify({ principalId: 'test', principalType: 'user', tenantId })!;
 
   // Pre-create a webhook endpoint so emitWebhookEvent has a target
   const endpoints = await services.webhooks.listWebhookEndpoints(tenantId);
   if (endpoints.length === 0) {
     await services.webhooks.createWebhookEndpoint({
-      tenantId,
       url: 'https://example.com/webhook',
       events: ['invoice.created'],
-      createdBy: 'test',
-    });
+      signingCredentialRef: 'credential-ref:whsec_atomic',
+    }, principal);
   }
+
+  // AppPort effects inside a transaction are pre-authorized by AuthBoundry.
+  const emit = await services.authorize('webhooks.emit', principal, { type: 'webhook_event', attributes: { eventType: 'invoice.created' } });
+  const enqueue = await services.authorize('jobs.create', principal, { type: 'job', attributes: { jobType: 'invoice.process' } });
+
+  await assert.rejects(services.transaction(async (tx) => {
+    tx.queueJob({ tenantId, type: 'invoice.process', payload: {} }, undefined as never);
+  }), (error: unknown) => error instanceof ServiceAuthorityError && error.code === 'UNAUTHENTICATED');
 
   // Execute atomic transaction
   await services.transaction(async (tx) => {
@@ -52,6 +65,7 @@ test('Atomic composition: application state + webhook + job in one transaction',
         type: 'invoice.created',
         payload: { invoiceId },
       },
+      emit,
     );
 
     // 3. Job intent (for processing)
@@ -60,7 +74,7 @@ test('Atomic composition: application state + webhook + job in one transaction',
       type: 'invoice.process',
       payload: { invoiceId },
       maxAttempts: 3,
-    });
+    }, enqueue);
   });
 
   // Verify all three were created and persisted
@@ -73,21 +87,25 @@ test('Atomic composition: application state + webhook + job in one transaction',
   assert.equal(deliveries[0].eventType, 'invoice.created');
   assert.equal(jobs.length, 1, 'Job enqueued');
   assert.equal(jobs[0].type, 'invoice.process');
+  assert.equal(jobs[0].principal?.principalId, 'test');
+  assert.equal(deliveries[0].principal?.principalId, 'test');
+  const evidence = await db.collection(evidenceCollectionName()).find({ tenantId });
+  assert.ok(evidence.some((row: { capability: string }) => row.capability === 'jobs.create'));
+  assert.ok(evidence.some((row: { capability: string }) => row.capability === 'webhooks.emit'));
 });
 
 test('Atomic composition: transaction rollback on failure', async () => {
   const path = await mkdtemp(join(tmpdir(), 'atomic-rollback-test-'));
-  const services = createServices({ mode: 'local', namespace: 'atomic-rollback-test', path });
+  const services = createServices({ mode: 'local', namespace: 'atomic-rollback-test', path, ...options });
 
   const tenantId = 'test-tenant';
 
   // Create endpoint
   await services.webhooks.createWebhookEndpoint({
-    tenantId,
     url: 'https://example.com/webhook',
     events: ['test.event'],
-    createdBy: 'test',
-  });
+    signingCredentialRef: 'credential-ref:whsec_atomic',
+  }, services.identify({ principalId: 'test', principalType: 'user', tenantId })!);
 
   // Intentional failure in transaction
   let transactionError: unknown;
@@ -129,7 +147,7 @@ test('Atomic composition: transaction rollback on failure', async () => {
 
 test('Atomic composition: no independent FeltDB instances', async () => {
   const path = await mkdtemp(join(tmpdir(), 'single-runtime-test-'));
-  const services = createServices({ mode: 'local', namespace: 'single-runtime-test', path });
+  const services = createServices({ mode: 'local', namespace: 'single-runtime-test', path, ...options });
 
   // Both transaction context and normal service calls use the same underlying database
   // This test passes if:
@@ -141,11 +159,8 @@ test('Atomic composition: no independent FeltDB instances', async () => {
 
   // Create API key through normal service
   const apiKey = await services.apiKeys.createApiKey({
-    tenantId,
     name: 'test-key',
-    scopes: ['test.write'],
-    createdBy: 'test',
-  });
+  }, services.identify({ principalId: 'test', principalType: 'user', tenantId })!);
 
   assert.ok(apiKey.id, 'API key created through normal service');
 

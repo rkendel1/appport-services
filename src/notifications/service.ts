@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import type { Job } from '../jobs/models.js';
 import type { JobService } from '../jobs/service.js';
+import { systemJobs } from '../jobs/service.js';
 import type { NotificationAuditSink, NotificationDeliveryStore, NotificationStore } from '../storage/notifications.js';
 import { InAppNotificationChannel, NotificationChannelRegistry, type NotificationChannel, type NotificationDeliveryResult } from './channels.js';
 import type {
@@ -9,6 +10,10 @@ import type {
   NotificationPage, NotificationPriority, NotificationResult, NotificationSource, NotificationStatus,
 } from './models.js';
 import { assertNoCredentials, isSensitiveValue, NotificationSensitiveDataError } from './sensitive.js';
+import type { ServiceResource } from '../authority/context.js';
+import { ServiceAuthorityError } from '../authority/errors.js';
+import type { ServiceGateway } from '../authority/gateway.js';
+import { rejectCallerActor, requireVerifiedPrincipal, resolveTenant } from '../authority/principal.js';
 
 export class NotificationAuthorizationError extends Error {
   constructor() { super('Notification operation is not authorized'); this.name = 'NotificationAuthorizationError'; }
@@ -34,6 +39,10 @@ const PRIORITIES: readonly NotificationPriority[] = ['low', 'normal', 'high', 'u
 const STATUSES: readonly NotificationStatus[] = ['pending', 'delivered', 'failed', 'read', 'acknowledged', 'expired'];
 const INPUT_FIELDS = new Set(['tenantId', 'recipient', 'type', 'title', 'body', 'data', 'source', 'priority', 'channels', 'channel', 'idempotencyKey', 'expiresAt']);
 
+type AttemptMode = 'initial' | 'scheduled' | 'manual';
+
+type MutateType = 'notification.read' | 'notification.acknowledged' | 'notification.dismissed';
+
 export interface NotificationServiceOptions {
   readonly store: NotificationStore;
   readonly deliveryStore: NotificationDeliveryStore;
@@ -43,20 +52,16 @@ export interface NotificationServiceOptions {
   /** Channels used when a request names none. Defaults to `['in-app']`. */
   readonly defaultChannels?: readonly string[];
   readonly defaultPriority?: NotificationPriority;
-  /**
-   * Existing AppPort job service. When present, failed deliveries are retried
-   * through it; when absent, a failed delivery stays failed until retried
-   * explicitly with retryDelivery().
-   */
+  /** Existing AppPort job service used for retry scheduling. */
   readonly jobs?: JobService;
   readonly maxDeliveryAttempts?: number;
   readonly retryDelayMs?: number;
   /** Attempt first delivery during notify(). When false, first attempts are queued as jobs. Defaults to true. */
   readonly deliverInline?: boolean;
+  /** Policy Enforcement Point. When omitted, legacy scope-based compatibility rules apply. */
+  readonly authority?: ServiceGateway;
   readonly now?: () => Date;
 }
-
-type AttemptMode = 'initial' | 'scheduled' | 'manual';
 
 export class NotificationService {
   private readonly now: () => Date;
@@ -73,29 +78,162 @@ export class NotificationService {
     this.defaultChannels = options.defaultChannels ?? ['in-app'];
     this.maxDeliveryAttempts = options.maxDeliveryAttempts ?? DEFAULT_MAX_DELIVERY_ATTEMPTS;
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
-    options.jobs?.registerSystem(NOTIFICATION_DELIVERY_JOB, (job) => this.runDeliveryJob(job));
+    if (options.jobs) systemJobs(options.jobs).register(NOTIFICATION_DELIVERY_JOB, async (job) => this.runDeliveryJob(job));
   }
 
-  /** Register an additional delivery channel adapter. */
   registerChannel(channel: NotificationChannel): void { this.channels.register(channel); }
   channelTypes(): readonly string[] { return this.channels.types(); }
 
-  /**
-   * Create a durable notification and route it to its channels.
-   *
-   * Idempotent: the same idempotency key (explicit, or derived from
-   * `source.type + source.eventId + type`) for the same recipient resolves to
-   * the same notification, and never creates a second one.
-   */
   async notify(input: CreateNotificationInput, principal: AuthenticatedPrincipal): Promise<NotificationResult> {
+    if (this.options.authority) {
+      const verified = requireVerifiedPrincipal(principal);
+      rejectCallerActor(input, verified);
+      const tenantId = resolveTenant(input, verified);
+      const normalizedInput = { ...input, tenantId };
+      return this.gateway().execute(
+        'notifications.send',
+        verified,
+        { type: 'notification', tenantId, attributes: { recipient: input.recipient, channel: firstRequestedChannel(input, this.defaultChannels) } },
+        { service: 'notifications', provider: firstRequestedChannel(input, this.defaultChannels) },
+        () => this.notifyInternal(normalizedInput, verified.principalId, this.gateway().application),
+      );
+    }
     this.authorizeTenant(principal, input?.tenantId, 'notifications.create');
+    return this.notifyInternal(input, principal.principalId);
+  }
+
+  async create(input: CreateNotificationInput, principal: AuthenticatedPrincipal): Promise<Notification> {
+    return (await this.notify(input, principal)).notification;
+  }
+
+  async get(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
+    const item = await this.loadReadable(tenantId, id, principal);
+    return this.materialize(item);
+  }
+
+  async list(tenantId: string, options: NotificationListOptions = {}, principal: AuthenticatedPrincipal): Promise<NotificationPage> {
+    if (options.status && !STATUSES.includes(options.status)) throw new NotificationValidationError('Invalid status');
+    const limit = Math.min(Math.max(Number.isFinite(options.limit) ? Number(options.limit) : 50, 1), 100);
+    const cursor = options.cursor ? decodeCursor(options.cursor) : undefined;
+    const items = await this.authorizedList(tenantId, options, principal);
+    const materialized = await Promise.all(items.map((item) => this.materialize(item)));
+    const filtered = materialized
+      .filter((item) =>
+        (!options.unread || !item.readAt) &&
+        (!options.unacknowledged || !item.acknowledgedAt) &&
+        (!options.status || item.status === options.status) &&
+        (!options.type || item.type === options.type) &&
+        (!options.priority || item.priority === options.priority) &&
+        (!options.sourceType || item.source?.type === options.sourceType) &&
+        (!options.createdAfter || item.createdAt > options.createdAfter) &&
+        (!options.createdBefore || item.createdAt < options.createdBefore) &&
+        (!cursor || afterCursor(item, cursor)),
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    const page = filtered.slice(0, limit);
+    return { items: page, ...(filtered.length > limit ? { nextCursor: encodeCursor(page.at(-1)!) } : {}) };
+  }
+
+  async markRead(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
+    return this.mutate('notification.read', tenantId, id, principal, (item, now) =>
+      item.readAt ? null : { readAt: now, ...(item.status === 'acknowledged' ? {} : { status: 'read' as const }) });
+  }
+
+  async acknowledge(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
+    return this.mutate('notification.acknowledged', tenantId, id, principal, (item, now) =>
+      item.acknowledgedAt ? null : { acknowledgedAt: now, readAt: item.readAt ?? now, status: 'acknowledged' });
+  }
+
+  async dismiss(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
+    return this.mutate('notification.dismissed', tenantId, id, principal, (item, now) => item.dismissedAt ? null : { dismissedAt: now });
+  }
+
+  async delete(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<void> {
+    if (this.options.authority) {
+      const verified = requireVerifiedPrincipal(principal);
+      const tenant = resolveTenant({ tenantId }, verified);
+      const item = await this.options.store.get(tenant, id);
+      if (!item || !this.owned(item)) return;
+      await this.gateway().execute('notifications.delete', verified, notificationResource(item), { service: 'notifications' }, async () => {
+        const deliveries = await this.options.deliveryStore.list(item.tenantId, item.id);
+        await Promise.all(deliveries.map((delivery) => this.options.deliveryStore.delete(delivery.id)));
+        await this.options.store.delete(id);
+        await this.audit('notification.deleted', item, principal.principalId);
+      });
+      return;
+    }
+    const item = await this.loadOwnedForWrite(tenantId, id, principal, 'notifications.delete');
+    if (!item) return;
+    const deliveries = await this.options.deliveryStore.list(item.tenantId, item.id);
+    await Promise.all(deliveries.map((delivery) => this.options.deliveryStore.delete(delivery.id)));
+    await this.options.store.delete(id);
+    await this.audit('notification.deleted', item, principal.principalId);
+  }
+
+  async deliveries(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<readonly NotificationDelivery[]> {
+    const item = await this.loadReadable(tenantId, id, principal);
+    await this.materialize(item);
+    return sortDeliveries(await this.options.deliveryStore.list(item.tenantId, item.id));
+  }
+
+  async retryDelivery(tenantId: string, id: string, channel: string, principal: AuthenticatedPrincipal): Promise<NotificationDelivery> {
+    if (this.options.authority) {
+      const verified = requireVerifiedPrincipal(principal);
+      const tenant = resolveTenant({ tenantId }, verified);
+      const item = await this.options.store.get(tenant, id);
+      if (!item || !this.owned(item)) throw new NotificationNotFoundError();
+      return this.gateway().execute('notifications.update', verified, notificationResource(item), { service: 'notifications' }, async () => {
+        const delivery = await this.options.deliveryStore.get(tenant, stableUuid('delivery', id, channel));
+        if (!delivery) throw new NotificationNotFoundError();
+        if (delivery.status !== 'failed') return delivery;
+        const now = this.now().toISOString();
+        const retrying = await this.options.deliveryStore.update(tenant, delivery.id, delivery.__version, {
+          status: 'retrying', maxAttempts: delivery.attemptCount + this.maxDeliveryAttempts, nextAttemptAt: now, failedAt: undefined,
+        });
+        if (!retrying) return (await this.options.deliveryStore.get(tenant, delivery.id))!;
+        await this.audit('notification.delivery.retrying', item, principal.principalId, retrying);
+        if (this.options.jobs) await this.scheduleAttempt(retrying, now);
+        else await this.attemptDelivery(tenant, retrying.id, 'manual');
+        return (await this.options.deliveryStore.get(tenant, delivery.id))!;
+      });
+    }
+    const item = await this.loadOwnedForWrite(tenantId, id, principal, 'notifications.admin');
+    if (!item) throw new NotificationNotFoundError();
+    const delivery = await this.options.deliveryStore.get(tenantId, stableUuid('delivery', id, channel));
+    if (!delivery) throw new NotificationNotFoundError();
+    if (delivery.status !== 'failed') return delivery;
+    const now = this.now().toISOString();
+    const retrying = await this.options.deliveryStore.update(tenantId, delivery.id, delivery.__version, {
+      status: 'retrying', maxAttempts: delivery.attemptCount + this.maxDeliveryAttempts, nextAttemptAt: now, failedAt: undefined,
+    });
+    if (!retrying) return (await this.options.deliveryStore.get(tenantId, delivery.id))!;
+    await this.audit('notification.delivery.retrying', item, principal.principalId, retrying);
+    if (this.options.jobs) await this.scheduleAttempt(retrying, now);
+    else await this.attemptDelivery(tenantId, retrying.id, 'manual');
+    return (await this.options.deliveryStore.get(tenantId, delivery.id))!;
+  }
+
+  async recoverDeliveries(tenantId: string): Promise<number> {
+    const leaseCutoff = new Date(this.now().getTime() - ATTEMPT_LEASE_MS).toISOString();
+    const pending = (await this.options.deliveryStore.list(tenantId))
+      .filter((delivery) => delivery.status === 'pending' && (!delivery.lastAttemptAt || delivery.lastAttemptAt <= leaseCutoff));
+    await Promise.all(pending.map((delivery) => this.dispatch(delivery)));
+    return pending.length;
+  }
+
+  private async notifyInternal(input: CreateNotificationInput, createdBy: string, applicationId?: string): Promise<NotificationResult> {
     const normalized = this.normalizeInput(input);
     const createdAt = this.now().toISOString();
     if (normalized.expiresAt && normalized.expiresAt <= createdAt) throw new NotificationValidationError('expiresAt must be in the future');
-
     const id = normalized.idempotencyKey ? stableUuid('notification', normalized.tenantId, normalized.recipient, normalized.idempotencyKey) : randomUUID();
     const notification: Notification = {
-      ...normalized, id, status: 'pending', createdAt, createdBy: principal.principalId, __version: 1,
+      ...normalized,
+      ...(applicationId ? { applicationId } : {}),
+      id,
+      status: 'pending',
+      createdAt,
+      createdBy,
+      __version: 1,
     };
     const deliveries = notification.channels.map((channel): NotificationDelivery => ({
       id: stableUuid('delivery', id, channel),
@@ -112,128 +250,58 @@ export class NotificationService {
     }));
 
     const created = await this.options.store.createWithDeliveries(notification, deliveries);
-    if (created) await this.audit('notification.created', notification, principal.principalId);
+    if (created) await this.audit('notification.created', notification, createdBy);
     else {
       const existing = await this.options.store.get(notification.tenantId, id);
       if (!existing) throw new NotificationAuthorizationError();
     }
-    // Replays resume deliveries that never got a first attempt (for example after a crash).
     await this.dispatchPending(notification.tenantId, id);
     const [current, currentDeliveries] = await Promise.all([
       this.options.store.get(notification.tenantId, id),
       this.options.deliveryStore.list(notification.tenantId, id),
     ]);
-    return { notification: this.view(current!), deliveries: sortDeliveries(currentDeliveries), created };
+    return { notification: await this.materialize(current!), deliveries: sortDeliveries(currentDeliveries), created };
   }
 
-  /** Create a notification and return only the notification. See notify(). */
-  async create(input: CreateNotificationInput, principal: AuthenticatedPrincipal): Promise<Notification> {
-    return (await this.notify(input, principal)).notification;
-  }
-
-  async get(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
-    this.authorizeTenant(principal, tenantId, 'notifications.read');
-    const item = await this.options.store.get(tenantId, id);
-    if (!item) throw new NotificationNotFoundError();
-    this.authorizeRead(principal, item);
-    return this.view(item);
-  }
-
-  async list(tenantId: string, options: NotificationListOptions = {}, principal: AuthenticatedPrincipal): Promise<NotificationPage> {
+  private async authorizedList(tenantId: string, options: NotificationListOptions, principal: AuthenticatedPrincipal): Promise<readonly Notification[]> {
+    if (this.options.authority) {
+      const verified = requireVerifiedPrincipal(principal);
+      const tenant = resolveTenant({ tenantId }, verified);
+      await this.gateway().execute('notifications.read', verified, { type: 'notification', tenantId: tenant, attributes: { recipient: options.recipient ?? '*' } }, { service: 'notifications' }, async () => undefined);
+      const items = await this.options.store.list(tenant);
+      return items.filter((item) => this.owned(item) && (!options.recipient || item.recipient === options.recipient));
+    }
     this.authorizeTenant(principal, tenantId, 'notifications.read');
     const readsAny = hasScope(principal, 'notifications.read:any');
     if (options.recipient && options.recipient !== principal.principalId && !readsAny) throw new NotificationAuthorizationError();
-    if (options.status && !STATUSES.includes(options.status)) throw new NotificationValidationError('Invalid status');
-    const limit = Math.min(Math.max(Number.isFinite(options.limit) ? Number(options.limit) : 50, 1), 100);
-    const cursor = options.cursor ? decodeCursor(options.cursor) : undefined;
     const recipient = readsAny ? options.recipient : principal.principalId;
-    const items = (await this.options.store.list(tenantId))
-      .map((item) => this.view(item))
-      .filter((item) =>
-        (!recipient || item.recipient === recipient) &&
-        (!options.unread || !item.readAt) &&
-        (!options.unacknowledged || !item.acknowledgedAt) &&
-        (!options.status || item.status === options.status) &&
-        (!options.type || item.type === options.type) &&
-        (!options.priority || item.priority === options.priority) &&
-        (!options.sourceType || item.source?.type === options.sourceType) &&
-        (!options.createdAfter || item.createdAt > options.createdAfter) &&
-        (!options.createdBefore || item.createdAt < options.createdBefore) &&
-        (!cursor || afterCursor(item, cursor)),
-      )
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
-    const page = items.slice(0, limit);
-    return { items: page, ...(items.length > limit ? { nextCursor: encodeCursor(page.at(-1)!) } : {}) };
+    return (await this.options.store.list(tenantId)).filter((item) => !recipient || item.recipient === recipient);
   }
 
-  /** Record that the recipient has seen the notification. Does not acknowledge it. */
-  async markRead(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
-    return this.mutate('notification.read', tenantId, id, principal, (item, now) =>
-      item.readAt ? null : { readAt: now, ...(item.status === 'acknowledged' ? {} : { status: 'read' as const }) });
-  }
-
-  /** Record that the recipient has acted on the notification. Implies read. */
-  async acknowledge(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
-    return this.mutate('notification.acknowledged', tenantId, id, principal, (item, now) =>
-      item.acknowledgedAt ? null : { acknowledgedAt: now, readAt: item.readAt ?? now, status: 'acknowledged' });
-  }
-
-  async dismiss(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
-    return this.mutate('notification.dismissed', tenantId, id, principal, (item, now) => item.dismissedAt ? null : { dismissedAt: now });
-  }
-
-  async delete(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<void> {
-    this.authorizeTenant(principal, tenantId, 'notifications.delete');
+  private async loadReadable(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
     const item = await this.options.store.get(tenantId, id);
-    if (!item) return;
+    if (!item || !this.owned(item)) throw new NotificationNotFoundError();
+    if (this.options.authority) {
+      const verified = requireVerifiedPrincipal(principal);
+      const tenant = resolveTenant({ tenantId }, verified);
+      await this.gateway().execute('notifications.read', verified, notificationResource({ ...item, tenantId: tenant }), { service: 'notifications' }, async () => undefined);
+      return item;
+    }
+    this.authorizeTenant(principal, tenantId, 'notifications.read');
+    this.authorizeRead(principal, item);
+    return item;
+  }
+
+  private async loadOwnedForWrite(tenantId: string, id: string, principal: AuthenticatedPrincipal, capability: 'notifications.update' | 'notifications.delete' | 'notifications.admin'): Promise<Notification | null> {
+    const item = await this.options.store.get(tenantId, id);
+    if (!item || !this.owned(item)) return null;
+    this.authorizeTenant(principal, tenantId, capability);
     this.authorizeOwner(principal, item);
-    await this.options.store.delete(id);
-    await this.audit('notification.deleted', item, principal.principalId);
-  }
-
-  async deliveries(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<readonly NotificationDelivery[]> {
-    const item = await this.get(tenantId, id, principal);
-    return sortDeliveries(await this.options.deliveryStore.list(item.tenantId, item.id));
-  }
-
-  /**
-   * Retry a failed delivery for one channel. Moves the delivery from `failed`
-   * to `retrying` with a fresh attempt budget; requires `notifications.admin`.
-   */
-  async retryDelivery(tenantId: string, id: string, channel: string, principal: AuthenticatedPrincipal): Promise<NotificationDelivery> {
-    this.authorizeTenant(principal, tenantId, 'notifications.admin');
-    const item = await this.options.store.get(tenantId, id);
-    if (!item) throw new NotificationNotFoundError();
-    const delivery = await this.options.deliveryStore.get(tenantId, stableUuid('delivery', id, channel));
-    if (!delivery) throw new NotificationNotFoundError();
-    if (delivery.status !== 'failed') return delivery;
-    const now = this.now().toISOString();
-    const retrying = await this.options.deliveryStore.update(tenantId, delivery.id, delivery.__version, {
-      status: 'retrying', maxAttempts: delivery.attemptCount + this.maxDeliveryAttempts, nextAttemptAt: now, failedAt: undefined,
-    });
-    if (!retrying) return (await this.options.deliveryStore.get(tenantId, delivery.id))!;
-    await this.audit('notification.delivery.retrying', item, principal.principalId, retrying);
-    if (this.options.jobs) await this.scheduleAttempt(retrying, now);
-    else await this.attemptDelivery(tenantId, retrying.id, 'manual');
-    return (await this.options.deliveryStore.get(tenantId, delivery.id))!;
-  }
-
-  /**
-   * Resume deliveries that were persisted but never attempted, for example
-   * after a process restart. Safe to run repeatedly and from several workers.
-   */
-  async recoverDeliveries(tenantId: string): Promise<number> {
-    // An attempt claimed within the lease window may still be in flight elsewhere.
-    const leaseCutoff = new Date(this.now().getTime() - ATTEMPT_LEASE_MS).toISOString();
-    const pending = (await this.options.deliveryStore.list(tenantId))
-      .filter((delivery) => delivery.status === 'pending' && (!delivery.lastAttemptAt || delivery.lastAttemptAt <= leaseCutoff));
-    await Promise.all(pending.map((delivery) => this.dispatch(delivery)));
-    return pending.length;
+    return item;
   }
 
   private async dispatchPending(tenantId: string, notificationId: string): Promise<void> {
     const pending = (await this.options.deliveryStore.list(tenantId, notificationId)).filter((delivery) => delivery.status === 'pending' && delivery.attemptCount === 0);
-    // Channels are isolated: one channel's failure never blocks or fails another.
     await Promise.all(pending.map((delivery) => this.dispatch(delivery)));
   }
 
@@ -249,17 +317,17 @@ export class NotificationService {
   }
 
   private async scheduleAttempt(delivery: NotificationDelivery, runAt: string): Promise<void> {
-    await this.options.jobs!.enqueueSystem({ tenantId: delivery.tenantId, type: NOTIFICATION_DELIVERY_JOB, payload: { deliveryId: delivery.id }, runAt, maxAttempts: 3 });
+    await systemJobs(this.options.jobs!).enqueue({ tenantId: delivery.tenantId, type: NOTIFICATION_DELIVERY_JOB, payload: { deliveryId: delivery.id }, runAt, maxAttempts: 3 });
   }
 
-  /** Make one delivery attempt. Every outcome is written durably before returning. */
   private async attemptDelivery(tenantId: string, deliveryId: string, mode: AttemptMode): Promise<NotificationDelivery | null> {
     const delivery = await this.options.deliveryStore.get(tenantId, deliveryId);
     if (!delivery || delivery.status === 'delivered' || delivery.status === 'failed') return delivery;
     const nowDate = this.now();
     const now = nowDate.toISOString();
-    // A duplicate or early job must not attempt ahead of the recorded retry time.
+    const leaseCutoff = new Date(nowDate.getTime() - ATTEMPT_LEASE_MS).toISOString();
     if (mode === 'scheduled' && delivery.status === 'retrying' && delivery.nextAttemptAt && delivery.nextAttemptAt > now) return delivery;
+    if (delivery.status === 'pending' && delivery.lastAttemptAt && delivery.lastAttemptAt > leaseCutoff) return delivery;
 
     const notification = await this.options.store.get(tenantId, delivery.notificationId);
     if (!notification) return this.finishDelivery(delivery, null, { status: 'failed', reason: 'notification_deleted', retryable: false });
@@ -272,7 +340,6 @@ export class NotificationService {
     const channel = this.channels.get(delivery.channel);
     if (!channel) return this.finishDelivery(delivery, notification, { status: 'failed', reason: 'channel_unavailable', retryable: false });
 
-    // Claim the attempt; a concurrent attempt on the same delivery loses here.
     const claimed = await this.options.deliveryStore.update(tenantId, delivery.id, delivery.__version, { attemptCount: delivery.attemptCount + 1, lastAttemptAt: now });
     if (!claimed) return this.options.deliveryStore.get(tenantId, delivery.id);
 
@@ -314,7 +381,6 @@ export class NotificationService {
     return updated;
   }
 
-  /** Summarize channel outcomes onto the notification without overriding read/ack/expiry. */
   private async refreshStatus(tenantId: string, id: string): Promise<void> {
     const deliveries = await this.options.deliveryStore.list(tenantId, id);
     const now = this.now().toISOString();
@@ -340,28 +406,55 @@ export class NotificationService {
     }
   }
 
-  private async mutate(
-    type: 'notification.read' | 'notification.acknowledged' | 'notification.dismissed',
-    tenantId: string, id: string, principal: AuthenticatedPrincipal,
-    change: (item: Notification, now: string) => Partial<Notification> | null,
-  ): Promise<Notification> {
+  private async mutate(type: MutateType, tenantId: string, id: string, principal: AuthenticatedPrincipal, change: (item: Notification, now: string) => Partial<Notification> | null): Promise<Notification> {
+    if (this.options.authority) {
+      const verified = requireVerifiedPrincipal(principal);
+      const tenant = resolveTenant({ tenantId }, verified);
+      const item = await this.options.store.get(tenant, id);
+      if (!item || !this.owned(item)) throw new NotificationNotFoundError();
+      return this.gateway().execute('notifications.update', verified, notificationResource(item), { service: 'notifications' }, async () => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const current = await this.options.store.get(item.tenantId, item.id);
+          if (!current) throw new NotificationNotFoundError();
+          const updates = change(current, this.now().toISOString());
+          if (!updates) return this.materialize(current);
+          const updated = await this.options.store.update(current.id, current.__version, updates);
+          if (updated) {
+            await this.audit(type, updated, principal.principalId);
+            return this.materialize(updated);
+          }
+        }
+        throw new NotificationValidationError('Notification was modified concurrently');
+      });
+    }
+
     this.authorizeTenant(principal, tenantId, 'notifications.write');
     for (let attempt = 0; attempt < 5; attempt++) {
       const item = await this.options.store.get(tenantId, id);
       if (!item) throw new NotificationNotFoundError();
       this.authorizeOwner(principal, item);
       const updates = change(item, this.now().toISOString());
-      if (!updates) return this.view(item);
+      if (!updates) return this.materialize(item);
       const updated = await this.options.store.update(item.id, item.__version, updates);
       if (updated) {
         await this.audit(type, updated, principal.principalId);
-        return this.view(updated);
+        return this.materialize(updated);
       }
     }
     throw new NotificationValidationError('Notification was modified concurrently');
   }
 
-  /** Present the effective lifecycle state: an unread notification past expiresAt is expired. */
+  private async materialize(item: Notification): Promise<Notification> {
+    const expired = item.expiresAt !== undefined && item.expiresAt <= this.now().toISOString() && ['pending', 'delivered', 'failed'].includes(item.status);
+    if (!expired) return this.view(item);
+    await this.transitionNotification(item.tenantId, item.id, (current) =>
+      current.expiresAt !== undefined && current.expiresAt <= this.now().toISOString() && ['pending', 'delivered', 'failed'].includes(current.status)
+        ? { status: 'expired', expiredAt: this.now().toISOString() }
+        : null,
+      'notification.expired');
+    return this.view((await this.options.store.get(item.tenantId, item.id)) ?? item);
+  }
+
   private view(item: Notification): Notification {
     const legacy = item as Partial<Notification> & Notification;
     const status: NotificationStatus = legacy.status ?? (legacy.acknowledgedAt ? 'acknowledged' : legacy.readAt ? 'read' : 'pending');
@@ -370,9 +463,10 @@ export class NotificationService {
     return { ...item, channels, status: expired ? 'expired' : status };
   }
 
-  private normalizeInput(input: CreateNotificationInput): Omit<Notification, 'id' | 'status' | 'createdAt' | 'createdBy' | '__version'> {
+  private normalizeInput(input: CreateNotificationInput): Omit<Notification, 'id' | 'status' | 'createdAt' | 'createdBy' | '__version' | 'applicationId'> {
     if (!input || typeof input !== 'object') throw new NotificationValidationError('Notification input is required');
     for (const key of Object.keys(input)) if (!INPUT_FIELDS.has(key)) throw new NotificationValidationError(`Unknown field: ${key}`);
+    const tenantId = requiredText(input.tenantId, 'tenantId', 256);
     const recipient = requiredText(input.recipient, 'recipient', 256);
     const type = requiredText(input.type, 'type', 128);
     if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(type)) throw new NotificationValidationError('type must contain only letters, digits, ".", "_", ":", or "-"');
@@ -395,9 +489,8 @@ export class NotificationService {
       expiresAt = parsed.toISOString();
     }
     if (input.idempotencyKey !== undefined) requiredText(input.idempotencyKey, 'idempotencyKey', 256);
-    const idempotencyKey = input.idempotencyKey ?? (source?.eventId ? `${source.type}:${source.eventId}:${type}` : undefined);
+    const idempotencyKey = input.idempotencyKey ?? (source?.eventId ? JSON.stringify([source.type, source.eventId, type]) : undefined);
 
-    // Credential boundary: nothing credential-shaped is ever stored or delivered.
     assertNoCredentials(title, 'title');
     if (input.body !== undefined) assertNoCredentials(input.body, 'body');
     if (input.data !== undefined) assertNoCredentials(input.data, 'data');
@@ -405,7 +498,12 @@ export class NotificationService {
     if (idempotencyKey) assertNoCredentials(idempotencyKey, 'idempotencyKey');
 
     return {
-      tenantId: input.tenantId, recipient, type, title, priority, channels,
+      tenantId,
+      recipient,
+      type,
+      title,
+      priority,
+      channels,
       ...(input.body !== undefined ? { body: input.body } : {}),
       ...(input.data !== undefined ? { data: structuredClone(input.data) } : {}),
       ...(source ? { source } : {}),
@@ -414,34 +512,54 @@ export class NotificationService {
     };
   }
 
-  /** Fails closed: a missing or malformed principal is never authorized. */
   private authorizeTenant(principal: AuthenticatedPrincipal | null | undefined, tenantId: unknown, scope: string): asserts principal is AuthenticatedPrincipal {
-    if (!principal || typeof principal.principalId !== 'string' || !principal.principalId || typeof principal.tenantId !== 'string' || !principal.tenantId || !Array.isArray(principal.scopes)) throw new NotificationAuthorizationError();
+    if (!principal || typeof principal.principalId !== 'string' || !principal.principalId || typeof principal.tenantId !== 'string' || !principal.tenantId || !hasLegacyScopes(principal)) throw new NotificationAuthorizationError();
     if (typeof tenantId !== 'string' || principal.tenantId !== tenantId) throw new NotificationAuthorizationError();
     if (!hasScope(principal, scope)) throw new NotificationAuthorizationError();
   }
+
   private authorizeRead(principal: AuthenticatedPrincipal, item: Notification): void {
     if (item.tenantId !== principal.tenantId) throw new NotificationAuthorizationError();
     if (item.recipient !== principal.principalId && !hasScope(principal, 'notifications.read:any')) throw new NotificationAuthorizationError();
   }
-  /** Read, acknowledge, dismiss, and delete require authority over the notification itself. */
+
   private authorizeOwner(principal: AuthenticatedPrincipal, item: Notification): void {
     if (item.tenantId !== principal.tenantId) throw new NotificationAuthorizationError();
-    if (item.recipient !== principal.principalId && !principal.scopes.includes('notifications.admin')) throw new NotificationAuthorizationError();
+    if (item.recipient !== principal.principalId && !hasScope(principal, 'notifications.admin')) throw new NotificationAuthorizationError();
   }
+
+  private owned(item: Notification): boolean {
+    return !this.options.authority || item.applicationId === this.gateway().application;
+  }
+
+  private gateway(): ServiceGateway {
+    if (!this.options.authority) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'Notifications have no AuthBoundry authority configured');
+    return this.options.authority;
+  }
+
   private async audit(type: NotificationAuditType, item: Notification, principalId: string, delivery?: NotificationDelivery): Promise<void> {
     await this.options.auditSink.record({
-      id: randomUUID(), type, notificationId: item.id, tenantId: item.tenantId, recipient: item.recipient, principalId,
-      timestamp: this.now().toISOString(), result: type === 'notification.delivery.failed' || type === 'notification.delivery.retrying' ? 'failure' : 'success',
+      id: randomUUID(),
+      type,
+      notificationId: item.id,
+      tenantId: item.tenantId,
+      recipient: item.recipient,
+      principalId,
+      timestamp: this.now().toISOString(),
+      result: type === 'notification.delivery.failed' || type === 'notification.delivery.retrying' ? 'failure' : 'success',
       ...(delivery ? { channel: delivery.channel, deliveryId: delivery.id } : {}),
     });
   }
 }
 
 function hasScope(principal: AuthenticatedPrincipal, scope: string): boolean {
+  if (!hasLegacyScopes(principal)) return false;
   if (principal.scopes.includes('notifications.admin')) return true;
   if (principal.scopes.includes(scope)) return true;
   return scope === 'notifications.read' && principal.scopes.includes('notifications.read:any');
+}
+function hasLegacyScopes(principal: AuthenticatedPrincipal): principal is AuthenticatedPrincipal & { readonly scopes: readonly string[] } {
+  return 'scopes' in principal && Array.isArray(principal.scopes);
 }
 
 function requiredText(value: unknown, name: string, max: number): string {
@@ -461,7 +579,6 @@ function normalizeSource(value: unknown): NotificationSource | undefined {
   return { type, ...(source.id !== undefined ? { id: source.id as string } : {}), ...(source.eventId !== undefined ? { eventId: source.eventId as string } : {}) };
 }
 
-/** Deterministic UUID-formatted identity for a logical notification or delivery. */
 function stableUuid(...parts: readonly string[]): string {
   const hex = createHash('sha256').update(JSON.stringify(parts)).digest('hex');
   const variant = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
@@ -470,12 +587,17 @@ function stableUuid(...parts: readonly string[]): string {
 
 function safeReason(reason: string): string {
   const trimmed = (reason || 'delivery_failed').slice(0, 500);
-  return isSensitiveValue(trimmed) ? 'delivery_failed (details withheld: contained credential material)' : trimmed;
+  return isSensitiveReason(trimmed) ? 'delivery_failed (details withheld: contained credential material)' : trimmed;
+}
+
+function isSensitiveReason(reason: string): boolean {
+  return isSensitiveValue(reason) || /(\b(?:password|passwd|passphrase|authorization|refresh[_-]?token|access[_-]?token|id[_-]?token|session[_-]?token|api[_-]?key|client[_-]?secret|private[_-]?key|signing[_-]?(?:key|secret)|cookie|cookies|credential|credentials)\b\s*[:=])/i.test(reason);
 }
 
 function sortDeliveries(deliveries: readonly NotificationDelivery[]): readonly NotificationDelivery[] {
   return [...deliveries].sort((a, b) => a.channel.localeCompare(b.channel));
 }
+
 function encodeCursor(item: Notification): string { return Buffer.from(JSON.stringify({ createdAt: item.createdAt, id: item.id }), 'utf8').toString('base64url'); }
 function decodeCursor(cursor: string): { createdAt: string; id: string } {
   try {
@@ -486,4 +608,11 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } {
 }
 function afterCursor(item: Notification, cursor: { createdAt: string; id: string }): boolean {
   return item.createdAt < cursor.createdAt || (item.createdAt === cursor.createdAt && item.id < cursor.id);
+}
+function notificationResource(item: Notification): ServiceResource {
+  return { type: 'notification', tenantId: item.tenantId, id: item.id, attributes: { recipient: item.recipient } };
+}
+function firstRequestedChannel(input: CreateNotificationInput, defaults: readonly string[]): string {
+  const requested = input.channels ?? (input.channel !== undefined ? [input.channel] : defaults);
+  return requested[0] ?? defaults[0] ?? 'in-app';
 }

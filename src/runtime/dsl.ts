@@ -13,7 +13,7 @@ export interface AppPortConfig {
   readonly http: { readonly enabled: boolean; readonly host: string; readonly port: number };
   readonly cors: { readonly enabled: boolean; readonly origins: readonly string[] };
   readonly capabilities: Readonly<Record<AppPortCapabilityName, boolean>>;
-  readonly api: { readonly enabled: boolean; readonly keys: { readonly enabled: boolean; readonly scopes: readonly string[] } };
+  readonly api: { readonly enabled: boolean; readonly keys: { readonly enabled: boolean; /** @deprecated Always empty; non-empty scopes are rejected. */ readonly scopes: readonly string[] } };
   readonly webhooks: { readonly enabled: boolean; readonly delivery: { readonly enabled: boolean; readonly retries: number; readonly timeout_ms: number }; readonly events: { readonly allowed: readonly string[] } };
   readonly jobs: { readonly enabled: boolean; readonly execution: { readonly enabled: boolean; readonly max_attempts: number }; readonly types: Readonly<Record<string, { readonly timeout_ms: number }>>; readonly max_attempts: number };
   readonly secrets: { readonly enabled: boolean };
@@ -90,6 +90,10 @@ function normalizeConfig(raw: Record<string, unknown>, uses: Set<AppPortCapabili
     if (bool(object(raw[capability], file, capability, true).enabled, file, `${capability}.enabled`, uses.has(capability) || raw[capability] !== undefined)) uses.add(capability);
   }
   const name = str(application.name, file, 'application.name', 'app');
+  const declaredScopes = stringArray(apiKeys.scopes ?? api.scopes, file, 'api.keys.scopes', []);
+  if (declaredScopes.length > 0) {
+    throw new AppPortConfigError(file, 'api.keys.scopes', declaredScopes, 'no scopes: API keys identify callers and AuthBoundry authorizes capabilities (old: API key + scopes -> authority; new: API key -> identity, AuthBoundry -> authorization; see docs/AUTHORITY.md#migration)');
+  }
   const normalizedTypes: Record<string, { timeout_ms: number }> = {};
   for (const [type, value] of Object.entries(jobTypes)) {
     const config = object(value, file, `jobs.types.${type}`);
@@ -112,7 +116,7 @@ function normalizeConfig(raw: Record<string, unknown>, uses: Set<AppPortCapabili
     http: { enabled: bool(http.enabled, file, 'http.enabled', false), host: str(http.host, file, 'http.host', '127.0.0.1'), port: integer(http.port, file, 'http.port', 8787, 0, 65535) },
     cors: { enabled: bool(cors.enabled, file, 'cors.enabled', false), origins: stringArray(cors.origins, file, 'cors.origins', ['*']) },
     capabilities,
-    api: { enabled: uses.has('api'), keys: { enabled: bool(apiKeys.enabled ?? api.keys, file, 'api.keys.enabled', uses.has('api')), scopes: stringArray(apiKeys.scopes ?? api.scopes, file, 'api.keys.scopes', []) } },
+    api: { enabled: uses.has('api'), keys: { enabled: bool(apiKeys.enabled ?? api.keys, file, 'api.keys.enabled', uses.has('api')), scopes: declaredScopes } },
     webhooks: { enabled: uses.has('webhooks'), delivery: { enabled: bool(webhookDelivery.enabled, file, 'webhooks.delivery.enabled', uses.has('webhooks')), retries: integer(webhookDelivery.retries, file, 'webhooks.delivery.retries', 3, 0), timeout_ms: integer(webhookDelivery.timeout_ms, file, 'webhooks.delivery.timeout_ms', 10_000, 1) }, events: { allowed: stringArray(webhookEvents.allowed ?? legacyWebhookEvents, file, 'webhooks.events.allowed', []) } },
     jobs: { enabled: uses.has('jobs'), execution: { enabled: bool(jobExecution.enabled, file, 'jobs.execution.enabled', uses.has('jobs')), max_attempts: maxAttempts }, types: normalizedTypes, max_attempts: maxAttempts },
     secrets: { enabled: uses.has('secrets') },

@@ -4,9 +4,30 @@
 
 // Primary factory for creating unified AppPort Services
 export { appport, capabilityRegistry, createCapabilityPlan, CapabilityNotDeclaredError } from './runtime/appport.js';
-export type { AppPortApplication, AppPortApiCapability, AppPortApiKeys, AppPortCapabilityName, AppPortJobs, AppPortNotifications, AppPortOptions, AppPortRouteContext, AppPortRouteHandler, AppPortState, AppPortStateCollection, AppPortTenantServices, AppPortWebhooks, CapabilityPlan } from './runtime/appport.js';
+export type { AppPortApplication, AppPortJobHandler, CapabilityFactoryContext, AppPortApiCapability, AppPortApiKeys, AppPortCapabilityName, AppPortJobs, AppPortNotifications, AppPortOptions, AppPortRouteContext, AppPortRouteHandler, AppPortState, AppPortStateCollection, AppPortTenantServices, AppPortWebhooks, CapabilityPlan } from './runtime/appport.js';
 export { createServices } from './runtime/unified-services.js';
 export type { AppPortServices, CreateServicesOptions } from './runtime/unified-services.js';
+
+// Authority boundary: AppPort Services is a Policy Enforcement Point, not an authority.
+export {
+  SERVICE_CAPABILITY_MANIFEST, LEGACY_SCOPE_MIGRATION, getServiceCapability, serviceCapabilityManifestDigest,
+  ServiceAuthorityError, ServiceMigrationError, isServiceAuthorityError,
+  ServiceGateway, FeltDbEffectEvidenceStore, assertEvidenceHasNoSecrets,
+  isVerifiedPrincipal, requireVerifiedPrincipal, isExecutionContext, assertExecutionContext,
+  isCredentialRef, formatCredentialRef, validateDestination, isForbiddenAddress,
+} from './authority/index.js';
+export type {
+  ServiceCapability, ServiceCapabilityName, ServiceEffect, ServiceFailureCode,
+  ServiceAuthorizer, ServiceAuthorizationRequest, ServiceAuthorizationDecision, AuthorizationSubject, AuthorizationResource,
+  VerifiedPrincipal, PrincipalClaims, PrincipalVerification, ServiceExecutionContext, ServiceResource, AuthorizationEvidence,
+  CredentialRef, EffectEvidence, EffectEvidenceStore, EffectOutcome, ServiceGatewayOptions, ExecuteOptions, EffectTools,
+  WebhookDestinationPolicy, ValidatedDestination, ResolvedAddress,
+} from './authority/index.js';
+export { invokeService } from './runtime/invoke.js';
+export type { InvokableServices, InvokeOptions } from './runtime/invoke.js';
+export type { JobExecution } from './jobs/service.js';
+export type { InboundWebhookHandler, InboundWebhookHandlerInput } from './webhooks/service.js';
+export { ApiKeyScopesNotSupportedError } from './api-keys/service.js';
 
 // Atomic transaction API
 export type { AppPortTransactionContext, AppPortTransactionCollection } from './runtime/transaction.js';
@@ -73,6 +94,12 @@ export type {
   EmitWebhookEventInput,
   WebhookAuditEvent,
   WebhookDeliveryResult,
+  WebhookIntegration,
+  RegisterWebhookIntegrationInput,
+  InboundWebhookRequest,
+  InboundWebhookEvent,
+  InboundWebhookResult,
+  DurablePrincipal,
 } from './webhooks/models.js';
 export type {
   Job,

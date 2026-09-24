@@ -1,14 +1,14 @@
 import { Router, type Request } from 'express';
+import { isServiceAuthorityError } from '../authority/errors.js';
 import type { NotificationListOptions } from './models.js';
 import { NotificationAuthorizationError, NotificationNotFoundError, NotificationSensitiveDataError, NotificationService, NotificationValidationError } from './service.js';
 
 export function createNotificationRouter(service: NotificationService): Router {
   const router = Router();
-  // Fail closed: no authenticated principal, no notification access.
   router.use((req, _res, next) => req.auth ? next() : next(new NotificationAuthorizationError()));
   router.post('/', async (req, res, next) => {
     try {
-      const result = await service.notify({ ...objectBody(req.body), tenantId: req.auth!.tenantId } as unknown as Parameters<NotificationService['notify']>[0], req.auth!);
+      const result = await service.notify({ ...objectBody(req.body), tenantId: req.auth!.tenantId } as Parameters<NotificationService['notify']>[0], req.auth!);
       res.status(result.created ? 201 : 200).json({ notification: result.notification, deliveries: result.deliveries });
     } catch (error) { next(error); }
   });
@@ -25,15 +25,20 @@ export function createNotificationRouter(service: NotificationService): Router {
   return router;
 }
 
-/** Parse the shared notification query conventions from a request query string. */
 export function notificationListOptions(query: Request['query']): NotificationListOptions {
   const text = (name: string): string | undefined => typeof query[name] === 'string' ? query[name] as string : undefined;
   const limit = text('limit');
   return {
-    recipient: text('recipient'), type: text('type'), status: text('status') as NotificationListOptions['status'],
-    priority: text('priority') as NotificationListOptions['priority'], sourceType: text('sourceType'), cursor: text('cursor'),
-    createdAfter: text('createdAfter'), createdBefore: text('createdBefore'),
-    unread: query.unread === 'true', unacknowledged: query.unacknowledged === 'true',
+    recipient: text('recipient'),
+    type: text('type'),
+    status: text('status') as NotificationListOptions['status'],
+    priority: text('priority') as NotificationListOptions['priority'],
+    sourceType: text('sourceType'),
+    cursor: text('cursor'),
+    createdAfter: text('createdAfter'),
+    createdBefore: text('createdBefore'),
+    unread: query.unread === 'true',
+    unacknowledged: query.unacknowledged === 'true',
     limit: limit ? Number(limit) : undefined,
   };
 }
@@ -45,6 +50,7 @@ function objectBody(value: unknown): Record<string, unknown> {
 
 /** Express error handler. It declares four parameters because Express only routes errors to four-argument handlers. */
 export function notificationErrorHandler(error: unknown, _req: Request, res: { status(code: number): { json(body: unknown): void } }, _next?: unknown): void {
+  if (isServiceAuthorityError(error)) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
   if (error instanceof NotificationAuthorizationError) { res.status(403).json({ error: error.message }); return; }
   if (error instanceof NotificationNotFoundError) { res.status(404).json({ error: error.message }); return; }
   if (error instanceof NotificationValidationError || error instanceof NotificationSensitiveDataError) { res.status(400).json({ error: error.message }); return; }

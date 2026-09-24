@@ -14,8 +14,8 @@ async function writeFlow(path: string, collections: readonly string[]): Promise<
   await writeFile(join(path, 'feltdb.flow'), formatFlowSpec(flow));
 }
 
-const producer: AuthenticatedPrincipal = { principalId: 'web-monitor', principalType: 'service', tenantId: 'tenant-a', scopes: ['notifications.create'] };
-const recipient: AuthenticatedPrincipal = { principalId: 'user-1', principalType: 'user', tenantId: 'tenant-a', scopes: ['notifications.read', 'notifications.write'] };
+const producer: AuthenticatedPrincipal = { principalId: 'web-monitor', principalType: 'service', tenantId: 'tenant-a', scopes: ['notifications.create'] } as unknown as AuthenticatedPrincipal;
+const recipient: AuthenticatedPrincipal = { principalId: 'user-1', principalType: 'user', tenantId: 'tenant-a', scopes: ['notifications.read', 'notifications.write'] } as unknown as AuthenticatedPrincipal;
 
 test('appport runtime delivers browser notifications through the canonical primitive', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-notifications-runtime-'));

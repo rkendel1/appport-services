@@ -4,20 +4,31 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createFeltDbRuntime, FeltDbFileAuditSink, FeltDbFileStore, FileAuthorizationError, FileService } from '../src/_internal.js';
-import type { AuthenticatedPrincipal } from '../src/contract/principals.js';
+import { createFeltDbRuntime, FeltDbFileAuditSink, FeltDbFileStore, FileService } from '../src/_internal.js';
+import { ServiceAuthorityError } from '../src/authority/errors.js';
+import { principal as verified, testGateway, TestAuthority } from './support/authority.js';
 
-const principal = (id = 'owner-a', scopes = ['files.create', 'files.read', 'files.write', 'files.delete']): AuthenticatedPrincipal => ({
-  principalId: id, principalType: 'api_key', tenantId: 'tenant-a', scopes, credentialId: 'key',
-});
+const principal = (id = 'owner-a') => verified({ principalId: id, principalType: 'api_key', tenantId: 'tenant-a', credentialId: 'key' });
 
-async function service(path: string) {
+/** AuthBoundry policy used here: owners may read and write their own files. */
+async function ownerPolicy(): Promise<TestAuthority> {
+  const authority = new TestAuthority();
+  for (const owner of ['owner-a', 'owner-b']) {
+    for (const capability of ['files.read', 'files.write', 'files.delete']) {
+      await authority.grant({ subject: owner, capability, tenantId: 'tenant-a', attributes: { owner } });
+    }
+  }
+  return authority;
+}
+
+async function service(path: string, authority?: TestAuthority) {
   const runtime = createFeltDbRuntime({ mode: 'local', namespace: `files-${Math.random()}`, path });
   return {
     runtime,
     service: new FileService({
       store: new FeltDbFileStore(runtime.db),
       auditSink: new FeltDbFileAuditSink(runtime.db),
+      authority: testGateway(runtime.db, { authorizer: authority ?? await ownerPolicy() }),
     }),
   };
 }
@@ -49,7 +60,7 @@ test('files persist in FeltDB and update metadata durably', async () => {
   await restarted.runtime.db.close();
 });
 
-test('files enforce tenant and owner isolation', async () => {
+test('files enforce tenant and owner isolation through AuthBoundry', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-files-auth-'));
   const { runtime, service: files } = await service(path);
   const created = await files.create({
@@ -60,10 +71,9 @@ test('files enforce tenant and owner isolation', async () => {
     storageKey: 'blob/secret.txt',
   }, principal());
 
-  await assert.rejects(
-    files.get('tenant-a', created.id, principal('owner-b', ['files.read'])),
-    FileAuthorizationError,
-  );
-  assert.equal((await files.list('tenant-a', principal('owner-b', ['files.read']))).length, 0);
+  await assert.rejects(files.get('tenant-a', created.id, principal('owner-b')), (error: unknown) => error instanceof ServiceAuthorityError && error.code === 'DENIED');
+  await assert.rejects(files.list('tenant-a', principal('owner-b')), (error: unknown) => error instanceof ServiceAuthorityError && error.code === 'DENIED');
+  assert.equal((await files.list('tenant-a', principal('owner-b'), { owner: 'owner-b' })).length, 0);
+  await assert.rejects(files.get('tenant-b', created.id, principal()), (error: unknown) => error instanceof ServiceAuthorityError && error.code === 'DENIED');
   await runtime.db.close();
 });

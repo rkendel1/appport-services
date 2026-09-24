@@ -8,7 +8,8 @@ import express from 'express';
 
 import { createFeltDbRuntime, FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNotificationStore } from '../src/_internal.js';
 import { FeltDbJobAuditSink, FeltDbJobScheduleStore, FeltDbJobStore } from '../src/jobs/store.js';
-import { JobService } from '../src/jobs/service.js';
+import { JobService, systemJobs } from '../src/jobs/service.js';
+import { ServiceAuthorityError } from '../src/authority/errors.js';
 import {
   BrowserNotificationChannel, InAppNotificationChannel, type BrowserNotificationMessage, type NotificationChannel, type NotificationDeliveryResult,
 } from '../src/notifications/channels.js';
@@ -18,13 +19,16 @@ import {
   NOTIFICATION_DELIVERY_JOB, NotificationAuthorizationError, NotificationSensitiveDataError, NotificationService, NotificationValidationError,
 } from '../src/notifications/service.js';
 import type { AuthenticatedPrincipal } from '../src/contract/principals.js';
+import { principal as verified, testGateway, TestAuthority } from './support/authority.js';
 
 const ALL = ['notifications.create', 'notifications.read', 'notifications.write', 'notifications.delete'];
 const principal = (id = 'recipient', scopes: readonly string[] = ALL, tenantId = 'tenant-a'): AuthenticatedPrincipal => ({
   principalId: id, principalType: 'api_key', tenantId, scopes, credentialId: 'key',
-});
+} as unknown as AuthenticatedPrincipal);
 const producer = principal('monitor-service', ['notifications.create']);
 const admin = principal('operator', ['notifications.admin']);
+const verifiedPrincipal = (id = 'recipient') => verified({ principalId: id, principalType: 'api_key', tenantId: 'tenant-a', credentialId: 'key' });
+const isDenied = (error: unknown) => error instanceof ServiceAuthorityError && error.code === 'DENIED';
 
 /** A test channel whose behavior is scripted per call. */
 class ScriptedChannel implements NotificationChannel {
@@ -311,7 +315,7 @@ test('duplicate creation for the same source event produces one notification', a
   assert.equal(first.created, true);
   assert.equal(second.created, false);
   assert.equal(second.notification.id, first.notification.id);
-  assert.equal(first.notification.idempotencyKey, 'monitor:observation-123:monitor.triggered');
+  assert.equal(first.notification.idempotencyKey, JSON.stringify(['monitor', 'observation-123', 'monitor.triggered']));
   assert.equal((await ctx.store.list('tenant-a')).length, 1);
   assert.equal(email.calls.length, 1);
 
@@ -339,7 +343,7 @@ test('duplicate or early retry jobs do not produce duplicate deliveries', async 
   const { notification, deliveries } = await ctx.service.notify({ ...monitorEvent(), channels: ['email'] }, producer);
   assert.equal(deliveries[0].status, 'retrying');
   // A stray second job for the same delivery.
-  await ctx.jobs!.enqueueSystem({ tenantId: 'tenant-a', type: NOTIFICATION_DELIVERY_JOB, payload: { deliveryId: deliveries[0].id } });
+  await systemJobs(ctx.jobs!).enqueue({ tenantId: 'tenant-a', type: NOTIFICATION_DELIVERY_JOB, payload: { deliveryId: deliveries[0].id } });
   await runDueJobs(ctx.jobs!);
   assert.equal(email.calls.length, 1, 'the early job must not attempt before nextAttemptAt');
 
@@ -353,6 +357,53 @@ test('duplicate or early retry jobs do not produce duplicate deliveries', async 
   await ctx.close();
 });
 
+test('a recent pending attempt is treated as leased and duplicate delivery jobs do not redeliver it', async () => {
+  const email = new ScriptedChannel('email');
+  const ctx = await setup({ channels: [email] });
+  const createdAt = ctx.clock.value.toISOString();
+  const notification: Notification = {
+    id: '5c2e3b1a-0000-4000-8000-000000000011',
+    tenantId: 'tenant-a',
+    recipient: 'recipient',
+    type: 'monitor.triggered',
+    title: 'Status changed',
+    priority: 'normal',
+    channels: ['email'],
+    status: 'pending',
+    createdAt,
+    __version: 1,
+  };
+  const delivery: NotificationDelivery = {
+    id: '5c2e3b1a-0000-4000-8000-000000000012',
+    tenantId: 'tenant-a',
+    notificationId: notification.id,
+    recipient: 'recipient',
+    channel: 'email',
+    status: 'pending',
+    idempotencyKey: `${notification.id}:email`,
+    attemptCount: 1,
+    maxAttempts: 3,
+    createdAt,
+    lastAttemptAt: createdAt,
+    __version: 1,
+  };
+  await ctx.store.createWithDeliveries(notification, [delivery]);
+
+  await systemJobs(ctx.jobs!).enqueue({ tenantId: 'tenant-a', type: NOTIFICATION_DELIVERY_JOB, payload: { deliveryId: delivery.id } });
+  assert.equal(await runDueJobs(ctx.jobs!), 1);
+  assert.equal(email.calls.length, 0, 'freshly leased pending delivery must not redeliver');
+  assert.equal((await ctx.service.deliveries('tenant-a', notification.id, principal()))[0].status, 'pending');
+
+  ctx.clock.advance(31_000);
+  await systemJobs(ctx.jobs!).enqueue({ tenantId: 'tenant-a', type: NOTIFICATION_DELIVERY_JOB, payload: { deliveryId: delivery.id } });
+  assert.equal(await runDueJobs(ctx.jobs!), 1);
+  const [recovered] = await ctx.service.deliveries('tenant-a', notification.id, principal());
+  assert.equal(recovered.status, 'delivered');
+  assert.equal(recovered.attemptCount, 2);
+  assert.equal(email.calls.length, 1);
+  await ctx.close();
+});
+
 test('a producer retry after a failed delivery does not create a duplicate notification', async () => {
   const email = new ScriptedChannel('email', [{ status: 'failed', reason: 'bounced', retryable: false }]);
   const ctx = await setup({ channels: [email] });
@@ -361,6 +412,17 @@ test('a producer retry after a failed delivery does not create a duplicate notif
   assert.equal(retry.notification.id, first.notification.id);
   assert.equal(retry.deliveries[0].status, 'failed');
   assert.equal(email.calls.length, 1);
+  await ctx.close();
+});
+
+test('a deleted notification can be recreated with the same idempotency key', async () => {
+  const email = new ScriptedChannel('email', [{ status: 'failed', reason: 'bounced', retryable: false }]);
+  const ctx = await setup({ channels: [email] });
+  const first = await ctx.service.notify({ ...monitorEvent(), channels: ['email'], idempotencyKey: 'recreate-me' }, producer);
+  await ctx.service.delete('tenant-a', first.notification.id, principal());
+  const recreated = await ctx.service.notify({ ...monitorEvent(), channels: ['email'], idempotencyKey: 'recreate-me' }, producer);
+  assert.equal(recreated.notification.id, first.notification.id);
+  assert.equal(recreated.created, true);
   await ctx.close();
 });
 
@@ -507,6 +569,14 @@ test('delivery failure reasons never persist credential material', async () => {
   await ctx.close();
 });
 
+test('delivery failure reasons with credential-like key names are scrubbed', async () => {
+  const email = new ScriptedChannel('email', [{ status: 'failed', reason: ['password', '=', 'hunter2'].join(''), retryable: false }]);
+  const ctx = await setup({ channels: [email] });
+  const { deliveries } = await ctx.service.notify({ ...monitorEvent(), channels: ['email'] }, producer);
+  assert.equal(deliveries[0].failureReason, 'delivery_failed (details withheld: contained credential material)');
+  await ctx.close();
+});
+
 test('protected fields cannot be set by the producer', async () => {
   const ctx = await setup();
   await assert.rejects(ctx.service.notify({ ...monitorEvent(), status: 'acknowledged' } as never, producer), NotificationValidationError);
@@ -616,4 +686,23 @@ test('HTTP API follows AppPort conventions and fails closed without authenticati
     await new Promise((resolve) => server.close(resolve));
     await ctx.close();
   }
+});
+
+test('notifications enforce tenant and recipient isolation through AuthBoundry', async () => {
+  const path = await mkdtemp(join(tmpdir(), 'appport-notifications-auth-'));
+  const runtime = createFeltDbRuntime({ mode: 'local', namespace: `notifications-auth-${Math.random()}`, path });
+  const authority = new TestAuthority();
+  for (const subject of ['recipient', 'sender']) await authority.grant({ subject, capability: 'notifications.send', tenantId: 'tenant-a' });
+  await authority.grant({ subject: 'recipient', capability: 'notifications.read', tenantId: 'tenant-a', attributes: { recipient: 'recipient' } });
+  const service = new NotificationService({
+    store: new FeltDbNotificationStore(runtime.db),
+    deliveryStore: new FeltDbNotificationDeliveryStore(runtime.db),
+    auditSink: new FeltDbNotificationAuditSink(runtime.db),
+    authority: testGateway(runtime.db, { authorizer: authority }),
+  });
+  await assert.rejects(service.create({ tenantId: 'tenant-b', recipient: 'recipient', type: 'x', title: 'x' }, verifiedPrincipal()), isDenied);
+  const item = await service.create({ tenantId: 'tenant-a', recipient: 'other', type: 'x', title: 'x' }, verifiedPrincipal('sender'));
+  await assert.rejects(service.get('tenant-a', item.id, verifiedPrincipal()), isDenied);
+  await assert.rejects(service.list('tenant-a', {}, verifiedPrincipal()), isDenied);
+  await runtime.db.close();
 });

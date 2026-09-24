@@ -25,7 +25,6 @@ origins = ["*"]
 enabled = true
 [api.keys]
 enabled = true
-scopes = ["invoices.read", "invoices.write"]
 [webhooks]
 enabled = true
 [webhooks.delivery]

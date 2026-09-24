@@ -4,6 +4,7 @@ app appport-services {
   collection ApiKeys {
     id: uuid
     tenant_id: text
+    application_id: text
     name: text
     key_prefix: text
     secret_hash: text
@@ -39,8 +40,10 @@ app appport-services {
   collection WebhookEndpoints {
     id: uuid
     tenant_id: text
+    application_id: text
     url: url
     events: text
+    signing_credential_ref: text
     created_at: datetime
     created_by: text
     disabled_at: datetime
@@ -62,6 +65,7 @@ app appport-services {
     delivered_at: datetime
     last_status_code: integer
     last_error: text
+    principal: json
     index tenant_idx using hash(tenant_id)
     index endpoint_idx using hash(endpoint_id)
     index status_idx using hash(status)
@@ -95,6 +99,7 @@ app appport-services {
     lease_owner: text
     lease_expires_at: datetime
     last_error: text
+    principal: json
     index tenant_idx using hash(tenant_id)
     index status_idx using hash(status)
     index runAt_idx using sorted(run_at)
@@ -110,6 +115,7 @@ app appport-services {
     enabled: boolean
     created_at: datetime
     created_by: text
+    principal: json
     index tenant_idx using hash(tenant_id)
     index enabled_idx using hash(enabled)
     index nextRunAt_idx using sorted(next_run_at)
@@ -200,7 +206,7 @@ app appport-services {
     application_id: text
     environment: text
     name: text
-    value: text
+    credential_ref: text
     required: boolean
     created_at: datetime
     updated_at: datetime
@@ -316,5 +322,54 @@ app appport-services {
     timestamp: datetime
     result: text
     index tenant_idx using hash(tenant_id)
+  }
+
+  collection WebhookIntegrations {
+    id: uuid
+    tenant_id: text
+    application_id: text
+    provider: text
+    principal_id: text
+    signing_credential_ref: text
+    created_at: datetime
+    created_by: text
+    disabled_at: datetime
+    index tenant_idx using hash(tenant_id)
+  }
+
+  collection InboundWebhookEvents {
+    id: text
+    integration_id: uuid
+    provider: text
+    event_id: text
+    event_timestamp: datetime
+    accepted_at: datetime
+    tenant_id: text
+    index integration_idx using hash(integration_id)
+  }
+
+  collection ServiceEffectEvidence {
+    id: uuid
+    application: text
+    tenant_id: text
+    principal_id: text
+    principal_type: text
+    delegation_id: text
+    run_id: text
+    capability: text
+    capability_version: integer
+    resource: text
+    decision: text
+    decision_id: text
+    credential_ref: text
+    service: text
+    provider: text
+    request_id: text
+    started_at: datetime
+    completed_at: datetime
+    outcome: text
+    failure_code: text
+    index tenant_idx using hash(tenant_id)
+    index capability_idx using hash(capability)
   }
 }

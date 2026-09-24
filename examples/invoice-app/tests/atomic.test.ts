@@ -6,6 +6,10 @@ import { writeFileSync } from 'node:fs';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { createServices } from '@appport/services';
+import { authorizeInvoiceEffects, DEMO_SIGNING_REF, developmentAuthorizer, invoiceAppPrincipal } from '../src/authority.js';
+
+// Tests resolve every webhook host to a public address so no DNS is needed.
+const TEST_DESTINATIONS = { lookup: async () => [{ address: '93.184.216.34', family: 4 as const }] };
 
 test('Atomic composition: invoice creation with webhook + job', async () => {
   const path = await mkdtemp(join(tmpdir(), 'invoice-atomic-test-'));
@@ -28,18 +32,20 @@ max_attempts = 3
     namespace: 'invoice-atomic-test',
     path: join(path, '.feltdb'),
     config: configPath,
+    application: 'invoice-app',
+    authorizer: developmentAuthorizer,
+    webhookDestinationPolicy: TEST_DESTINATIONS,
   });
 
   const tenantId = 'test-tenant';
   const db = (services as any)['_getDb'];
 
   // 1. Create webhook endpoint
-  const { endpoint } = await services.webhooks.createWebhookEndpoint({
-    tenantId,
+  const endpoint = await services.webhooks.createWebhookEndpoint({
     url: 'https://example.com/webhook',
     events: ['invoice.created'],
-    createdBy: 'test',
-  });
+    signingCredentialRef: DEMO_SIGNING_REF,
+  }, invoiceAppPrincipal(services, tenantId));
 
   // 2. Simulate invoice creation transaction
   const invoiceId = randomUUID();
@@ -60,6 +66,8 @@ max_attempts = 3
   };
 
   // Execute atomic transaction
+  const effects = await authorizeInvoiceEffects(services, invoiceAppPrincipal(services, tenantId));
+
   await services.transaction(async (tx) => {
     // 1. Create invoice
     await tx.collection('invoices').insert(invoice, invoiceId);
@@ -69,7 +77,7 @@ max_attempts = 3
       tenantId,
       type: 'invoice.created',
       payload: { id: invoiceId, total_amount: 100 },
-    });
+    }, effects.emit);
 
     // 3. Enqueue job
     tx.queueJob({
@@ -77,7 +85,7 @@ max_attempts = 3
       type: 'invoice.process',
       payload: { invoiceId },
       maxAttempts: 3,
-    });
+    }, effects.enqueue);
   });
 
   // Verify all three were created
@@ -116,6 +124,9 @@ max_attempts = 3
     namespace: 'invoice-rollback-test',
     path: join(path, '.feltdb'),
     config: configPath,
+    application: 'invoice-app',
+    authorizer: developmentAuthorizer,
+    webhookDestinationPolicy: TEST_DESTINATIONS,
   });
 
   const tenantId = 'test-tenant';
@@ -123,15 +134,16 @@ max_attempts = 3
 
   // Create endpoint
   await services.webhooks.createWebhookEndpoint({
-    tenantId,
     url: 'https://example.com/webhook',
     events: ['invoice.created'],
-    createdBy: 'test',
-  });
+    signingCredentialRef: DEMO_SIGNING_REF,
+  }, invoiceAppPrincipal(services, tenantId));
 
   // Intentional error in transaction
   let transactionError: unknown;
   try {
+    const effects = await authorizeInvoiceEffects(services, invoiceAppPrincipal(services, tenantId));
+
     await services.transaction(async (tx) => {
       const invoiceId = randomUUID();
       const now = new Date().toISOString();
@@ -194,6 +206,9 @@ max_attempts = 3
     namespace: 'invoice-tenant-test',
     path: join(path, '.feltdb'),
     config: configPath,
+    application: 'invoice-app',
+    authorizer: developmentAuthorizer,
+    webhookDestinationPolicy: TEST_DESTINATIONS,
   });
 
   // Create invoices for two tenants
@@ -202,22 +217,23 @@ max_attempts = 3
 
   // Create endpoints for both
   await services.webhooks.createWebhookEndpoint({
-    tenantId: tenantA,
     url: 'https://example.com/webhook-a',
     events: ['invoice.created'],
-    createdBy: 'test',
-  });
+    signingCredentialRef: DEMO_SIGNING_REF,
+  }, invoiceAppPrincipal(services, tenantA));
 
   const endpointB = await services.webhooks.createWebhookEndpoint({
-    tenantId: tenantB,
     url: 'https://example.com/webhook-b',
     events: ['invoice.created'],
-    createdBy: 'test',
-  });
+    signingCredentialRef: DEMO_SIGNING_REF,
+  }, invoiceAppPrincipal(services, tenantB));
 
   // Create invoice for tenant B
   const invoiceId = randomUUID();
   const now = new Date().toISOString();
+
+  const effects = await authorizeInvoiceEffects(services, invoiceAppPrincipal(services, tenantB));
+
 
   await services.transaction(async (tx) => {
     const invoice = {
@@ -235,18 +251,18 @@ max_attempts = 3
 
     await tx.collection('invoices').insert(invoice, invoiceId);
 
-    tx.queueWebhookDeliveries([endpointB.endpoint.id], {
+    tx.queueWebhookDeliveries([endpointB.id], {
       tenantId: tenantB,
       type: 'invoice.created',
       payload: { id: invoiceId },
-    });
+    }, effects.emit);
 
     tx.queueJob({
       tenantId: tenantB,
       type: 'invoice.process',
       payload: { invoiceId },
       maxAttempts: 3,
-    });
+    }, effects.enqueue);
   });
 
   // Verify tenant B has data, tenant A doesn't

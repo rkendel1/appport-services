@@ -23,6 +23,7 @@ export interface NotificationDeliveryStore {
   get(tenantId: string, id: string): Promise<NotificationDelivery | null>;
   list(tenantId: string, notificationId?: string): Promise<readonly NotificationDelivery[]>;
   update(tenantId: string, id: string, expectedVersion: number, updates: Partial<NotificationDelivery>): Promise<NotificationDelivery | null>;
+  delete(id: string): Promise<void>;
 }
 
 export interface NotificationAuditSink {
@@ -31,22 +32,32 @@ export interface NotificationAuditSink {
 
 export class FeltDbNotificationStore implements NotificationStore {
   private readonly collection;
-  constructor(private readonly db: StateFirstDB) { this.collection = db.collection<Notification>(NOTIFICATIONS); }
+  private readonly deliveries;
+  constructor(private readonly db: StateFirstDB) {
+    this.collection = db.collection<Notification>(NOTIFICATIONS);
+    this.deliveries = db.collection<NotificationDelivery>(DELIVERIES);
+  }
   async create(item: Notification): Promise<void> {
     await this.db.transaction({ operations: [{ collection: NOTIFICATIONS, id: item.id, requireAbsent: true, value: { ...item } }] });
   }
   async createWithDeliveries(item: Notification, deliveries: readonly NotificationDelivery[]): Promise<boolean> {
+    const operations = [
+      { collection: NOTIFICATIONS, id: item.id, requireAbsent: true, value: { ...item } },
+      ...deliveries.map((delivery) => ({ collection: DELIVERIES, id: delivery.id, requireAbsent: true, value: { ...delivery } })),
+    ];
     try {
-      await this.db.transaction({
-        operations: [
-          { collection: NOTIFICATIONS, id: item.id, requireAbsent: true, value: { ...item } },
-          ...deliveries.map((delivery) => ({ collection: DELIVERIES, id: delivery.id, requireAbsent: true, value: { ...delivery } })),
-        ],
-      });
+      await this.db.transaction({ operations });
       return true;
     } catch (error) {
       // A concurrent or repeated create of the same logical notification.
       if (await this.collection.get(item.id)) return false;
+      const orphaned = await Promise.all(deliveries.map(async (delivery) => (await this.deliveries.get(delivery.id)) ? delivery.id : null));
+      const staleIds = orphaned.filter((id): id is string => id !== null);
+      if (staleIds.length > 0) {
+        await Promise.all(staleIds.map((id) => this.deliveries.delete(id)));
+        await this.db.transaction({ operations });
+        return true;
+      }
       throw error;
     }
   }
@@ -83,6 +94,7 @@ export class FeltDbNotificationDeliveryStore implements NotificationDeliveryStor
     const result = await this.collection.updateIfVersion(id, expectedVersion, { ...current, ...updates });
     return result.updated ? result.item ?? null : null;
   }
+  async delete(id: string): Promise<void> { await this.collection.delete(id); }
 }
 
 export class FeltDbNotificationAuditSink implements NotificationAuditSink {

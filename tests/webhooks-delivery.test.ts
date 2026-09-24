@@ -12,8 +12,13 @@ import {
   FeltDbWebhookDeliveryStore,
   FeltDbWebhookAuditSink,
   WebhookService,
-  InMemoryWebhookSecretStore,
 } from '../src/_internal.js';
+import { principal as verified, testGateway, TestCredentials, LOCAL_DESTINATIONS } from './support/authority.js';
+
+const caller = (tenantId: string) => verified({ principalId: 'user-1', principalType: 'api_key', tenantId, credentialId: 'key' });
+const credentials = new TestCredentials();
+const SIGNING_REF = credentials.put('signing-a', 'tenant-a', 'whsec_test_signing_secret');
+credentials.put('signing-a-b', 'tenant-b', 'whsec_test_signing_secret_b');
 
 async function createLocalWebhookService() {
   const path = await mkdtemp(join(tmpdir(), 'appport-webhooks-delivery-test-'));
@@ -27,7 +32,8 @@ async function createLocalWebhookService() {
     endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
     deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
     auditSink: new FeltDbWebhookAuditSink(runtime.db),
-    secretStore: new InMemoryWebhookSecretStore(),
+    authority: testGateway(runtime.db, { credentials }),
+    destinationPolicy: LOCAL_DESTINATIONS,
     maxRetryAttempts: 3,
   });
 
@@ -82,18 +88,18 @@ test('webhook delivery sends signed POST request', async () => {
   const { server, port, requests } = await createTestServer([{ statusCode: 200 }]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['invoice.created'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'invoice.created',
       payload: { id: 'inv-123', amount: 100 },
-    });
+    }, caller('tenant-a'));
 
     const delivery = deliveries[0];
     const result = await service.deliverWebhook('tenant-a', delivery.id);
@@ -124,18 +130,18 @@ test('2xx status marks delivery as delivered', async () => {
   ]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const delivery = deliveries[0];
     const result = await service.deliverWebhook('tenant-a', delivery.id);
@@ -157,18 +163,18 @@ test('5xx status marks delivery as retrying', async () => {
   const { server, port } = await createTestServer([{ statusCode: 500 }]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const delivery = deliveries[0];
     const result = await service.deliverWebhook('tenant-a', delivery.id);
@@ -191,18 +197,18 @@ test('terminal 4xx status marks delivery as failed', async () => {
   const { server, port } = await createTestServer([{ statusCode: 404 }]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const delivery = deliveries[0];
     const result = await service.deliverWebhook('tenant-a', delivery.id);
@@ -223,18 +229,18 @@ test('timeout status is retryable', async () => {
   const { server, port } = await createTestServer([{ statusCode: 200, delay: 60000 }]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const delivery = deliveries[0];
     const result = await service.deliverWebhook('tenant-a', delivery.id);
@@ -255,18 +261,18 @@ test('429 status is retryable', async () => {
   const { server, port } = await createTestServer([{ statusCode: 429 }]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const delivery = deliveries[0];
     const result = await service.deliverWebhook('tenant-a', delivery.id);
@@ -291,18 +297,18 @@ test('multiple retries with exponential backoff', async () => {
   ]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const deliveryId = deliveries[0].id;
 
@@ -352,18 +358,18 @@ test('max retry attempts marks delivery as failed', async () => {
   ]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const deliveryId = deliveries[0].id;
 
@@ -386,18 +392,18 @@ test('delivery already delivered cannot be re-delivered', async () => {
   const { server, port, requests } = await createTestServer([{ statusCode: 200 }]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const deliveryId = deliveries[0].id;
 
@@ -419,18 +425,18 @@ test('concurrent delivery attempts claim only once', async () => {
   const { server, port, requests } = await createTestServer([{ statusCode: 200 }]);
 
   try {
-    const { endpoint } = await service.createWebhookEndpoint({
+    const endpoint = await service.createWebhookEndpoint({
       tenantId: 'tenant-a',
       url: `http://localhost:${port}/webhook`,
       events: ['test'],
-      createdBy: 'user-1',
-    });
+      signingCredentialRef: SIGNING_REF,
+    }, caller('tenant-a'));
 
     const deliveries = await service.emitWebhookEvent({
       tenantId: 'tenant-a',
       type: 'test',
       payload: {},
-    });
+    }, caller('tenant-a'));
 
     const deliveryId = deliveries[0].id;
 
