@@ -1,4 +1,5 @@
 import { Router, json as jsonBody, type NextFunction, type Request, type Response } from 'express';
+import rateLimit from 'express-rate-limit';
 
 import type { ApiKeyService } from '../api-keys/service.js';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
@@ -101,6 +102,7 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   const router = Router();
 
   router.use(jsonBody());
+  router.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false }));
 
   router.use(async (req, _res, next) => {
     try {

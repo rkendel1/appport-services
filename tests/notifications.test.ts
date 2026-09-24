@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 
 import { createFeltDbRuntime, FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNotificationStore } from '../src/_internal.js';
 import { FeltDbJobAuditSink, FeltDbJobScheduleStore, FeltDbJobStore } from '../src/jobs/store.js';
@@ -650,6 +651,7 @@ test('HTTP API follows AppPort conventions and fails closed without authenticati
   const ctx = await setup();
   const app = express();
   app.use(express.json());
+  app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false }));
   app.use((req, _res, next) => {
     const id = req.header('x-test-principal');
     if (id) req.auth = principal(id, id === 'monitor-service' ? ['notifications.create'] : ALL);
