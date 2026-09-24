@@ -1,4 +1,5 @@
 import { Router, json as jsonBody, type NextFunction, type Request, type Response } from 'express';
+import rateLimit from 'express-rate-limit';
 
 import type { ApiKeyService } from '../api-keys/service.js';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
@@ -7,6 +8,7 @@ import { createConfigurationUiRouter } from '../configuration/ui.js';
 import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from '../configuration/service.js';
 import { FileAuthorizationError, type FileService } from '../files/service.js';
 import type { JobService } from '../jobs/service.js';
+import { notificationListOptions } from '../notifications/http.js';
 import { NotificationAuthorizationError, type NotificationService } from '../notifications/service.js';
 import { ScheduleAuthorizationError, type ScheduleService } from '../schedules/service.js';
 import type { WebhookService } from '../webhooks/service.js';
@@ -49,7 +51,7 @@ export interface ManagementServices {
   readonly configuration?: ConfigurationService;
   readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'>;
   readonly jobs?: Pick<JobService, 'enqueue' | 'listJobs' | 'retry'>;
-  readonly notifications?: Pick<NotificationService, 'create' | 'list' | 'markRead' | 'dismiss' | 'delete'>;
+  readonly notifications?: Pick<NotificationService, 'notify' | 'get' | 'list' | 'deliveries' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete' | 'retryDelivery'>;
   readonly files?: Pick<FileService, 'create' | 'list' | 'update' | 'delete'>;
   readonly schedules?: Pick<ScheduleService, 'create' | 'list' | 'disable'>;
 }
@@ -100,6 +102,7 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   const router = Router();
 
   router.use(jsonBody());
+  router.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false }));
 
   router.use(async (req, _res, next) => {
     try {
@@ -225,10 +228,17 @@ function mountExistingServiceRoutes(router: Router, services: ManagementServices
   }
   if (services.notifications) {
     const notifications = services.notifications;
-    router.get('/_appport/notifications', handler(async (req, principal) => ({ body: await notifications.list(principal.tenantId, { limit: Number(req.query.limit ?? 50), cursor: stringQuery(req.query.cursor), recipient: stringQuery(req.query.recipient), type: stringQuery(req.query.type), unread: req.query.unread === 'true' }, principal) })));
-    router.post('/_appport/notifications', handler(async (req, principal) => ({ status: 201, body: await notifications.create(objectValue(req.body ?? {}, 'body') as never, principal) })));
+    router.get('/_appport/notifications', handler(async (req, principal) => ({ body: await notifications.list(principal.tenantId, notificationListOptions(req.query), principal) })));
+    router.post('/_appport/notifications', handler(async (req, principal) => {
+      const result = await notifications.notify({ ...objectValue(req.body ?? {}, 'body'), tenantId: principal.tenantId } as never, principal);
+      return { status: result.created ? 201 : 200, body: { notification: result.notification, deliveries: result.deliveries } };
+    }));
+    router.get('/_appport/notifications/:id', handler(async (req, principal) => ({ body: await notifications.get(principal.tenantId, req.params.id, principal) })));
+    router.get('/_appport/notifications/:id/deliveries', handler(async (req, principal) => ({ body: { items: await notifications.deliveries(principal.tenantId, req.params.id, principal) } })));
     router.post('/_appport/notifications/:id/read', handler(async (req, principal) => ({ body: await notifications.markRead(principal.tenantId, req.params.id, principal) })));
+    router.post('/_appport/notifications/:id/acknowledge', handler(async (req, principal) => ({ body: await notifications.acknowledge(principal.tenantId, req.params.id, principal) })));
     router.post('/_appport/notifications/:id/dismiss', handler(async (req, principal) => ({ body: await notifications.dismiss(principal.tenantId, req.params.id, principal) })));
+    router.post('/_appport/notifications/:id/deliveries/:channel/retry', handler(async (req, principal) => ({ body: await notifications.retryDelivery(principal.tenantId, req.params.id, req.params.channel, principal) })));
     router.delete('/_appport/notifications/:id', handler(async (req, principal) => { await notifications.delete(principal.tenantId, req.params.id, principal); return { status: 204 }; }));
   }
 }

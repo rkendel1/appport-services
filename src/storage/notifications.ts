@@ -7,6 +7,11 @@ const AUDIT = 'notification_audit_events';
 
 export interface NotificationStore {
   create(item: Notification): Promise<void>;
+  /**
+   * Atomically create a notification and its delivery records. Returns false,
+   * writing nothing, when a notification with the same id already exists.
+   */
+  createWithDeliveries(item: Notification, deliveries: readonly NotificationDelivery[]): Promise<boolean>;
   get(tenantId: string, id: string): Promise<Notification | null>;
   list(tenantId: string): Promise<readonly Notification[]>;
   update(id: string, expectedVersion: number, updates: Partial<Notification>): Promise<Notification | null>;
@@ -15,7 +20,10 @@ export interface NotificationStore {
 
 export interface NotificationDeliveryStore {
   create(item: NotificationDelivery): Promise<void>;
+  get(tenantId: string, id: string): Promise<NotificationDelivery | null>;
   list(tenantId: string, notificationId?: string): Promise<readonly NotificationDelivery[]>;
+  update(tenantId: string, id: string, expectedVersion: number, updates: Partial<NotificationDelivery>): Promise<NotificationDelivery | null>;
+  delete(id: string): Promise<void>;
 }
 
 export interface NotificationAuditSink {
@@ -24,9 +32,34 @@ export interface NotificationAuditSink {
 
 export class FeltDbNotificationStore implements NotificationStore {
   private readonly collection;
-  constructor(private readonly db: StateFirstDB) { this.collection = db.collection<Notification>(NOTIFICATIONS); }
+  private readonly deliveries;
+  constructor(private readonly db: StateFirstDB) {
+    this.collection = db.collection<Notification>(NOTIFICATIONS);
+    this.deliveries = db.collection<NotificationDelivery>(DELIVERIES);
+  }
   async create(item: Notification): Promise<void> {
     await this.db.transaction({ operations: [{ collection: NOTIFICATIONS, id: item.id, requireAbsent: true, value: { ...item } }] });
+  }
+  async createWithDeliveries(item: Notification, deliveries: readonly NotificationDelivery[]): Promise<boolean> {
+    const operations = [
+      { collection: NOTIFICATIONS, id: item.id, requireAbsent: true, value: { ...item } },
+      ...deliveries.map((delivery) => ({ collection: DELIVERIES, id: delivery.id, requireAbsent: true, value: { ...delivery } })),
+    ];
+    try {
+      await this.db.transaction({ operations });
+      return true;
+    } catch (error) {
+      // A concurrent or repeated create of the same logical notification.
+      if (await this.collection.get(item.id)) return false;
+      const orphaned = await Promise.all(deliveries.map(async (delivery) => (await this.deliveries.get(delivery.id)) ? delivery.id : null));
+      const staleIds = orphaned.filter((id): id is string => id !== null);
+      if (staleIds.length > 0) {
+        await Promise.all(staleIds.map((id) => this.deliveries.delete(id)));
+        await this.db.transaction({ operations });
+        return true;
+      }
+      throw error;
+    }
   }
   async get(tenantId: string, id: string): Promise<Notification | null> {
     const item = await this.collection.get(id);
@@ -48,9 +81,20 @@ export class FeltDbNotificationDeliveryStore implements NotificationDeliveryStor
   async create(item: NotificationDelivery): Promise<void> {
     await this.db.transaction({ operations: [{ collection: DELIVERIES, id: item.id, requireAbsent: true, value: { ...item } }] });
   }
+  async get(tenantId: string, id: string): Promise<NotificationDelivery | null> {
+    const item = await this.collection.get(id);
+    return item?.tenantId === tenantId ? item : null;
+  }
   async list(tenantId: string, notificationId?: string): Promise<readonly NotificationDelivery[]> {
     return this.collection.find(notificationId ? { tenantId, notificationId } : { tenantId });
   }
+  async update(tenantId: string, id: string, expectedVersion: number, updates: Partial<NotificationDelivery>): Promise<NotificationDelivery | null> {
+    const current = await this.collection.get(id);
+    if (!current || current.tenantId !== tenantId) return null;
+    const result = await this.collection.updateIfVersion(id, expectedVersion, { ...current, ...updates });
+    return result.updated ? result.item ?? null : null;
+  }
+  async delete(id: string): Promise<void> { await this.collection.delete(id); }
 }
 
 export class FeltDbNotificationAuditSink implements NotificationAuditSink {

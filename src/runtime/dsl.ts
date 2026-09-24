@@ -17,7 +17,7 @@ export interface AppPortConfig {
   readonly webhooks: { readonly enabled: boolean; readonly delivery: { readonly enabled: boolean; readonly retries: number; readonly timeout_ms: number }; readonly events: { readonly allowed: readonly string[] } };
   readonly jobs: { readonly enabled: boolean; readonly execution: { readonly enabled: boolean; readonly max_attempts: number }; readonly types: Readonly<Record<string, { readonly timeout_ms: number }>>; readonly max_attempts: number };
   readonly secrets: { readonly enabled: boolean };
-  readonly notifications: { readonly enabled: boolean; readonly default_priority: 'low' | 'normal' | 'high' | 'urgent'; readonly default_channel: string };
+  readonly notifications: { readonly enabled: boolean; readonly default_priority: 'low' | 'normal' | 'high' | 'urgent'; readonly default_channel: string; readonly delivery: { readonly max_attempts: number } };
   readonly files: { readonly enabled: boolean };
   readonly events: { readonly enabled: boolean; readonly streaming: { readonly enabled: boolean; readonly transport: 'sse' } };
   readonly authorization: { readonly enabled: boolean; readonly default: 'allow' | 'deny' };
@@ -120,7 +120,7 @@ function normalizeConfig(raw: Record<string, unknown>, uses: Set<AppPortCapabili
     webhooks: { enabled: uses.has('webhooks'), delivery: { enabled: bool(webhookDelivery.enabled, file, 'webhooks.delivery.enabled', uses.has('webhooks')), retries: integer(webhookDelivery.retries, file, 'webhooks.delivery.retries', 3, 0), timeout_ms: integer(webhookDelivery.timeout_ms, file, 'webhooks.delivery.timeout_ms', 10_000, 1) }, events: { allowed: stringArray(webhookEvents.allowed ?? legacyWebhookEvents, file, 'webhooks.events.allowed', []) } },
     jobs: { enabled: uses.has('jobs'), execution: { enabled: bool(jobExecution.enabled, file, 'jobs.execution.enabled', uses.has('jobs')), max_attempts: maxAttempts }, types: normalizedTypes, max_attempts: maxAttempts },
     secrets: { enabled: uses.has('secrets') },
-    notifications: { enabled: uses.has('notifications'), default_priority: enumeration(notifications.default_priority, file, 'notifications.default_priority', ['low', 'normal', 'high', 'urgent'], 'normal'), default_channel: str(notifications.default_channel, file, 'notifications.default_channel', 'in-app') },
+    notifications: { enabled: uses.has('notifications'), default_priority: enumeration(notifications.default_priority, file, 'notifications.default_priority', ['low', 'normal', 'high', 'urgent'], 'normal'), default_channel: enumeration(notifications.default_channel, file, 'notifications.default_channel', ['in-app', 'browser'], 'in-app'), delivery: { max_attempts: integer(object(notifications.delivery, file, 'notifications.delivery', true).max_attempts, file, 'notifications.delivery.max_attempts', 5, 1) } },
     files: { enabled: uses.has('files') || bool(files.enabled, file, 'files.enabled', false) },
     events: { enabled: bool(events.enabled, file, 'events.enabled', false), streaming: { enabled: bool(streaming.enabled, file, 'events.streaming.enabled', false), transport: enumeration(streaming.transport, file, 'events.streaming.transport', ['sse'], 'sse') } },
     authorization: { enabled: bool(authorization.enabled, file, 'authorization.enabled', uses.has('api')), default: enumeration(authorization.default, file, 'authorization.default', ['allow', 'deny'], 'deny') },

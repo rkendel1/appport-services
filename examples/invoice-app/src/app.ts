@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'node:crypto';
 import { createServices, apiKeyAuth } from '@appport/services';
 import type { Invoice, Customer, InvoiceRequest } from './models.js';
@@ -6,6 +7,7 @@ import { authorizeInvoiceEffects, DEVELOPMENT_DESTINATIONS, developmentAuthorize
 
 const app = express();
 app.use(express.json());
+app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false }));
 
 // Initialize AppPort Services with DSL configuration
 const services = createServices({

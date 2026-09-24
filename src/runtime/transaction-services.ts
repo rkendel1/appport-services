@@ -5,6 +5,7 @@ import { evidenceCollectionName } from '../authority/evidence.js';
 import type { ServiceGateway } from '../authority/gateway.js';
 import { toDurablePrincipal } from '../authority/principal.js';
 import { assertApplicationCollection } from '../authority/reserved.js';
+import { assertNoCredentials } from '../notifications/sensitive.js';
 import type { WebhookEndpoint } from '../webhooks/models.js';
 
 /**
@@ -222,12 +223,17 @@ export class TransactionContextImpl {
     title: string;
     body?: string;
     data?: Record<string, unknown>;
+    source?: { type: string; id?: string; eventId?: string };
     priority?: 'low' | 'normal' | 'high' | 'urgent';
   }, context: ServiceExecutionContext): string {
     const authorized = this.authorized(context, 'notifications.send', input.tenantId, 'notification');
     if (authorized.resource.attributes?.recipient !== input.recipient) {
       throw new ServiceAuthorityError('DENIED', 'Execution context was not issued for this recipient');
     }
+    assertNoCredentials(input.title, 'title');
+    if (input.body !== undefined) assertNoCredentials(input.body, 'body');
+    if (input.data !== undefined) assertNoCredentials(input.data, 'data');
+    if (input.source !== undefined) assertNoCredentials(input.source, 'source');
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const notification = {
@@ -239,11 +245,37 @@ export class TransactionContextImpl {
       title: input.title,
       ...(input.body === undefined ? {} : { body: input.body }),
       ...(input.data === undefined ? {} : { data: input.data }),
+      ...(input.source === undefined ? {} : { source: input.source }),
       priority: input.priority ?? 'normal',
+      channels: ['in-app'],
+      status: 'delivered' as const,
       createdAt: now,
+      createdBy: authorized.principal.principalId,
+      deliveredAt: now,
       __version: 1,
     };
     this.builder.addOperation({ collection: 'notifications', id, requireAbsent: true, value: notification });
+    const deliveryId = crypto.randomUUID();
+    this.builder.addOperation({
+      collection: 'notification_deliveries',
+      id: deliveryId,
+      requireAbsent: true,
+      value: {
+        id: deliveryId,
+        tenantId: input.tenantId,
+        notificationId: id,
+        recipient: input.recipient,
+        channel: 'in-app',
+        status: 'delivered',
+        idempotencyKey: `${id}:in-app`,
+        attemptCount: 1,
+        maxAttempts: 1,
+        createdAt: now,
+        lastAttemptAt: now,
+        deliveredAt: now,
+        __version: 1,
+      },
+    });
     const auditId = crypto.randomUUID();
     this.builder.addOperation({
       collection: 'notification_audit_events',

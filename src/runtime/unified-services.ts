@@ -116,7 +116,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     evidence: new FeltDbEffectEvidenceStore(db),
     authorizationTimeoutMs,
   });
-  const authority = gateway;
+  const authority = authorizer || credentials ? gateway : undefined;
 
   const apiKeyService = new ApiKeyService({
     store: new FeltDbApiKeyStore(db),
@@ -140,21 +140,22 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     jobStore: new FeltDbJobStore(db),
     scheduleStore: new FeltDbJobScheduleStore(db),
     auditSink: new FeltDbJobAuditSink(db),
-    authority,
+    ...(authority ? { authority } : {}),
   });
-  const configurationService = new ConfigurationService({ store: new FeltDbConfigurationStore(db), authority });
+  const configurationService = new ConfigurationService({ store: new FeltDbConfigurationStore(db), ...(authority ? { authority } : {}) });
   const notificationService = new NotificationService({
     store: new FeltDbNotificationStore(db),
     deliveryStore: new FeltDbNotificationDeliveryStore(db),
     auditSink: new FeltDbNotificationAuditSink(db),
-    authority,
+    jobs: jobService,
+    authority: gateway,
   });
   const fileService = new FileService({
     store: new FeltDbFileStore(db),
     auditSink: new FeltDbFileAuditSink(db),
-    authority,
+    ...(authority ? { authority } : {}),
   });
-  const scheduleService = new ScheduleService({ jobs: jobService, authority });
+  const scheduleService = new ScheduleService({ jobs: jobService, ...(authority ? { authority } : {}) });
   const invokable = {
     gateway,
     apiKeys: apiKeyService,

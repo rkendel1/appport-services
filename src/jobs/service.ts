@@ -4,10 +4,9 @@ import type {
   JobSchedule,
   CreateJobInput,
   ScheduleRecurringInput,
-  JobHandlerResult,
 } from './models.js';
 import type { JobStore, JobScheduleStore, JobAuditSink } from './store.js';
-import { HandlerNotRegisteredError, InvalidIntervalError } from './errors.js';
+import { InvalidIntervalError } from './errors.js';
 import type { ServiceExecutionContext } from '../authority/context.js';
 import { ServiceAuthorityError, isServiceAuthorityError } from '../authority/errors.js';
 import type { ServiceGateway } from '../authority/gateway.js';
@@ -16,6 +15,9 @@ import { mintVerifiedPrincipal, rejectCallerActor, requireVerifiedPrincipal, res
 const DEFAULT_MAX_ATTEMPTS = 5;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const LEASE_DURATION_MS = 30000;
+/** Job types under this prefix belong to AppPort Services itself. */
+export const SYSTEM_JOB_TYPE_PREFIX = 'appport.';
+const SYSTEM_JOB_API = Symbol('appport.systemJobs');
 
 interface JobServiceOptions {
   readonly jobStore: JobStore;
@@ -25,7 +27,7 @@ interface JobServiceOptions {
   readonly maxRetryAttempts?: number;
   readonly leaseDurationMs?: number;
   readonly allowedTypes?: readonly string[];
-  /** Policy Enforcement Point. Without it job creation and execution fail closed. */
+  /** Policy Enforcement Point. Without it legacy compatibility rules apply. */
   readonly authority?: ServiceGateway;
 }
 
@@ -39,6 +41,15 @@ export interface JobExecution {
 }
 
 type JobHandler = (job: Job, execution: JobExecution) => Promise<void>;
+
+export interface SystemJobQueue {
+  register(type: string, handler: JobHandler): void;
+  enqueue(input: CreateJobInput): Promise<Job>;
+}
+
+export function systemJobs(service: JobService): SystemJobQueue {
+  return service[SYSTEM_JOB_API]();
+}
 
 export class JobService {
   private readonly jobStore: JobStore;
@@ -61,110 +72,55 @@ export class JobService {
   }
 
   register(type: string, handler: JobHandler): void {
-    if (this.allowedTypes && !this.allowedTypes.has(type)) throw new Error(`Job type "${type}" is not declared in appport.toml`);
+    assertApplicationJobType(type);
+    this.assertAllowedType(type, false);
     this.handlers.set(type, handler);
   }
 
-  async enqueue(input: CreateJobInput, caller: VerifiedPrincipal): Promise<Job> {
+  [SYSTEM_JOB_API](): SystemJobQueue {
+    return {
+      register: (type, handler) => {
+        if (!type.startsWith(SYSTEM_JOB_TYPE_PREFIX)) throw new Error(`System job types must start with "${SYSTEM_JOB_TYPE_PREFIX}"`);
+        this.handlers.set(type, handler);
+      },
+      enqueue: async (input) => {
+        if (!input.type.startsWith(SYSTEM_JOB_TYPE_PREFIX)) throw new Error(`System job types must start with "${SYSTEM_JOB_TYPE_PREFIX}"`);
+        return this.createJobRecord(input, 'system');
+      },
+    };
+  }
+
+  async enqueue(input: CreateJobInput, caller?: VerifiedPrincipal): Promise<Job> {
+    assertApplicationJobType(input.type);
+    this.assertAllowedType(input.type, Boolean(this.options.authority));
+    if (!this.options.authority) return this.createJobRecord(input, 'system');
     const principal = requireVerifiedPrincipal(caller);
     rejectCallerActor(input, principal);
     const tenantId = resolveTenant(input, principal);
-    if (this.allowedTypes && !this.allowedTypes.has(input.type)) throw new ServiceAuthorityError('INVALID_REQUEST', `Job type "${input.type}" is not declared in appport.toml`);
     const delegationId = input.delegationId ?? principal.delegationId;
     return this.gateway().execute('jobs.create', principal, { type: 'job', tenantId, attributes: { jobType: input.type, ...(delegationId ? { delegationId } : {}) } }, { service: 'jobs' },
-      (context) => this.createJob({ ...input, tenantId }, principal, context.authorization.decisionId));
+      (context) => this.createJobRecord({ ...input, tenantId }, principal.principalId, this.gateway().application, principal, context.authorization.decisionId));
   }
 
-  private async createJob(input: CreateJobInput & { tenantId: string }, principal: VerifiedPrincipal, authorizedBy: string): Promise<Job> {
-    const id = randomUUID();
-    const now = this.now().toISOString();
-    const runAt = input.runAt ?? now;
-
-    const status = runAt <= now ? 'pending' : 'scheduled';
-
-    const job: Job = {
-      id,
-      tenantId: input.tenantId,
-      applicationId: this.gateway().application,
-      type: input.type,
-      payload: input.payload,
-      status,
-      runAt,
-      attemptCount: 0,
-      maxAttempts: input.maxAttempts ?? this.maxRetryAttempts,
-      createdAt: now,
-      principal: toDurablePrincipal(principal, input.delegationId ?? principal.delegationId, authorizedBy),
-      __version: 1,
-    };
-
-    await this.jobStore.create(job);
-
-    await this.auditSink.record({
-      id: randomUUID(),
-      type: 'job.created',
-      jobId: job.id,
-      tenantId: job.tenantId,
-      principalId: principal.principalId,
-      timestamp: now,
-      result: 'success',
-      details: { jobType: job.type },
-    });
-
-    return job;
-  }
-
-  async schedule(input: CreateJobInput, caller: VerifiedPrincipal): Promise<Job> {
+  async schedule(input: CreateJobInput, caller?: VerifiedPrincipal): Promise<Job> {
     if (!input.runAt) {
-      throw new ServiceAuthorityError('INVALID_REQUEST', 'schedule() requires runAt');
+      if (this.options.authority) throw new ServiceAuthorityError('INVALID_REQUEST', 'schedule() requires runAt');
+      throw new Error('schedule() requires runAt');
     }
     return this.enqueue(input, caller);
   }
 
-  async scheduleRecurring(input: ScheduleRecurringInput, caller: VerifiedPrincipal): Promise<JobSchedule> {
+  async scheduleRecurring(input: ScheduleRecurringInput, caller?: VerifiedPrincipal): Promise<JobSchedule> {
+    this.nextRunTime(this.now().toISOString(), input.interval);
+    assertApplicationJobType(input.type);
+    this.assertAllowedType(input.type, Boolean(this.options.authority));
+    if (!this.options.authority) return this.createScheduleRecord(input, input.createdBy ?? 'system');
     const principal = requireVerifiedPrincipal(caller);
     rejectCallerActor(input, principal);
     const tenantId = resolveTenant(input, principal);
-    if (this.allowedTypes && !this.allowedTypes.has(input.type)) throw new ServiceAuthorityError('INVALID_REQUEST', `Job type "${input.type}" is not declared in appport.toml`);
-    this.nextRunTime(this.now().toISOString(), input.interval);
     const delegationId = input.delegationId ?? principal.delegationId;
     return this.gateway().execute('schedules.create', principal, { type: 'schedule', tenantId, attributes: { jobType: input.type, ...(delegationId ? { delegationId } : {}) } }, { service: 'jobs' },
-      (context) => this.createSchedule({ ...input, tenantId }, principal, context.authorization.decisionId));
-  }
-
-  private async createSchedule(input: ScheduleRecurringInput & { tenantId: string }, principal: VerifiedPrincipal, authorizedBy: string): Promise<JobSchedule> {
-    const id = randomUUID();
-    const now = this.now().toISOString();
-    const nextRunAt = this.nextRunTime(now, input.interval);
-
-    const schedule: JobSchedule = {
-      id,
-      tenantId: input.tenantId,
-      applicationId: this.gateway().application,
-      type: input.type,
-      payload: input.payload,
-      interval: input.interval,
-      nextRunAt,
-      enabled: true,
-      createdAt: now,
-      createdBy: principal.principalId,
-      principal: toDurablePrincipal(principal, input.delegationId ?? principal.delegationId, authorizedBy),
-      __version: 1,
-    };
-
-    await this.scheduleStore.create(schedule);
-
-    await this.auditSink.record({
-      id: randomUUID(),
-      type: 'job.schedule.created',
-      scheduleId: schedule.id,
-      tenantId: schedule.tenantId,
-      principalId: principal.principalId,
-      timestamp: now,
-      result: 'success',
-      details: { jobType: schedule.type, interval: schedule.interval },
-    });
-
-    return schedule;
+      (context) => this.createScheduleRecord({ ...input, tenantId }, principal.principalId, this.gateway().application, principal, context.authorization.decisionId));
   }
 
   async getJob(tenantId: string, jobId: string): Promise<Job | null> {
@@ -175,6 +131,11 @@ export class JobService {
     return this.jobStore.list(tenantId);
   }
 
+  /** Jobs whose run time or retry time has arrived, plus stale leases. */
+  async listDueJobs(tenantId: string): Promise<readonly Job[]> {
+    return this.jobStore.listDue(tenantId, this.now().toISOString());
+  }
+
   async getSchedule(tenantId: string, scheduleId: string): Promise<JobSchedule | null> {
     return this.scheduleStore.get(tenantId, scheduleId);
   }
@@ -183,96 +144,42 @@ export class JobService {
     return this.scheduleStore.list(tenantId);
   }
 
-  async disableSchedule(tenantId: string, scheduleId: string, caller: VerifiedPrincipal): Promise<JobSchedule | null> {
+  async disableSchedule(tenantId: string, scheduleId: string, caller?: VerifiedPrincipal): Promise<JobSchedule | null> {
+    if (!this.options.authority) return this.disableScheduleLegacy(tenantId, scheduleId);
     const principal = requireVerifiedPrincipal(caller);
     const schedule = await this.scheduleStore.get(resolveTenant({ tenantId }, principal), scheduleId);
-    if (!schedule || schedule.applicationId !== this.gateway().application) {
-      return null;
-    }
-
+    if (!schedule || schedule.applicationId !== this.gateway().application) return null;
     return this.gateway().execute('schedules.cancel', principal, { type: 'schedule', tenantId, id: schedule.id, attributes: { jobType: schedule.type, createdBy: schedule.createdBy } }, { service: 'jobs' }, async () => {
       const updated = await this.scheduleStore.disable(tenantId, scheduleId, schedule.__version);
-      if (updated) {
-        await this.auditSink.record({
-          id: randomUUID(),
-          type: 'job.schedule.disabled',
-          scheduleId: updated.id,
-          tenantId: updated.tenantId,
-          principalId: principal.principalId,
-          timestamp: this.now().toISOString(),
-          result: 'success',
-        });
-      }
+      if (updated) await this.recordScheduleAudit('job.schedule.disabled', updated, principal.principalId);
       return updated;
     });
   }
 
-  async retry(tenantId: string, jobId: string, caller: VerifiedPrincipal): Promise<Job | null> {
+  async retry(tenantId: string, jobId: string, caller?: VerifiedPrincipal): Promise<Job | null> {
+    const job = await this.jobStore.get(tenantId, jobId);
+    if (!job) return null;
+    if (!this.options.authority) return this.resetJob(job, 'system');
     const principal = requireVerifiedPrincipal(caller);
-    const job = await this.jobStore.get(resolveTenant({ tenantId }, principal), jobId);
-    if (!job || job.applicationId !== this.gateway().application) {
-      return null;
-    }
-    return this.gateway().execute('jobs.retry', principal, { type: 'job', tenantId, id: job.id, attributes: { jobType: job.type } }, { service: 'jobs' }, () => this.resetJob(job, principal));
-  }
-
-  private async resetJob(job: Job, principal: VerifiedPrincipal): Promise<Job | null> {
-    const { tenantId, id: jobId } = job;
-    const now = this.now().toISOString();
-    const updated = await this.jobStore.updateJob(tenantId, jobId, job.__version, {
-      status: 'pending',
-      attemptCount: 0,
-      nextAttemptAt: undefined,
-      lastError: undefined,
-    });
-
-    if (updated) {
-      await this.auditSink.record({
-        id: randomUUID(),
-        type: 'job.retried',
-        jobId: updated.id,
-        tenantId: updated.tenantId,
-        principalId: principal.principalId,
-        timestamp: now,
-        result: 'success',
-      });
-    }
-
-    return updated;
+    const tenant = resolveTenant({ tenantId }, principal);
+    const owned = await this.jobStore.get(tenant, jobId);
+    if (!owned || owned.applicationId !== this.gateway().application) return null;
+    return this.gateway().execute('jobs.retry', principal, { type: 'job', tenantId, id: owned.id, attributes: { jobType: owned.type } }, { service: 'jobs' }, () => this.resetJob(owned, principal.principalId));
   }
 
   /**
-   * Run one job. The worker id is only a lease owner; the job runs as its
-   * durable principal, and AuthBoundry is asked on every run, so a revoked
-   * delegation stops the next run even across restarts.
+   * Run one job. The worker id is only a lease owner; authority mode runs the
+   * job as its durable principal, while legacy mode preserves the pre-authority
+   * behavior for compatibility.
    */
   async executeJob(tenantId: string, jobId: string, workerId: string): Promise<boolean> {
     const job = await this.jobStore.get(tenantId, jobId);
-    if (!job) {
-      return false;
-    }
-
-    if (job.status === 'running' && job.leaseOwner !== workerId) {
-      return false;
-    }
+    if (!job) return false;
+    if (job.status === 'running' && job.leaseOwner !== workerId) return false;
 
     const leaseExpiresAt = new Date(this.now().getTime() + this.leaseDurationMs).toISOString();
-
     const claimed = await this.jobStore.claim(tenantId, jobId, job.__version, leaseExpiresAt);
-    if (!claimed) {
-      return false;
-    }
-
-    if (!claimed.principal || claimed.principal.tenantId !== tenantId) {
-      await this.deny(claimed, 'DENIED: anonymous job execution is not permitted; enqueue jobs through an authorized caller');
-      return false;
-    }
-    try {
-      await this.gateway().attest(claimed.principal, ['jobs.create', 'schedules.create']);
-    } catch (error) {
-      await this.deny(claimed, `DENIED: ${error instanceof Error ? error.message : String(error)}`);
-      return false;
-    }
+    if (!claimed) return false;
 
     const handler = this.handlers.get(claimed.type);
     if (!handler) {
@@ -280,6 +187,20 @@ export class JobService {
         status: 'failed',
         lastError: `Handler not registered for type: ${claimed.type}`,
       });
+      return false;
+    }
+
+    const isSystemJob = claimed.type.startsWith(SYSTEM_JOB_TYPE_PREFIX);
+    if (!this.options.authority || isSystemJob) return this.executeLegacyHandler(claimed, handler);
+    if (!claimed.principal || claimed.principal.tenantId !== tenantId) {
+      await this.deny(claimed, 'DENIED: anonymous job execution is not permitted; enqueue jobs through an authorized caller');
+      return false;
+    }
+
+    try {
+      await this.gateway().attest(claimed.principal, ['jobs.create', 'schedules.create']);
+    } catch (error) {
+      await this.deny(claimed, `DENIED: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
 
@@ -291,24 +212,7 @@ export class JobService {
         { type: 'job', tenantId, id: claimed.id, attributes: { jobType: claimed.type } },
         { service: 'jobs', requestId: runId },
         (context) => handler(claimed, { principal, context, runId }));
-
-      const completedAt = this.now().toISOString();
-      await this.jobStore.updateJob(tenantId, jobId, claimed.__version, {
-        status: 'completed',
-        completedAt,
-      });
-
-      await this.auditSink.record({
-        id: randomUUID(),
-        type: 'job.completed',
-        jobId: claimed.id,
-        tenantId: claimed.tenantId,
-        principalId: principal.principalId,
-        timestamp: completedAt,
-        result: 'success',
-        details: { runId },
-      });
-
+      await this.completeJob(claimed, principal.principalId, runId);
       return true;
     } catch (error) {
       if (isServiceAuthorityError(error) && (error.code === 'DENIED' || error.code === 'UNAUTHENTICATED')) {
@@ -316,7 +220,6 @@ export class JobService {
         return false;
       }
       if (isServiceAuthorityError(error) && (error.code === 'AUTHORITY_UNAVAILABLE' || error.code === 'AUTHORIZATION_TIMEOUT')) {
-        // Nothing ran. Retry later without consuming an attempt.
         await this.jobStore.updateJob(tenantId, jobId, claimed.__version, {
           status: 'retrying',
           nextAttemptAt: new Date(this.now().getTime() + INITIAL_RETRY_DELAY_MS).toISOString(),
@@ -324,72 +227,9 @@ export class JobService {
         });
         return false;
       }
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const nextAttempt = claimed.attemptCount + 1;
-
-      if (nextAttempt >= claimed.maxAttempts) {
-        const failedAt = this.now().toISOString();
-        await this.jobStore.updateJob(tenantId, jobId, claimed.__version, {
-          status: 'failed',
-          lastError: errorMessage,
-          attemptCount: nextAttempt,
-        });
-
-        await this.auditSink.record({
-          id: randomUUID(),
-          type: 'job.failed',
-          jobId: claimed.id,
-          tenantId: claimed.tenantId,
-          principalId: principal.principalId,
-          timestamp: failedAt,
-          result: 'failure',
-          details: { error: errorMessage, attemptCount: nextAttempt },
-        });
-      } else {
-        const nextAttemptAt = new Date(
-          this.now().getTime() + INITIAL_RETRY_DELAY_MS * Math.pow(2, claimed.attemptCount),
-        ).toISOString();
-
-        await this.jobStore.updateJob(tenantId, jobId, claimed.__version, {
-          status: 'retrying',
-          nextAttemptAt,
-          lastError: errorMessage,
-          attemptCount: nextAttempt,
-        });
-
-        await this.auditSink.record({
-          id: randomUUID(),
-          type: 'job.retrying',
-          jobId: claimed.id,
-          tenantId: claimed.tenantId,
-          principalId: principal.principalId,
-          timestamp: this.now().toISOString(),
-          result: 'failure',
-          details: { error: errorMessage, nextAttemptAt, attemptCount: nextAttempt },
-        });
-      }
-
+      await this.recordExecutionFailure(claimed, principal.principalId, error);
       return false;
     }
-  }
-
-  private async deny(job: Job, reason: string): Promise<void> {
-    await this.jobStore.updateJob(job.tenantId, job.id, job.__version, { status: 'failed', lastError: reason });
-    await this.auditSink.record({
-      id: randomUUID(),
-      type: 'job.denied',
-      jobId: job.id,
-      tenantId: job.tenantId,
-      principalId: job.principal?.principalId ?? 'anonymous',
-      timestamp: this.now().toISOString(),
-      result: 'failure',
-      details: { reason },
-    });
-  }
-
-  private gateway(): ServiceGateway {
-    if (!this.options.authority) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'Jobs have no AuthBoundry authority configured');
-    return this.options.authority;
   }
 
   async processRecurringSchedules(tenantId: string): Promise<number> {
@@ -418,13 +258,7 @@ export class JobService {
       created++;
 
       const nextRunAt = this.nextRunTime(now, schedule.interval);
-      const updated = await this.scheduleStore.updateSchedule(
-        tenantId,
-        schedule.id,
-        schedule.__version,
-        { nextRunAt },
-      );
-
+      const updated = await this.scheduleStore.updateSchedule(tenantId, schedule.id, schedule.__version, { nextRunAt });
       if (updated) {
         await this.auditSink.record({
           id: randomUUID(),
@@ -442,31 +276,233 @@ export class JobService {
     return created;
   }
 
+  private async createJobRecord(
+    input: CreateJobInput & { tenantId?: string },
+    principalId: string,
+    applicationId?: string,
+    principal?: VerifiedPrincipal,
+    authorizedBy?: string,
+  ): Promise<Job> {
+    const id = randomUUID();
+    const now = this.now().toISOString();
+    const runAt = input.runAt ?? now;
+    const status = runAt <= now ? 'pending' : 'scheduled';
+    const job: Job = {
+      id,
+      tenantId: input.tenantId!,
+      ...(applicationId ? { applicationId } : {}),
+      type: input.type,
+      payload: input.payload,
+      status,
+      runAt,
+      attemptCount: 0,
+      maxAttempts: input.maxAttempts ?? this.maxRetryAttempts,
+      createdAt: now,
+      ...(principal && authorizedBy ? { principal: toDurablePrincipal(principal, input.delegationId ?? principal.delegationId, authorizedBy) } : {}),
+      __version: 1,
+    };
+    await this.jobStore.create(job);
+    await this.auditSink.record({
+      id: randomUUID(),
+      type: 'job.created',
+      jobId: job.id,
+      tenantId: job.tenantId,
+      principalId,
+      timestamp: now,
+      result: 'success',
+      details: { jobType: job.type },
+    });
+    return job;
+  }
+
+  private async createScheduleRecord(
+    input: ScheduleRecurringInput & { tenantId?: string },
+    principalId: string,
+    applicationId?: string,
+    principal?: VerifiedPrincipal,
+    authorizedBy?: string,
+  ): Promise<JobSchedule> {
+    const id = randomUUID();
+    const now = this.now().toISOString();
+    const nextRunAt = this.nextRunTime(now, input.interval);
+    const schedule: JobSchedule = {
+      id,
+      tenantId: input.tenantId!,
+      ...(applicationId ? { applicationId } : {}),
+      type: input.type,
+      payload: input.payload,
+      interval: input.interval,
+      nextRunAt,
+      enabled: true,
+      createdAt: now,
+      createdBy: principalId,
+      ...(principal && authorizedBy ? { principal: toDurablePrincipal(principal, input.delegationId ?? principal.delegationId, authorizedBy) } : {}),
+      __version: 1,
+    };
+    await this.scheduleStore.create(schedule);
+    await this.auditSink.record({
+      id: randomUUID(),
+      type: 'job.schedule.created',
+      scheduleId: schedule.id,
+      tenantId: schedule.tenantId,
+      principalId,
+      timestamp: now,
+      result: 'success',
+      details: { jobType: schedule.type, interval: schedule.interval },
+    });
+    return schedule;
+  }
+
+  private async disableScheduleLegacy(tenantId: string, scheduleId: string): Promise<JobSchedule | null> {
+    const schedule = await this.scheduleStore.get(tenantId, scheduleId);
+    if (!schedule) return null;
+    const updated = await this.scheduleStore.disable(tenantId, scheduleId, schedule.__version);
+    if (updated) await this.recordScheduleAudit('job.schedule.disabled', updated, 'system');
+    return updated;
+  }
+
+  private async resetJob(job: Job, principalId: string): Promise<Job | null> {
+    const now = this.now().toISOString();
+    const updated = await this.jobStore.updateJob(job.tenantId, job.id, job.__version, {
+      status: 'pending',
+      attemptCount: 0,
+      nextAttemptAt: undefined,
+      lastError: undefined,
+    });
+    if (updated) {
+      await this.auditSink.record({
+        id: randomUUID(),
+        type: 'job.retried',
+        jobId: updated.id,
+        tenantId: updated.tenantId,
+        principalId,
+        timestamp: now,
+        result: 'success',
+      });
+    }
+    return updated;
+  }
+
+  private async executeLegacyHandler(job: Job, handler: JobHandler): Promise<boolean> {
+    try {
+      await handler(job, undefined as never);
+      await this.completeJob(job, job.principal?.principalId ?? 'system');
+      return true;
+    } catch (error) {
+      await this.recordExecutionFailure(job, job.principal?.principalId ?? 'system', error);
+      return false;
+    }
+  }
+
+  private async completeJob(job: Job, principalId: string, runId?: string): Promise<void> {
+    const completedAt = this.now().toISOString();
+    await this.jobStore.updateJob(job.tenantId, job.id, job.__version, { status: 'completed', completedAt });
+    await this.auditSink.record({
+      id: randomUUID(),
+      type: 'job.completed',
+      jobId: job.id,
+      tenantId: job.tenantId,
+      principalId,
+      timestamp: completedAt,
+      result: 'success',
+      ...(runId ? { details: { runId } } : {}),
+    });
+  }
+
+  private async recordExecutionFailure(job: Job, principalId: string, error: unknown): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const nextAttempt = job.attemptCount + 1;
+    if (nextAttempt >= job.maxAttempts) {
+      const failedAt = this.now().toISOString();
+      await this.jobStore.updateJob(job.tenantId, job.id, job.__version, {
+        status: 'failed',
+        lastError: errorMessage,
+        attemptCount: nextAttempt,
+      });
+      await this.auditSink.record({
+        id: randomUUID(),
+        type: 'job.failed',
+        jobId: job.id,
+        tenantId: job.tenantId,
+        principalId,
+        timestamp: failedAt,
+        result: 'failure',
+        details: { error: errorMessage, attemptCount: nextAttempt },
+      });
+      return;
+    }
+    const nextAttemptAt = new Date(this.now().getTime() + INITIAL_RETRY_DELAY_MS * Math.pow(2, job.attemptCount)).toISOString();
+    await this.jobStore.updateJob(job.tenantId, job.id, job.__version, {
+      status: 'retrying',
+      nextAttemptAt,
+      lastError: errorMessage,
+      attemptCount: nextAttempt,
+    });
+    await this.auditSink.record({
+      id: randomUUID(),
+      type: 'job.retrying',
+      jobId: job.id,
+      tenantId: job.tenantId,
+      principalId,
+      timestamp: this.now().toISOString(),
+      result: 'failure',
+      details: { error: errorMessage, nextAttemptAt, attemptCount: nextAttempt },
+    });
+  }
+
+  private async deny(job: Job, reason: string): Promise<void> {
+    await this.jobStore.updateJob(job.tenantId, job.id, job.__version, { status: 'failed', lastError: reason });
+    await this.auditSink.record({
+      id: randomUUID(),
+      type: 'job.denied',
+      jobId: job.id,
+      tenantId: job.tenantId,
+      principalId: job.principal?.principalId ?? 'anonymous',
+      timestamp: this.now().toISOString(),
+      result: 'failure',
+      details: { reason },
+    });
+  }
+
+  private async recordScheduleAudit(type: string, schedule: JobSchedule, principalId: string): Promise<void> {
+    await this.auditSink.record({
+      id: randomUUID(),
+      type,
+      scheduleId: schedule.id,
+      tenantId: schedule.tenantId,
+      principalId,
+      timestamp: this.now().toISOString(),
+      result: 'success',
+    });
+  }
+
+  private assertAllowedType(type: string, authorityMode: boolean): void {
+    if (!this.allowedTypes || this.allowedTypes.has(type)) return;
+    if (authorityMode) throw new ServiceAuthorityError('INVALID_REQUEST', `Job type "${type}" is not declared in appport.toml`);
+    throw new Error(`Job type "${type}" is not declared in appport.toml`);
+  }
+
+  private gateway(): ServiceGateway {
+    if (!this.options.authority) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'Jobs have no AuthBoundry authority configured');
+    return this.options.authority;
+  }
+
   private nextRunTime(now: string, interval: string): string {
     const match = interval.match(/^(\d+)([smhd])$/);
-    if (!match) {
-      throw new InvalidIntervalError(interval);
-    }
-
+    if (!match) throw new InvalidIntervalError(interval);
     const value = parseInt(match[1], 10);
     const unit = match[2];
-
     let delayMs = 0;
     switch (unit) {
-      case 's':
-        delayMs = value * 1000;
-        break;
-      case 'm':
-        delayMs = value * 60 * 1000;
-        break;
-      case 'h':
-        delayMs = value * 60 * 60 * 1000;
-        break;
-      case 'd':
-        delayMs = value * 24 * 60 * 60 * 1000;
-        break;
+      case 's': delayMs = value * 1000; break;
+      case 'm': delayMs = value * 60 * 1000; break;
+      case 'h': delayMs = value * 60 * 60 * 1000; break;
+      case 'd': delayMs = value * 24 * 60 * 60 * 1000; break;
     }
-
     return new Date(new Date(now).getTime() + delayMs).toISOString();
   }
+}
+
+function assertApplicationJobType(type: string): void {
+  if (type.startsWith(SYSTEM_JOB_TYPE_PREFIX)) throw new Error(`Job type "${type}" is reserved for AppPort Services`);
 }
