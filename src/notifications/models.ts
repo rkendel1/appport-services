@@ -8,6 +8,8 @@ export interface NotificationSource {
 export interface Notification {
   readonly id: string;
   readonly tenantId: string;
+  /** Owning application. Records without one (created before application scoping) are not served. */
+  readonly applicationId?: string;
   readonly recipient: string;
   readonly type: string;
   readonly title: string;
@@ -53,7 +55,8 @@ export interface NotificationAuditEvent {
 }
 
 export interface CreateNotificationInput {
-  readonly tenantId: string;
+  /** Optional; must equal the caller's tenant. */
+  readonly tenantId?: string;
   readonly recipient: string;
   readonly type: string;
   readonly title: string;

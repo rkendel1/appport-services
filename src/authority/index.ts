@@ -1,0 +1,17 @@
+export { ServiceAuthorityError, ServiceMigrationError, isServiceAuthorityError } from './errors.js';
+export type { ServiceFailureCode } from './errors.js';
+export { SERVICE_CAPABILITY_MANIFEST, LEGACY_SCOPE_MIGRATION, getServiceCapability, serviceCapabilityManifestDigest } from './manifest.js';
+export type { ServiceCapability, ServiceCapabilityName, ServiceEffect } from './manifest.js';
+export { isVerifiedPrincipal, requireVerifiedPrincipal } from './principal.js';
+export type { VerifiedPrincipal, PrincipalClaims, PrincipalVerification } from './principal.js';
+export type { ServiceAuthorizer, ServiceAuthorizationRequest, ServiceAuthorizationDecision, AuthorizationSubject, AuthorizationResource } from './authorizer.js';
+export { isExecutionContext, assertExecutionContext } from './context.js';
+export type { ServiceExecutionContext, ServiceResource, AuthorizationEvidence } from './context.js';
+export { isCredentialRef, formatCredentialRef } from './credentials.js';
+export type { CredentialRef } from './credentials.js';
+export { FeltDbEffectEvidenceStore, assertEvidenceHasNoSecrets } from './evidence.js';
+export type { EffectEvidence, EffectEvidenceStore, EffectOutcome } from './evidence.js';
+export { ServiceGateway } from './gateway.js';
+export type { ServiceGatewayOptions, ExecuteOptions, EffectTools } from './gateway.js';
+export { validateDestination, isForbiddenAddress } from './destination.js';
+export type { WebhookDestinationPolicy, ValidatedDestination, ResolvedAddress } from './destination.js';

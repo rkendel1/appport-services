@@ -10,8 +10,15 @@ import {
   FeltDbWebhookDeliveryStore,
   FeltDbWebhookAuditSink,
   WebhookService,
-  InMemoryWebhookSecretStore,
 } from '../src/_internal.js';
+import { principal as verified, testGateway, TestCredentials, LOCAL_DESTINATIONS } from './support/authority.js';
+
+const caller = (tenantId: string) => verified({ principalId: 'user-1', principalType: 'api_key', tenantId, credentialId: 'key' });
+const credentials = new TestCredentials();
+const SIGNING_REF = credentials.put('signing-a', 'tenant-a', 'whsec_test_signing_secret');
+credentials.put('signing-a-b', 'tenant-b', 'whsec_test_signing_secret_b');
+/** Resolve every hostname to a public documentation-safe address so tests need no DNS. */
+const PUBLIC_DESTINATIONS = { lookup: async () => [{ address: '93.184.216.34', family: 4 as const }] };
 
 async function createLocalWebhookService() {
   const path = await mkdtemp(join(tmpdir(), 'appport-webhooks-test-'));
@@ -25,28 +32,29 @@ async function createLocalWebhookService() {
     endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
     deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
     auditSink: new FeltDbWebhookAuditSink(runtime.db),
-    secretStore: new InMemoryWebhookSecretStore(),
+    authority: testGateway(runtime.db, { credentials }),
+    destinationPolicy: PUBLIC_DESTINATIONS,
   });
 
   return { service, runtime };
 }
 
-test('creates webhook endpoint with signing secret', async () => {
+test('creates webhook endpoint bound to a signing credential reference', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint, secret } = await service.createWebhookEndpoint({
+  const endpoint = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook',
     events: ['invoice.created', 'invoice.paid'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   assert.ok(endpoint.id);
   assert.equal(endpoint.tenantId, 'tenant-a');
   assert.equal(endpoint.url, 'https://example.com/webhook');
   assert.deepEqual(endpoint.events, ['invoice.created', 'invoice.paid']);
-  assert.ok(secret);
-  assert.ok(secret.length > 20);
+  assert.equal(endpoint.signingCredentialRef, SIGNING_REF);
+  assert.equal(JSON.stringify(endpoint).includes('whsec_test_signing_secret'), false);
 
   const fetched = await service.getWebhookEndpoint('tenant-a', endpoint.id);
   assert.ok(fetched);
@@ -62,22 +70,22 @@ test('list webhook endpoints by tenant', async () => {
     tenantId: 'tenant-a',
     url: 'https://example.com/a',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/b',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   await service.createWebhookEndpoint({
     tenantId: 'tenant-b',
     url: 'https://example.com/c',
     events: ['test'],
-    createdBy: 'user-2',
-  });
+    signingCredentialRef: 'credential-ref:signing-a-b',
+  }, caller('tenant-b'));
 
   const tenantAEndpoints = await service.listWebhookEndpoints('tenant-a');
   const tenantBEndpoints = await service.listWebhookEndpoints('tenant-b');
@@ -91,12 +99,12 @@ test('list webhook endpoints by tenant', async () => {
 test('tenant isolation prevents cross-tenant access', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint } = await service.createWebhookEndpoint({
+  const endpoint = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   const fetched = await service.getWebhookEndpoint('tenant-b', endpoint.id);
   assert.equal(fetched, null);
@@ -107,24 +115,23 @@ test('tenant isolation prevents cross-tenant access', async () => {
 test('disable webhook endpoint prevents new deliveries', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint } = await service.createWebhookEndpoint({
+  const endpoint = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook',
     events: ['invoice.created'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   await service.disableWebhookEndpoint({
     tenantId: 'tenant-a',
     id: endpoint.id,
-    disabledBy: 'user-2',
-  });
+  }, caller('tenant-a'));
 
   const deliveries = await service.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'invoice.created',
     payload: { id: '123' },
-  });
+  }, caller('tenant-a'));
 
   assert.equal(deliveries.length, 0);
 
@@ -134,32 +141,32 @@ test('disable webhook endpoint prevents new deliveries', async () => {
 test('emit event creates deliveries for matching endpoints', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint: ep1 } = await service.createWebhookEndpoint({
+  const ep1 = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook1',
     events: ['invoice.created'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
-  const { endpoint: ep2 } = await service.createWebhookEndpoint({
+  const ep2 = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook2',
     events: ['invoice.created', 'invoice.paid'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
-  const { endpoint: ep3 } = await service.createWebhookEndpoint({
+  const ep3 = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook3',
     events: ['invoice.paid'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   const deliveries = await service.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'invoice.created',
     payload: { id: '123' },
-  });
+  }, caller('tenant-a'));
 
   assert.equal(deliveries.length, 2);
   assert.ok(deliveries.some((d) => d.endpointId === ep1.id));
@@ -176,14 +183,14 @@ test('no deliveries created for non-matching events', async () => {
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook',
     events: ['invoice.created'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   const deliveries = await service.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'user.created',
     payload: { id: 'user-123' },
-  });
+  }, caller('tenant-a'));
 
   assert.equal(deliveries.length, 0);
 
@@ -193,31 +200,31 @@ test('no deliveries created for non-matching events', async () => {
 test('event emission is tenant-scoped', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint: ep1 } = await service.createWebhookEndpoint({
+  const ep1 = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook1',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
-  const { endpoint: ep2 } = await service.createWebhookEndpoint({
+  const ep2 = await service.createWebhookEndpoint({
     tenantId: 'tenant-b',
     url: 'https://example.com/webhook2',
     events: ['test'],
-    createdBy: 'user-2',
-  });
+    signingCredentialRef: 'credential-ref:signing-a-b',
+  }, caller('tenant-b'));
 
   const deliveriesA = await service.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'test',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   const deliveriesB = await service.emitWebhookEvent({
     tenantId: 'tenant-b',
     type: 'test',
     payload: {},
-  });
+  }, caller('tenant-b'));
 
   assert.equal(deliveriesA.length, 1);
   assert.equal(deliveriesB.length, 1);
@@ -230,18 +237,18 @@ test('event emission is tenant-scoped', async () => {
 test('delivery status transitions through state machine', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint } = await service.createWebhookEndpoint({
+  const endpoint = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   const deliveries = await service.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'test',
     payload: { id: '123' },
-  });
+  }, caller('tenant-a'));
 
   const delivery = deliveries[0];
   assert.equal(delivery.status, 'pending');
@@ -253,26 +260,22 @@ test('delivery status transitions through state machine', async () => {
 test('replay resets delivery state for failed deliveries', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint } = await service.createWebhookEndpoint({
+  const endpoint = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   const deliveries = await service.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'test',
     payload: { id: '123' },
-  });
+  }, caller('tenant-a'));
 
   const delivery = deliveries[0];
 
-  const replayed = await service.replayWebhookDelivery(
-    'tenant-a',
-    delivery.id,
-    'user-replay',
-  );
+  const replayed = await service.replayWebhookDelivery('tenant-a', delivery.id, caller('tenant-a'));
 
   assert.ok(replayed);
   assert.equal(replayed.status, 'pending');
@@ -286,32 +289,27 @@ test('replay resets delivery state for failed deliveries', async () => {
 test('replay respects disabled endpoint', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint } = await service.createWebhookEndpoint({
+  const endpoint = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   const deliveries = await service.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'test',
     payload: { id: '123' },
-  });
+  }, caller('tenant-a'));
 
   const delivery = deliveries[0];
 
   await service.disableWebhookEndpoint({
     tenantId: 'tenant-a',
     id: endpoint.id,
-    disabledBy: 'user-2',
-  });
+  }, caller('tenant-a'));
 
-  const replayed = await service.replayWebhookDelivery(
-    'tenant-a',
-    delivery.id,
-    'user-replay',
-  );
+  const replayed = await service.replayWebhookDelivery('tenant-a', delivery.id, caller('tenant-a'));
 
   assert.equal(replayed, null);
 
@@ -321,25 +319,25 @@ test('replay respects disabled endpoint', async () => {
 test('list deliveries filtered by endpoint', async () => {
   const { service, runtime } = await createLocalWebhookService();
 
-  const { endpoint: ep1 } = await service.createWebhookEndpoint({
+  const ep1 = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook1',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
-  const { endpoint: ep2 } = await service.createWebhookEndpoint({
+  const ep2 = await service.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook2',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   await service.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'test',
     payload: { id: '123' },
-  });
+  }, caller('tenant-a'));
 
   const allDeliveries = await service.listWebhookDeliveries('tenant-a');
   const ep1Deliveries = await service.listWebhookDeliveries('tenant-a', ep1.id);
@@ -356,38 +354,35 @@ test('restart preserves endpoints and deliveries', async () => {
   const path = await mkdtemp(join(tmpdir(), 'appport-webhooks-restart-'));
   const namespace = 'restart-' + Math.random().toString(16).slice(2);
 
+  const firstRuntime = createFeltDbRuntime({ mode: 'local', namespace, path });
   const first = new WebhookService({
-    endpointStore: new FeltDbWebhookEndpointStore(
-      createFeltDbRuntime({ mode: 'local', namespace, path }).db,
-    ),
-    deliveryStore: new FeltDbWebhookDeliveryStore(
-      createFeltDbRuntime({ mode: 'local', namespace, path }).db,
-    ),
-    auditSink: new FeltDbWebhookAuditSink(
-      createFeltDbRuntime({ mode: 'local', namespace, path }).db,
-    ),
-    secretStore: new InMemoryWebhookSecretStore(),
+    endpointStore: new FeltDbWebhookEndpointStore(firstRuntime.db),
+    deliveryStore: new FeltDbWebhookDeliveryStore(firstRuntime.db),
+    auditSink: new FeltDbWebhookAuditSink(firstRuntime.db),
+    authority: testGateway(firstRuntime.db, { credentials }),
+    destinationPolicy: PUBLIC_DESTINATIONS,
   });
 
-  const { endpoint } = await first.createWebhookEndpoint({
+  const endpoint = await first.createWebhookEndpoint({
     tenantId: 'tenant-a',
     url: 'https://example.com/webhook',
     events: ['test'],
-    createdBy: 'user-1',
-  });
+    signingCredentialRef: SIGNING_REF,
+  }, caller('tenant-a'));
 
   const deliveries = await first.emitWebhookEvent({
     tenantId: 'tenant-a',
     type: 'test',
     payload: { id: '123' },
-  });
+  }, caller('tenant-a'));
 
+  await firstRuntime.db.close();
   const runtime = createFeltDbRuntime({ mode: 'local', namespace, path });
   const second = new WebhookService({
     endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
     deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
     auditSink: new FeltDbWebhookAuditSink(runtime.db),
-    secretStore: new InMemoryWebhookSecretStore(),
+    authority: testGateway(runtime.db, { credentials }),
   });
 
   const fetched = await second.getWebhookEndpoint('tenant-a', endpoint.id);

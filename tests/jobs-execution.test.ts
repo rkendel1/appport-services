@@ -12,6 +12,9 @@ import {
   JobService,
   JobWorker,
 } from '../src/_internal.js';
+import { principal as verified, testGateway } from './support/authority.js';
+
+const caller = (tenantId: string) => verified({ principalId: 'user-1', principalType: 'api_key', tenantId, credentialId: 'key' });
 
 async function createLocalJobService(now?: () => Date, pollIntervalMs?: number) {
   const path = await mkdtemp(join(tmpdir(), 'appport-jobs-execution-test-'));
@@ -25,6 +28,7 @@ async function createLocalJobService(now?: () => Date, pollIntervalMs?: number) 
     jobStore: new FeltDbJobStore(runtime.db),
     scheduleStore: new FeltDbJobScheduleStore(runtime.db),
     auditSink: new FeltDbJobAuditSink(runtime.db),
+    authority: testGateway(runtime.db),
     now,
   });
 
@@ -44,7 +48,7 @@ test('two workers cannot claim the same job', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   // First worker claims it
   const result1 = await service.executeJob('tenant-a', job.id, 'worker-1');
@@ -73,7 +77,7 @@ test('concurrent claim attempts only one succeeds', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   // Three concurrent execution attempts
   const results = await Promise.all([
@@ -104,6 +108,7 @@ test('lease expiration permits recovery', async () => {
     jobStore: new FeltDbJobStore(runtime.db),
     scheduleStore: new FeltDbJobScheduleStore(runtime.db),
     auditSink: new FeltDbJobAuditSink(runtime.db),
+    authority: testGateway(runtime.db),
     now: getNow,
     leaseDurationMs: 5000, // 5 second lease
   });
@@ -118,7 +123,7 @@ test('lease expiration permits recovery', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   // Worker A claims job
   const claimed = await jobStore.get('tenant-a', job.id);
@@ -150,6 +155,7 @@ test('stale worker cannot overwrite newer worker', async () => {
     jobStore: new FeltDbJobStore(runtime.db),
     scheduleStore: new FeltDbJobScheduleStore(runtime.db),
     auditSink: new FeltDbJobAuditSink(runtime.db),
+    authority: testGateway(runtime.db),
     now: getNow,
     leaseDurationMs: 5000,
   });
@@ -164,7 +170,7 @@ test('stale worker cannot overwrite newer worker', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: {},
-  });
+  }, caller('tenant-a'));
 
   // Worker A claims and starts (version 2)
   const jobV2 = await jobStore.get('tenant-a', job.id);
@@ -212,7 +218,7 @@ test('exponential backoff increases retry delay', async () => {
     type: 'test.job',
     payload: {},
     maxAttempts: 4,
-  });
+  }, caller('tenant-a'));
 
   await service.executeJob('tenant-a', job.id, 'worker-1');
   let fetched = await service.getJob('tenant-a', job.id);
@@ -243,13 +249,14 @@ test('job durability: job survives process restart', async () => {
       jobStore: new FeltDbJobStore(runtime.db),
       scheduleStore: new FeltDbJobScheduleStore(runtime.db),
       auditSink: new FeltDbJobAuditSink(runtime.db),
+      authority: testGateway(runtime.db),
     });
 
     const job = await service.enqueue({
       tenantId: 'tenant-a',
       type: 'test.job',
       payload: { data: 'persisted' },
-    });
+    }, caller('tenant-a'));
 
     assert.ok(job.id);
     await runtime.db.close();
@@ -262,6 +269,7 @@ test('job durability: job survives process restart', async () => {
       jobStore: new FeltDbJobStore(runtime.db),
       scheduleStore: new FeltDbJobScheduleStore(runtime.db),
       auditSink: new FeltDbJobAuditSink(runtime.db),
+      authority: testGateway(runtime.db),
     });
 
     const jobs = await service.listJobs('tenant-a');
@@ -287,7 +295,7 @@ test('handler errors with original payload available for debugging', async () =>
     type: 'test.job',
     payload: debugData,
     maxAttempts: 2,
-  });
+  }, caller('tenant-a'));
 
   await service.executeJob('tenant-a', job.id, 'worker-1');
 
@@ -309,13 +317,13 @@ test('concurrent tenants remain isolated', async () => {
     tenantId: 'tenant-a',
     type: 'test.job',
     payload: { tenant: 'a' },
-  });
+  }, caller('tenant-a'));
 
   const jobB = await service.enqueue({
     tenantId: 'tenant-b',
     type: 'test.job',
     payload: { tenant: 'b' },
-  });
+  }, caller('tenant-b'));
 
   // Concurrent execution
   await Promise.all([

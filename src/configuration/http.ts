@@ -1,15 +1,19 @@
 import { Router, type Request } from 'express';
 import type { ConfigurationEnvironment } from './models.js';
 import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from './service.js';
+import { isServiceAuthorityError } from '../authority/errors.js';
 import { createConfigurationUiRouter } from './ui.js';
 
 const environments = ['development', 'staging', 'production'] as const;
+// Tenant comes from the verified principal. The application is this deployment's;
+// a different ?application= is passed through so the service can deny it.
 const scope = (req: Request) => ({
   tenantId: req.auth!.tenantId,
-  applicationId: typeof req.query.application === 'string' ? req.query.application : 'default',
+  ...(typeof req.query.application === 'string' ? { applicationId: req.query.application } : {}),
   environment: (typeof req.query.environment === 'string' ? req.query.environment : 'production') as ConfigurationEnvironment,
 });
 const bodyInput = (req: Request) => ({ ...scope(req), name: req.body?.name, value: req.body?.value, required: req.body?.required });
+const credentialInput = (req: Request) => ({ ...scope(req), name: req.body?.name, credentialRef: req.body?.credentialRef, required: req.body?.required, ...(req.body?.value === undefined ? {} : { value: req.body.value }) });
 
 export function createConfigurationRouter(service: ConfigurationService): Router {
   const router = Router();
@@ -20,8 +24,8 @@ export function createConfigurationRouter(service: ConfigurationService): Router
   router.get('/', async (req, res, next) => { try { res.json(await service.list(scope(req), req.auth!)); } catch (error) { next(error); } });
   router.post('/variables', async (req, res, next) => { try { res.status(201).json(await service.createVariable(bodyInput(req), req.auth!)); } catch (error) { next(error); } });
   router.patch('/variables/:name', async (req, res, next) => { try { res.json(await service.updateVariable({ ...bodyInput(req), name: req.params.name }, req.auth!)); } catch (error) { next(error); } });
-  router.post('/secrets', async (req, res, next) => { try { res.status(201).json(await service.createSecret(bodyInput(req), req.auth!)); } catch (error) { next(error); } });
-  router.put('/secrets/:name', async (req, res, next) => { try { res.json(await service.rotateSecret({ ...bodyInput(req), name: req.params.name }, req.auth!)); } catch (error) { next(error); } });
+  router.post('/secrets', async (req, res, next) => { try { res.status(201).json(await service.createSecret(credentialInput(req), req.auth!)); } catch (error) { next(error); } });
+  router.put('/secrets/:name', async (req, res, next) => { try { res.json(await service.rotateSecret({ ...credentialInput(req), name: req.params.name }, req.auth!)); } catch (error) { next(error); } });
   router.delete('/:kind/:name', async (req, res, next) => {
     try {
       if (req.params.kind !== 'variables' && req.params.kind !== 'secrets') throw new ConfigurationValidationError('Invalid configuration kind');
@@ -40,6 +44,7 @@ export function createConfigurationManagementRouter(service: ConfigurationServic
 }
 
 export function configurationErrorHandler(error: unknown, _req: Request, res: { status(code: number): { json(body: unknown): void } }): void {
+  if (isServiceAuthorityError(error)) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
   if (error instanceof ConfigurationAuthorizationError) { res.status(403).json({ error: error.message }); return; }
   if (error instanceof ConfigurationValidationError) { res.status(400).json({ error: error.message }); return; }
   res.status(500).json({ error: 'Configuration operation failed' });

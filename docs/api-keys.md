@@ -1,5 +1,10 @@
 # API Keys
 
+An API key **identifies** a caller and its application. It does not decide what
+the caller may do: AuthBoundry authorizes every capability (see
+[AUTHORITY.md](./AUTHORITY.md)). Keys carry no scopes; `scopes` on creation and
+`api.keys.scopes` in `appport.toml` are rejected with a migration error.
+
 ## Secret model
 
 API keys use a recognizable public prefix and a high-entropy secret:
@@ -14,10 +19,9 @@ The prefix is stored separately so authentication can locate the candidate crede
 
 Supported operations:
 
-- create
-- list
-- get
-- revoke
+- create (`apikeys.create`, requires a verified caller)
+- list / get (observation; `apikeys.read` through `invoke`)
+- revoke (`apikeys.revoke`, requires a verified caller)
 - authenticate
 
 Creation returns:
@@ -37,9 +41,10 @@ The secret is not returned again.
 4. verify the secret hash with constant-time comparison
 5. reject revoked keys
 6. reject expired keys
-7. derive tenant ownership from the credential
-8. update `lastUsedAt` with FeltDB version-checked state
-9. return an `AuthenticatedPrincipal`
+7. reject keys bound to a different application (and legacy keys bound to none)
+8. derive tenant and application ownership from the credential
+9. update `lastUsedAt` with FeltDB version-checked state
+10. return a verified `AuthenticatedPrincipal` (identity only, no scopes)
 
 ## Durable audit model
 

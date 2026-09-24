@@ -7,10 +7,13 @@ import test from 'node:test';
 import express from 'express';
 import type { Request, Response } from 'express';
 import { createApiKeyService, apiKeyAuth, requireApiKeyAuth, assertTenant } from '../src/_internal.js';
+import { principal as operator, TestAuthority } from './support/authority.js';
+
+const allowAll = new TestAuthority({ allowAll: true });
 
 async function createLocalService() {
   const path = await mkdtemp(join(tmpdir(), 'appport-express-'));
-  const service = createApiKeyService({ mode: 'local', namespace: 'express-' + Math.random().toString(16).slice(2), path });
+  const service = createApiKeyService({ mode: 'local', namespace: 'express-' + Math.random().toString(16).slice(2), path, authorizer: allowAll });
   return { service, path };
 }
 
@@ -77,9 +80,7 @@ test('Express middleware: optional auth allows unauthenticated requests', async 
   const created = await service.createApiKey({
     tenantId: 'tenant-123',
     name: 'test',
-    scopes: ['read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-123' }));
 
   const request: express.Request = {
     headers: { authorization: `Bearer ${created.secret}` },
@@ -127,9 +128,7 @@ test('Express middleware: request.auth populated with valid credential', async (
   const created = await service.createApiKey({
     tenantId: 'tenant-456',
     name: 'test',
-    scopes: ['invoices.read', 'invoices.write'],
-    createdBy: 'user-2',
-  });
+  }, operator({ principalId: 'user-2', tenantId: 'tenant-456' }));
 
   const request: express.Request = {
     headers: { authorization: `Bearer ${created.secret}` },
@@ -142,7 +141,7 @@ test('Express middleware: request.auth populated with valid credential', async (
       assert.ok(request.auth);
       assert.equal(request.auth.principalId, created.id);
       assert.equal(request.auth.tenantId, 'tenant-456');
-      assert.deepEqual(request.auth.scopes, ['invoices.read', 'invoices.write']);
+      assert.equal('scopes' in request.auth, false);
       resolve();
     });
   });
@@ -156,16 +155,12 @@ test('Express middleware: request context is isolated per request', async () => 
   const key1 = await service.createApiKey({
     tenantId: 'tenant-a',
     name: 'key1',
-    scopes: ['read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-a' }));
 
   const key2 = await service.createApiKey({
     tenantId: 'tenant-b',
     name: 'key2',
-    scopes: ['write'],
-    createdBy: 'user-2',
-  });
+  }, operator({ principalId: 'user-2', tenantId: 'tenant-b' }));
 
   const middleware = apiKeyAuth(service);
 
@@ -218,9 +213,7 @@ test('Express: assertTenant integration with principal', async () => {
   const created = await service.createApiKey({
     tenantId: 'tenant-xyz',
     name: 'test',
-    scopes: ['read'],
-    createdBy: 'user-1',
-  });
+  }, operator({ principalId: 'user-1', tenantId: 'tenant-xyz' }));
 
   const request: express.Request = {
     headers: { authorization: `Bearer ${created.secret}` },

@@ -1,7 +1,11 @@
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import type { JobService } from '../jobs/service.js';
+import { ServiceAuthorityError } from '../authority/errors.js';
+import type { ServiceGateway } from '../authority/gateway.js';
+import { requireVerifiedPrincipal, resolveTenant } from '../authority/principal.js';
 import type { CreateScheduleInput, Schedule } from './models.js';
 
+/** @deprecated Denials are reported as ServiceAuthorityError with code DENIED. */
 export class ScheduleAuthorizationError extends Error {
   constructor() { super('Schedule operation is not authorized'); this.name = 'ScheduleAuthorizationError'; }
 }
@@ -11,50 +15,47 @@ export class ScheduleValidationError extends Error {
 
 export interface ScheduleServiceOptions {
   readonly jobs: Pick<JobService, 'scheduleRecurring' | 'getSchedule' | 'listSchedules' | 'disableSchedule'>;
+  /** Policy Enforcement Point for schedule reads. Creation and cancellation are enforced by the job service. */
+  readonly authority?: ServiceGateway;
 }
 
 export class ScheduleService {
   constructor(private readonly options: ScheduleServiceOptions) {}
 
-  async create(input: CreateScheduleInput, principal: AuthenticatedPrincipal): Promise<Schedule> {
-    this.authorizeTenant(principal, input.tenantId, 'schedules.create');
+  async create(input: CreateScheduleInput, caller: AuthenticatedPrincipal): Promise<Schedule> {
     validateInput(input);
-    return this.options.jobs.scheduleRecurring({ ...input, createdBy: principal.principalId });
+    return this.options.jobs.scheduleRecurring(input, caller);
   }
 
-  async get(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Schedule | null> {
-    this.authorizeTenant(principal, tenantId, 'schedules.read');
-    const schedule = await this.options.jobs.getSchedule(tenantId, id);
-    if (!schedule) return null;
-    return this.visibleTo(principal, schedule, 'schedules.read') ? schedule : null;
+  async get(tenantId: string, id: string, caller: AuthenticatedPrincipal): Promise<Schedule | null> {
+    const principal = requireVerifiedPrincipal(caller);
+    const tenant = resolveTenant({ tenantId }, principal);
+    const schedule = await this.options.jobs.getSchedule(tenant, id);
+    if (!schedule || schedule.applicationId !== this.gateway().application) return null;
+    return this.gateway().execute('schedules.read', principal, { type: 'schedule', tenantId: tenant, id, attributes: { createdBy: schedule.createdBy } }, { service: 'schedules' }, async () => schedule);
   }
 
-  async list(tenantId: string, principal: AuthenticatedPrincipal): Promise<readonly Schedule[]> {
-    this.authorizeTenant(principal, tenantId, 'schedules.read');
-    const schedules = await this.options.jobs.listSchedules(tenantId);
-    return schedules.filter((schedule) => this.visibleTo(principal, schedule, 'schedules.read'));
+  /** Without a creator filter the request covers every schedule in the tenant; AuthBoundry decides. */
+  async list(tenantId: string, caller: AuthenticatedPrincipal, options: { readonly createdBy?: string } = {}): Promise<readonly Schedule[]> {
+    const principal = requireVerifiedPrincipal(caller);
+    const tenant = resolveTenant({ tenantId }, principal);
+    return this.gateway().execute('schedules.read', principal, { type: 'schedule', tenantId: tenant, attributes: { createdBy: options.createdBy ?? '*' } }, { service: 'schedules' }, async () => {
+      const schedules = (await this.options.jobs.listSchedules(tenant)).filter((schedule) => schedule.applicationId === this.gateway().application);
+      return options.createdBy ? schedules.filter((schedule) => schedule.createdBy === options.createdBy) : schedules;
+    });
   }
 
-  async disable(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Schedule | null> {
-    this.authorizeTenant(principal, tenantId, 'schedules.write');
-    const schedule = await this.options.jobs.getSchedule(tenantId, id);
-    if (!schedule || !this.visibleTo(principal, schedule, 'schedules.write')) return null;
-    return this.options.jobs.disableSchedule(tenantId, id);
+  async disable(tenantId: string, id: string, caller: AuthenticatedPrincipal): Promise<Schedule | null> {
+    return this.options.jobs.disableSchedule(tenantId, id, caller);
   }
 
-  private authorizeTenant(principal: AuthenticatedPrincipal, tenantId: string, scope: string): void {
-    if (principal.tenantId !== tenantId || (!principal.scopes.includes(scope) && !principal.scopes.includes('schedules.admin'))) {
-      throw new ScheduleAuthorizationError();
-    }
-  }
-
-  private visibleTo(principal: AuthenticatedPrincipal, schedule: Schedule, scope: string): boolean {
-    const anyScope = `${scope}:any`;
-    return schedule.createdBy === principal.principalId || principal.scopes.includes(anyScope) || principal.scopes.includes('schedules.admin');
+  private gateway(): ServiceGateway {
+    if (!this.options.authority) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'Schedules have no AuthBoundry authority configured');
+    return this.options.authority;
   }
 }
 
 function validateInput(input: CreateScheduleInput): void {
-  if (!input.type.trim()) throw new ScheduleValidationError('type is required');
-  if (!/^\d+[smhd]$/.test(input.interval)) throw new ScheduleValidationError('interval must match <number><s|m|h|d>');
+  if (typeof input.type !== 'string' || !input.type.trim()) throw new ScheduleValidationError('type is required');
+  if (typeof input.interval !== 'string' || !/^\d+[smhd]$/.test(input.interval)) throw new ScheduleValidationError('interval must match <number><s|m|h|d>');
 }

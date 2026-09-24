@@ -1,12 +1,13 @@
 import { Router, type Request } from 'express';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import { NotificationAuthorizationError, NotificationNotFoundError, NotificationService, NotificationValidationError } from './service.js';
+import { isServiceAuthorityError } from '../authority/errors.js';
 
 export function createNotificationRouter(service: NotificationService): Router {
   const router = Router();
   router.use((req, _res, next) => req.auth ? next() : next(new NotificationAuthorizationError()));
   router.post('/', async (req, res, next) => {
-    try { res.status(201).json(await service.create({ ...req.body, tenantId: req.auth!.tenantId }, req.auth!)); } catch (error) { next(error); }
+    try { res.status(201).json(await service.create(req.body ?? {}, req.auth!)); } catch (error) { next(error); }
   });
   router.get('/', async (req, res, next) => {
     try {
@@ -28,6 +29,7 @@ export function createNotificationRouter(service: NotificationService): Router {
 function stringQuery(req: Request, name: string): string | undefined { return typeof req.query[name] === 'string' ? req.query[name] : undefined; }
 
 export function notificationErrorHandler(error: unknown, _req: Request, res: { status(code: number): { json(body: unknown): void } }): void {
+  if (isServiceAuthorityError(error)) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
   if (error instanceof NotificationAuthorizationError) { res.status(403).json({ error: error.message }); return; }
   if (error instanceof NotificationNotFoundError) { res.status(404).json({ error: error.message }); return; }
   if (error instanceof NotificationValidationError) { res.status(400).json({ error: error.message }); return; }

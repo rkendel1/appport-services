@@ -8,15 +8,22 @@ import { createInterface } from 'node:readline/promises';
 
 import { formatFlowSpec, parseFlowSpec } from '@feltdb/core';
 
+import { pathToFileURL } from 'node:url';
+
 import type { ApiKeyService } from './api-keys/service.js';
 import { parseAppPortConfig } from './runtime/dsl.js';
+import type { ServiceAuthorizer } from './authority/authorizer.js';
+import { ServiceMigrationError } from './authority/errors.js';
+import { FeltDbEffectEvidenceStore } from './authority/evidence.js';
+import { ServiceGateway } from './authority/gateway.js';
+import type { PrincipalClaims, VerifiedPrincipal } from './authority/principal.js';
+import type { ScopedSecretsResolver } from './secrets/protocol.js';
 import {
   createFeltDbRuntime,
   FeltDbWebhookEndpointStore,
   FeltDbWebhookDeliveryStore,
   FeltDbWebhookAuditSink,
   WebhookService,
-  EncryptedWebhookSecretStore,
   FeltDbJobStore,
   FeltDbJobScheduleStore,
   FeltDbJobAuditSink,
@@ -32,26 +39,43 @@ interface CommandIo {
   readonly stderr: NodeJS.WritableStream;
 }
 
+/**
+ * Operator authority for mutating commands. The CLI is not an authority:
+ * it identifies the operator through the host's identity adapter (or an
+ * AppPort API key in APPPORT_API_KEY) and asks AuthBoundry for every effect.
+ * Loaded from the module named by APPPORT_AUTHORITY.
+ */
+export interface CliAuthority {
+  readonly authorizer: ServiceAuthorizer;
+  readonly identify?: () => PrincipalClaims | null | Promise<PrincipalClaims | null>;
+  readonly credentials?: ScopedSecretsResolver;
+}
+
+const ACTOR_FLAGS = ['created-by', 'revoked-by', 'disabled-by', 'replayed-by', 'actor'] as const;
+
 export async function runCli(
   argv: readonly string[],
   io: CommandIo = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
   service?: ApiKeyService,
   cwd = process.cwd(),
+  authority?: CliAuthority,
 ): Promise<number> {
   let activeService = service;
   try {
     const [group, action, ...rest] = argv;
+    rejectActorFlags(rest);
     if (group === 'init') {
       return handleInitCommand(argv.slice(1), io, cwd);
     } else if (group === 'config' && action === 'migrate') {
       return handleConfigMigrate(io, cwd);
     } else if (group === 'api-key') {
-      activeService ??= createConfiguredApiKeyService(cwd);
-      return handleApiKeyCommand(action, rest, io, activeService);
+      const operator = createOperator(cwd, authority);
+      activeService ??= createConfiguredApiKeyService(cwd, operator);
+      return handleApiKeyCommand(action, rest, io, activeService, operator);
     } else if (group === 'webhook') {
-      return handleWebhookCommand(action, rest, io, cwd);
+      return handleWebhookCommand(action, rest, io, cwd, createOperator(cwd, authority));
     } else if (group === 'job') {
-      return handleJobCommand(action, rest, io, cwd);
+      return handleJobCommand(action, rest, io, cwd, createOperator(cwd, authority));
     } else {
       writeLine(
         io.stderr,
@@ -182,7 +206,7 @@ function canonicalConfig(applicationName: string, selected: readonly string[]): 
     'enabled = true',
     'origins = ["*"]',
   ];
-  if (has('api')) lines.push('', '[api]', 'enabled = true', '', '[api.keys]', 'enabled = true', 'scopes = ["example.read", "example.write"]');
+  if (has('api')) lines.push('', '[api]', 'enabled = true', '', '[api.keys]', 'enabled = true');
   if (has('webhooks')) lines.push('', '[webhooks]', 'enabled = true', '', '[webhooks.delivery]', 'enabled = true', 'retries = 3', 'timeout_ms = 10000', '', '[webhooks.events]', 'allowed = ["example.created"]');
   if (has('jobs')) lines.push('', '[jobs]', 'enabled = true', '', '[jobs.execution]', 'enabled = true', 'max_attempts = 3', '', '[jobs.types]', '"example.process" = { timeout_ms = 30000 }');
   if (has('notifications')) lines.push('', '[notifications]', 'enabled = true', 'default_priority = "normal"', 'default_channel = "in-app"');
@@ -209,9 +233,91 @@ function createConfiguredRuntime(cwd: string): { runtime: ReturnType<typeof crea
   return { runtime: createFeltDbRuntime({ mode: 'local', namespace: config.state.namespace, path: resolve(cwd, '.appport/state') }), config };
 }
 
-function createConfiguredApiKeyService(cwd: string): ApiKeyService {
+function createConfiguredApiKeyService(cwd: string, operator: Operator): ApiKeyService {
   const { runtime, config } = createConfiguredRuntime(cwd);
-  return new ApiKeyServiceImpl({ store: new FeltDbApiKeyStore(runtime.db), auditSink: new FeltDbAuditSink(runtime.db), runtime, allowedScopes: config?.api.keys.scopes });
+  return new ApiKeyServiceImpl({
+    store: new FeltDbApiKeyStore(runtime.db),
+    auditSink: new FeltDbAuditSink(runtime.db),
+    runtime,
+    applicationId: config?.application.name ?? 'default',
+    authority: operator.gateway(runtime.db),
+  });
+}
+
+interface Operator {
+  gateway(db: ReturnType<typeof createFeltDbRuntime>['db']): ServiceGateway;
+  principal(apiKeys?: ApiKeyService): Promise<VerifiedPrincipal>;
+}
+
+/** Resolve the operator's authority lazily; read-only commands never need it. */
+function createOperator(cwd: string, injected?: CliAuthority): Operator {
+  const configPath = resolve(cwd, 'appport.toml');
+  const application = existsSync(configPath) ? parseAppPortConfig(configPath).application.name : 'default';
+  let loaded: Promise<CliAuthority | undefined> | undefined;
+  let gateway: ServiceGateway | undefined;
+  let authorizer: ServiceAuthorizer | undefined;
+  let credentials: ScopedSecretsResolver | undefined;
+  let database: ReturnType<typeof createFeltDbRuntime>['db'] | undefined;
+  const load = () => loaded ??= loadAuthority(cwd, injected);
+  return {
+    gateway(db) {
+      database = db;
+      // The authorizer is resolved on first use by delegating through this adapter.
+      gateway ??= new ServiceGateway({
+        application,
+        evidence: new FeltDbEffectEvidenceStore(db),
+        authorizer: { authorize: async (request, options) => {
+          const authority = await load();
+          authorizer = authority?.authorizer;
+          if (!authorizer) throw new Error('No AuthBoundry authorizer');
+          return authorizer.authorize(request, options);
+        } },
+        credentials: { withSecret: async (input, use) => {
+          credentials = (await load())?.credentials;
+          if (!credentials) throw new Error('No AuthBoundry credential resolver');
+          return credentials.withSecret(input, use);
+        } },
+      });
+      return gateway;
+    },
+    async principal(apiKeys) {
+      const apiKey = process.env.APPPORT_API_KEY;
+      const keys = apiKeys ?? (apiKey && database ? new ApiKeyServiceImpl({ store: new FeltDbApiKeyStore(database), auditSink: new FeltDbAuditSink(database), applicationId: application }) : undefined);
+      if (apiKey && keys) {
+        const principal = await keys.authenticateApiKey(apiKey);
+        if (!principal) throw new Error('APPPORT_API_KEY is not a valid API key for this application');
+        return principal;
+      }
+      const authority = await load();
+      const claims = await authority?.identify?.();
+      const principal = gateway?.identify(claims) ?? null;
+      if (!principal) {
+        throw new Error('Mutating commands require an operator identity: set APPPORT_AUTHORITY to a module exporting { authorizer, identify } (or APPPORT_API_KEY). See docs/AUTHORITY.md.');
+      }
+      return principal;
+    },
+  };
+}
+
+async function loadAuthority(cwd: string, injected?: CliAuthority): Promise<CliAuthority | undefined> {
+  if (injected) return injected;
+  const modulePath = process.env.APPPORT_AUTHORITY;
+  if (!modulePath) return undefined;
+  const loaded = await import(pathToFileURL(resolve(cwd, modulePath)).href) as Partial<CliAuthority> & { default?: Partial<CliAuthority> };
+  const authority = (loaded.authorizer ? loaded : loaded.default) as CliAuthority | undefined;
+  if (!authority?.authorizer) throw new Error(`${modulePath} must export an AuthBoundry authorizer`);
+  return authority;
+}
+
+function rejectActorFlags(tokens: readonly string[]): void {
+  for (const flag of ACTOR_FLAGS) {
+    if (tokens.includes(`--${flag}`)) {
+      throw new ServiceMigrationError(`--${flag} is no longer accepted: an actor string is not an identity. The operator is identified via APPPORT_AUTHORITY or APPPORT_API_KEY.`);
+    }
+  }
+  if (tokens.includes('--scope')) {
+    throw new ServiceMigrationError('--scope is no longer accepted: API key scopes are not authority. Grant capabilities in AuthBoundry.');
+  }
 }
 
 async function configureCapabilities(io: CommandIo): Promise<string[]> {
@@ -274,21 +380,18 @@ async function handleApiKeyCommand(
   rest: readonly string[],
   io: CommandIo,
   service: ApiKeyService,
+  operator: Operator,
 ): Promise<number> {
   if (action === 'create') {
     const options = parseOptions(rest);
     const tenantId = required(options, 'tenant');
     const name = required(options, 'name');
-    const createdBy = required(options, 'created-by');
-    const scopes = arrayOption(options, 'scope');
     const expiresAtValue = firstOption(options, 'expires-at');
     const created = await service.createApiKey({
       tenantId,
       name,
-      scopes,
       expiresAt: expiresAtValue ? new Date(expiresAtValue) : undefined,
-      createdBy,
-    });
+    }, await operator.principal(service));
     writeLine(io.stderr, 'WARNING: save this secret now. It will only be shown once.');
     writeLine(io.stdout, `id: ${created.id}`);
     writeLine(io.stdout, `name: ${created.name}`);
@@ -304,7 +407,7 @@ async function handleApiKeyCommand(
     for (const item of items) {
       writeLine(
         io.stdout,
-        `${item.id}\t${item.name}\t${item.keyPrefix}\t${item.scopes.join(',')}\t${item.revokedAt ? 'revoked' : 'active'}`,
+        `${item.id}\t${item.name}\t${item.keyPrefix}\t${item.revokedAt ? 'revoked' : 'active'}`,
       );
     }
     return 0;
@@ -317,8 +420,7 @@ async function handleApiKeyCommand(
     }
     const options = parseOptions(optionTokens);
     const tenantId = required(options, 'tenant');
-    const revokedBy = required(options, 'revoked-by');
-    const revoked = await service.revokeApiKey({ id, tenantId, revokedBy });
+    const revoked = await service.revokeApiKey({ id, tenantId }, await operator.principal(service));
     if (!revoked) {
       writeLine(io.stderr, 'API key not found for tenant.');
       return 1;
@@ -336,13 +438,14 @@ async function handleWebhookCommand(
   rest: readonly string[],
   io: CommandIo,
   cwd: string,
+  operator: Operator,
 ): Promise<number> {
   const { runtime, config } = createConfiguredRuntime(cwd);
   const webhookService = new WebhookService({
     endpointStore: new FeltDbWebhookEndpointStore(runtime.db),
     deliveryStore: new FeltDbWebhookDeliveryStore(runtime.db),
     auditSink: new FeltDbWebhookAuditSink(runtime.db),
-    secretStore: new EncryptedWebhookSecretStore(),
+    authority: operator.gateway(runtime.db),
     maxRetryAttempts: config?.webhooks.delivery.retries,
     requestTimeoutMs: config?.webhooks.delivery.timeout_ms,
     allowedEvents: config?.webhooks.events.allowed,
@@ -353,25 +456,24 @@ async function handleWebhookCommand(
       const options = parseOptions(rest);
       const tenantId = required(options, 'tenant');
       const url = required(options, 'url');
-      const createdBy = required(options, 'created-by');
+      const signingCredentialRef = required(options, 'signing-credential');
       const events = arrayOption(options, 'event');
 
       if (events.length === 0) {
         throw new Error('At least one --event is required');
       }
 
-      const { endpoint, secret } = await webhookService.createWebhookEndpoint({
+      const endpoint = await webhookService.createWebhookEndpoint({
         tenantId,
         url,
         events,
-        createdBy,
-      });
+        signingCredentialRef,
+      }, await operator.principal());
 
-      writeLine(io.stderr, 'WARNING: save this secret now. It will only be shown once.');
       writeLine(io.stdout, `id: ${endpoint.id}`);
       writeLine(io.stdout, `url: ${endpoint.url}`);
       writeLine(io.stdout, `events: ${endpoint.events.join(',')}`);
-      io.stdout.write(`secret: ${secret}\n`);
+      writeLine(io.stdout, `signing credential: ${endpoint.signingCredentialRef}`);
       return 0;
     }
 
@@ -396,12 +498,10 @@ async function handleWebhookCommand(
       }
       const options = parseOptions(optionTokens);
       const tenantId = required(options, 'tenant');
-      const disabledBy = required(options, 'disabled-by');
       const disabled = await webhookService.disableWebhookEndpoint({
         tenantId,
         id,
-        disabledBy,
-      });
+      }, await operator.principal());
       if (!disabled) {
         writeLine(io.stderr, 'Webhook endpoint not found for tenant.');
         return 1;
@@ -432,8 +532,7 @@ async function handleWebhookCommand(
       }
       const options = parseOptions(optionTokens);
       const tenantId = required(options, 'tenant');
-      const replayedBy = required(options, 'replayed-by');
-      const replayed = await webhookService.replayWebhookDelivery(tenantId, deliveryId, replayedBy);
+      const replayed = await webhookService.replayWebhookDelivery(tenantId, deliveryId, await operator.principal());
       if (!replayed) {
         writeLine(io.stderr, 'Webhook delivery not found or endpoint is disabled.');
         return 1;
@@ -454,12 +553,14 @@ async function handleJobCommand(
   rest: readonly string[],
   io: CommandIo,
   cwd: string,
+  operator: Operator,
 ): Promise<number> {
   const { runtime, config } = createConfiguredRuntime(cwd);
   const jobService = new JobService({
     jobStore: new FeltDbJobStore(runtime.db),
     scheduleStore: new FeltDbJobScheduleStore(runtime.db),
     auditSink: new FeltDbJobAuditSink(runtime.db),
+    authority: operator.gateway(runtime.db),
     maxRetryAttempts: config?.jobs.execution.max_attempts,
     allowedTypes: config ? Object.keys(config.jobs.types) : undefined,
   });
@@ -475,7 +576,8 @@ async function handleJobCommand(
         tenantId,
         type,
         payload,
-      });
+        ...(firstOption(options, 'delegation') ? { delegationId: firstOption(options, 'delegation') } : {}),
+      }, await operator.principal());
 
       writeLine(io.stdout, `id: ${job.id}`);
       writeLine(io.stdout, `type: ${job.type}`);
@@ -496,7 +598,8 @@ async function handleJobCommand(
         type,
         payload,
         runAt,
-      });
+        ...(firstOption(options, 'delegation') ? { delegationId: firstOption(options, 'delegation') } : {}),
+      }, await operator.principal());
 
       writeLine(io.stdout, `id: ${job.id}`);
       writeLine(io.stdout, `type: ${job.type}`);
@@ -510,7 +613,6 @@ async function handleJobCommand(
       const tenantId = required(options, 'tenant');
       const type = required(options, 'type');
       const interval = required(options, 'interval');
-      const createdBy = required(options, 'created-by');
       const payload = firstOption(options, 'payload') ? JSON.parse(firstOption(options, 'payload')!) : {};
 
       const schedule = await jobService.scheduleRecurring({
@@ -518,8 +620,8 @@ async function handleJobCommand(
         type,
         payload,
         interval,
-        createdBy,
-      });
+        ...(firstOption(options, 'delegation') ? { delegationId: firstOption(options, 'delegation') } : {}),
+      }, await operator.principal());
 
       writeLine(io.stdout, `id: ${schedule.id}`);
       writeLine(io.stdout, `type: ${schedule.type}`);
@@ -581,7 +683,7 @@ async function handleJobCommand(
       }
       const options = parseOptions(optionTokens);
       const tenantId = required(options, 'tenant');
-      const retried = await jobService.retry(tenantId, jobId);
+      const retried = await jobService.retry(tenantId, jobId, await operator.principal());
 
       if (!retried) {
         writeLine(io.stderr, 'Job not found.');
@@ -614,7 +716,7 @@ async function handleJobCommand(
       }
       const options = parseOptions(optionTokens);
       const tenantId = required(options, 'tenant');
-      const disabled = await jobService.disableSchedule(tenantId, scheduleId);
+      const disabled = await jobService.disableSchedule(tenantId, scheduleId, await operator.principal());
 
       if (!disabled) {
         writeLine(io.stderr, 'Schedule not found.');

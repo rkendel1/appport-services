@@ -8,6 +8,7 @@ import { formatFlowSpec, parseFlowSpec } from '@feltdb/core';
 import { appport, CapabilityNotDeclaredError, createCapabilityPlan, parseAppPortConfig } from '../src/index.js';
 import { runCli } from '../src/cli.js';
 import { Writable } from 'node:stream';
+import { TestAuthority } from './support/authority.js';
 
 async function writeFlow(path: string, collections: readonly string[]): Promise<void> {
   const template = await readFile(new URL('../../appport.flow', import.meta.url), 'utf8');
@@ -32,6 +33,7 @@ test('appport contract initializes only declared capabilities', async () => {
 
   assert.deepEqual(application.plan.capabilities, ['api']);
   assert.ok(application.api.keys);
+  assert.throws(() => application.state.collection('api_keys'), /owned by AppPort Services/);
   assert.throws(() => application.webhooks, CapabilityNotDeclaredError);
   assert.throws(() => application.jobs, CapabilityNotDeclaredError);
   await application.close();
@@ -78,7 +80,7 @@ test('transaction helpers reject undeclared infrastructure', async () => {
 
   await assert.rejects(
     application.transaction(async (tx) => {
-      tx.queueJob({ tenantId: 'tenant-a', type: 'hidden', payload: {} });
+      tx.queueJob({ tenantId: 'tenant-a', type: 'hidden', payload: {} }, undefined as never);
     }),
     CapabilityNotDeclaredError,
   );
@@ -180,22 +182,21 @@ test('standalone HTTP runtime composes the supported API-key management contract
   const configPath = join(path, 'appport.toml');
   const source = (await readFile(configPath, 'utf8'))
     .replace('port = 8787', 'port = 0')
-    .replace('scopes = ["example.read", "example.write"]', 'scopes = ["apikeys.read", "apikeys.create", "apikeys.revoke"]')
     .replace('[lifecycle]\nmanaged = true', '[lifecycle]\nmanaged = false');
   await writeFile(configPath, source);
-  const application = await appport({ config: configPath, path: join(path, '.state') });
-  const administrator = await application.api.keys.createApiKey({
-    tenantId: 'tenant-a',
-    name: 'standalone administrator',
-    scopes: ['apikeys.read', 'apikeys.create', 'apikeys.revoke'],
-    createdBy: 'bootstrap',
-  });
+  const authorizer = new TestAuthority();
+  await authorizer.grant({ subject: 'bootstrap', capability: 'apikeys.create' });
+  const application = await appport({ config: configPath, path: join(path, '.state'), authorizer });
+  const bootstrap = application.gateway.identify({ principalId: 'bootstrap', principalType: 'operator', tenantId: 'tenant-a' })!;
+  const administrator = await application.api.keys.createApiKey({ name: 'standalone administrator' }, bootstrap);
+  // The key identifies the administrator; AuthBoundry grants what it may do.
+  for (const capability of ['apikeys.read', 'apikeys.create', 'apikeys.revoke']) await authorizer.grant({ subject: administrator.id, capability });
 
   await application.start();
   try {
     const headers = { authorization: `Bearer ${administrator.secret}`, 'content-type': 'application/json' };
     const creation = await fetch(`${application.http?.url}/_appport/api/keys`, {
-      method: 'POST', headers, body: JSON.stringify({ name: 'worker', scopes: [] }),
+      method: 'POST', headers, body: JSON.stringify({ name: 'worker' }),
     });
     assert.equal(creation.status, 201);
     const created = await creation.json() as { id: string; secret: string };
@@ -204,6 +205,11 @@ test('standalone HTTP runtime composes the supported API-key management contract
     const listed = await fetch(`${application.http?.url}/_appport/api/keys`, { headers }).then((response) => response.json()) as { id: string; secret?: string; secretHash?: string }[];
     assert.equal(listed.some((key) => key.id === created.id), true);
     assert.equal(listed.some((key) => key.secret !== undefined || key.secretHash !== undefined), false);
+
+    // The worker key authenticates but has no AuthBoundry grant: its identity grants nothing.
+    const worker = await fetch(`${application.http?.url}/_appport/api/keys`, { headers: { authorization: `Bearer ${created.secret}` } });
+    assert.equal(worker.status, 403);
+    assert.equal(((await worker.json()) as { error: { code: string } }).error.code, 'DENIED');
 
     const revoked = await fetch(`${application.http?.url}/_appport/api/keys/${created.id}`, { method: 'DELETE', headers });
     assert.equal(revoked.status, 204);

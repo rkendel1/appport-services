@@ -1,4 +1,5 @@
 import { app, services } from './app.js';
+import { DEMO_SIGNING_REF, invoiceAppPrincipal } from './authority.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -15,12 +16,12 @@ async function setupTestWebhook(): Promise<void> {
     }
 
     // Create test webhook endpoint
-    const { endpoint } = await services.webhooks.createWebhookEndpoint({
-      tenantId: testTenantId,
+    // Registered by the app's own verified identity and bound to a signing credential reference.
+    const endpoint = await services.webhooks.createWebhookEndpoint({
       url: 'http://localhost:4000/webhook-receiver',
       events: ['invoice.created'],
-      createdBy: 'system',
-    });
+      signingCredentialRef: DEMO_SIGNING_REF,
+    }, invoiceAppPrincipal(services, testTenantId));
 
     console.log(`✓ Created test webhook endpoint: ${endpoint.id}`);
   } catch (error) {

@@ -22,7 +22,10 @@
     "docs/credentials.md",
     "docs/configuration.md",
     "docs/management.md",
-    "README.md"
+    "README.md",
+    "docs/AUTHORITY.md",
+    "docs/WEBHOOK-SECURITY.md",
+    "docs/JOB-SECURITY.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
