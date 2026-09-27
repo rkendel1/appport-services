@@ -98,7 +98,7 @@ async function dispatch(application: AppPortApplication, routes: Readonly<Record
     // Discovery is intentionally public metadata: it reports mounted capability
     // names and operations, but never tenant data, authorization results, or
     // secret material.
-    if (url.pathname === '/_appport/capabilities') { json(response, 200, application.discovery); return; }
+    if (url.pathname === '/_appport/capabilities' && request.method === 'GET') { json(response, 200, application.discovery); return; }
     if (url.pathname === '/_appport/events' && request.method === 'POST') { const body = record(await readJson(request)); const event = await application.publish(text(body.type, 'type'), record(body.data ?? {}), principal ? { principal } : { tenantId: tenantId! }); json(response, 201, event); return; }
     const handler = routes[`${request.method ?? 'GET'} ${url.pathname}`];
     if (!handler) throw httpError(404, 'NOT_FOUND', 'Route not found');
