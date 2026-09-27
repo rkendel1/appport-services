@@ -22,6 +22,8 @@ export { FeltDbFileStore, FeltDbFileAuditSink, fileCollectionNames } from './sto
 // Public APIs (exported here for internal tests; also exported from index.ts for consumers)
 export { createServices } from './runtime/unified-services.js';
 export type { AppPortServices, CreateServicesOptions } from './runtime/unified-services.js';
+export { CAPABILITY_CATALOG, describeCapabilities } from './runtime/discovery.js';
+export type { CapabilityCatalogId, RuntimeCapabilityDescriptor } from './runtime/discovery.js';
 export type { AppPortTransactionContext, AppPortTransactionCollection } from './runtime/transaction.js';
 export { parseAppPortConfig } from './runtime/dsl.js';
 export type { AppPortConfig } from './runtime/dsl.js';

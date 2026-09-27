@@ -33,6 +33,7 @@ import { AppPortEvents, AppPortTenantContext, startHttpRuntime, type AppPortHttp
 import { TransactionContextImpl } from './transaction-services.js';
 import { TransactionBuilder } from './transaction.js';
 import { ScheduleService } from '../schedules/service.js';
+import { describeCapabilities, type RuntimeCapabilityDescriptor } from './discovery.js';
 
 export type AppPortCapabilityName = 'api' | 'webhooks' | 'jobs' | 'secrets' | 'notifications' | 'files';
 
@@ -135,6 +136,8 @@ export interface AppPortApplication {
   readonly http?: AppPortHttpRuntime;
   /** Deterministic capability manifest AppPort/AuthBoundry evaluate against. */
   readonly capabilities: readonly ServiceCapability[];
+  /** Discoverable capability inventory for this mounted runtime instance. */
+  readonly discovery: readonly RuntimeCapabilityDescriptor[];
   /** The Policy Enforcement Point every service effect passes through. */
   readonly gateway: ServiceGateway;
   start(): Promise<void>;
@@ -308,6 +311,18 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
     plan,
     contract: config,
     capabilities: SERVICE_CAPABILITY_MANIFEST,
+    discovery: describeCapabilities({
+      apikeys: Boolean(apiKeysFacade),
+      webhooks: Boolean(webhooksFacade),
+      jobs: Boolean(jobsFacade),
+      schedules: Boolean(schedulesFacade),
+      notifications: Boolean(notificationsFacade),
+      files: Boolean(filesFacade),
+      configuration: false,
+      credentials: false,
+      secrets: false,
+      'runtime-events': config.events.enabled,
+    }),
     gateway,
     events,
     state,
@@ -353,7 +368,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
       if (config.lifecycle.managed) { process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown); }
     },
     overview(): Record<string, unknown> {
-      return { application: config.application, deployment: config.deployment, capabilities: plan.capabilities, tenant: config.tenant, state: { ...config.state, runtime: runtime.deployment }, api: config.api, webhooks: config.webhooks, jobs: config.jobs, notifications: config.notifications, files: config.files, events: events.overview(), health: { ok: !closed } };
+      return { application: config.application, deployment: config.deployment, capabilities: plan.capabilities, discovery: application.discovery, tenant: config.tenant, state: { ...config.state, runtime: runtime.deployment }, api: config.api, webhooks: config.webhooks, jobs: config.jobs, notifications: config.notifications, files: config.files, events: events.overview(), health: { ok: !closed } };
     },
     invoke(capability: string, input: Record<string, unknown>, invokeOptions: { readonly principal: VerifiedPrincipal }): Promise<unknown> {
       return invokeService(invokable, capability, input, invokeOptions);
