@@ -132,7 +132,7 @@ test('generated contract materializes HTTP, state, events, identity, and lifecyc
   assert.equal(discovery.find((capability) => capability.id === 'webhooks')?.runtimeMounted, true);
   assert.equal(discovery.find((capability) => capability.id === 'runtime-events')?.runtimeMounted, true);
   assert.equal(discovery.find((capability) => capability.id === 'configuration')?.runtimeMounted, false);
-  assert.equal((await fetch(`${application.http?.url}/_appport/capabilities`, { method: 'POST' })).status, 404);
+  assert.equal((await fetch(`${application.http?.url}/_appport/capabilities`, { method: 'POST' })).status, 405);
   assert.deepEqual(application.overview().discovery, application.discovery);
   const echo = await fetch(`${application.http?.url}/echo`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: 1 }) }).then((response) => response.json()) as { tenantId: string; body: unknown };
   assert.equal(echo.tenantId, 'development');
