@@ -19,7 +19,7 @@ Discovery is intentionally not an authorization decision. A capability may be di
 | Notifications | Discovery ops `create/read/deliver/retry/acknowledge/dismiss/delete`; authorized through `notifications.*` capabilities | Notification data is validated to avoid credential/secret leakage. |
 | Files | Discovery ops `create/read/update/delete`; authorized through `files.read`, `files.write`, and `files.delete` | Only file metadata is stored here; callers never receive provider credentials. |
 | Configuration | Discovery ops `read/write/delete`; authorized through `configuration.read`, `configuration.write`, and `configuration.delete` | Variable reads never expand credential bindings into secret values. |
-| Credentials | Capability id `credentials` with discovery ops `attach/rotate/detach`; authorized through `credential.attach`, `credential.rotate`, and `credential.detach` | Credential bindings remain opaque `credential-ref:<id>` references. |
+| Credentials | Capability id `credentials` with discovery ops `attach/rotate/detach`; runtime dispatch sends each operation through `ServiceGateway` before persisting or mutating the binding | Credential bindings remain opaque `credential-ref:<id>` references. |
 | Secrets | Not mounted in this repository runtime | Secret values are never returned through discovery, listings, logs, or normal audits. |
 | Runtime Events | Discovery ops `publish/subscribe/stream`; in-process transport, not durable authority state | Event streaming is observational only and must not be used as an authority channel. |
 
