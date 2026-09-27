@@ -85,13 +85,14 @@ The runtime owns the stable management contract:
 ```text
 /_appport/health
 /_appport/overview
+/_appport/capabilities
 /_appport/events
 /_appport/api/keys
 /_appport/webhooks
 /_appport/jobs
 ```
 
-Health is public. Other endpoints follow the contract's authorization and tenant rules. Events uses SSE for `GET` and publishes domain events with `POST`; API keys, webhooks, and jobs support runtime-owned create/list operations.
+Health is public. `/_appport/capabilities` is the unauthenticated discovery surface and returns the mounted capability catalog for the running application. Other endpoints follow the contract's authorization and tenant rules. Events uses SSE for `GET` and publishes domain events with `POST`; API keys, webhooks, and jobs support runtime-owned create/list operations.
 
 `@appport/services` supplies the CLI and capability implementation, but application source imports only `@appport/runtime`. Existing applications may continue using `createServices()` from `@appport/services` as a compatibility API.
 
@@ -148,6 +149,8 @@ await secrets.withSecret({
 ```
 
 See [the outbound credential guide](docs/credentials.md) for ownership, authorization handoff, lifecycle, and failure semantics.
+
+See [the capability inventory](docs/capabilities.md) and [capability authority summary](docs/capability-authority.md) for the consolidated capability matrix and mounted-state rules.
 
 The contract determines which runtime APIs are available:
 

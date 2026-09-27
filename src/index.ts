@@ -7,6 +7,8 @@ export { appport, capabilityRegistry, createCapabilityPlan, CapabilityNotDeclare
 export type { AppPortApplication, AppPortJobHandler, CapabilityFactoryContext, AppPortApiCapability, AppPortApiKeys, AppPortCapabilityName, AppPortJobs, AppPortNotifications, AppPortOptions, AppPortRouteContext, AppPortRouteHandler, AppPortState, AppPortStateCollection, AppPortTenantServices, AppPortWebhooks, CapabilityPlan } from './runtime/appport.js';
 export { createServices } from './runtime/unified-services.js';
 export type { AppPortServices, CreateServicesOptions } from './runtime/unified-services.js';
+export { CAPABILITY_CATALOG, describeCapabilities } from './runtime/discovery.js';
+export type { CapabilityCatalogId, RuntimeCapabilityDescriptor } from './runtime/discovery.js';
 
 // Authority boundary: AppPort Services is a Policy Enforcement Point, not an authority.
 export {

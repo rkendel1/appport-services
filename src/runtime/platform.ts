@@ -95,6 +95,7 @@ async function dispatch(application: AppPortApplication, routes: Readonly<Record
     if (!tenantId && application.contract.tenant.mode === 'required') throw httpError(400, 'TENANT_REQUIRED', 'A tenant is required');
     if (url.pathname === '/_appport/events' && request.method === 'GET' && application.contract.events.streaming.enabled) { streamEvents(application, request, response, tenantId ?? 'default'); return; }
     if (url.pathname === '/_appport/overview') { json(response, 200, application.overview()); return; }
+    if (url.pathname === '/_appport/capabilities') { json(response, 200, application.discovery); return; }
     if (url.pathname === '/_appport/events' && request.method === 'POST') { const body = record(await readJson(request)); const event = await application.publish(text(body.type, 'type'), record(body.data ?? {}), principal ? { principal } : { tenantId: tenantId! }); json(response, 201, event); return; }
     const handler = routes[`${request.method ?? 'GET'} ${url.pathname}`];
     if (!handler) throw httpError(404, 'NOT_FOUND', 'Route not found');

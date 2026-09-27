@@ -1,0 +1,102 @@
+[
+  {
+    "id": "apikeys",
+    "name": "API Keys",
+    "contractVersion": 1,
+    "operations": ["create", "read", "revoke", "authenticate"],
+    "durable": true,
+    "async": false,
+    "dependencies": ["ServiceGateway", "FeltDB"],
+    "runtimeMounted": true
+  },
+  {
+    "id": "webhooks",
+    "name": "Webhooks",
+    "contractVersion": 1,
+    "operations": ["register", "read", "disable", "deliver", "retry", "replay", "receive", "registerIntegration"],
+    "durable": true,
+    "async": true,
+    "dependencies": ["ServiceGateway", "FeltDB", "ScopedSecretsResolver"],
+    "runtimeMounted": true
+  },
+  {
+    "id": "jobs",
+    "name": "Jobs",
+    "contractVersion": 1,
+    "operations": ["create", "read", "execute", "retry"],
+    "durable": true,
+    "async": true,
+    "dependencies": ["ServiceGateway", "FeltDB"],
+    "runtimeMounted": true
+  },
+  {
+    "id": "schedules",
+    "name": "Schedules",
+    "contractVersion": 1,
+    "operations": ["create", "read", "cancel", "materialize"],
+    "durable": true,
+    "async": true,
+    "dependencies": ["jobs", "ServiceGateway", "FeltDB"],
+    "runtimeMounted": true
+  },
+  {
+    "id": "notifications",
+    "name": "Notifications",
+    "contractVersion": 1,
+    "operations": ["create", "read", "deliver", "retry", "acknowledge", "dismiss", "delete"],
+    "durable": true,
+    "async": true,
+    "dependencies": ["ServiceGateway", "FeltDB", "jobs"],
+    "runtimeMounted": true
+  },
+  {
+    "id": "files",
+    "name": "Files",
+    "contractVersion": 1,
+    "operations": ["create", "read", "update", "delete"],
+    "durable": true,
+    "async": false,
+    "dependencies": ["ServiceGateway", "FeltDB"],
+    "runtimeMounted": true
+  },
+  {
+    "id": "configuration",
+    "name": "Configuration",
+    "contractVersion": 1,
+    "operations": ["read", "write", "delete"],
+    "durable": true,
+    "async": false,
+    "dependencies": ["ServiceGateway", "FeltDB"],
+    "runtimeMounted": true
+  },
+  {
+    "id": "credentials",
+    "name": "Credentials",
+    "contractVersion": 1,
+    "operations": ["attach", "rotate", "detach"],
+    "durable": true,
+    "async": false,
+    "dependencies": ["configuration", "ServiceGateway", "FeltDB"],
+    "runtimeMounted": true
+  },
+  {
+    "id": "secrets",
+    "name": "Secrets",
+    "contractVersion": 1,
+    "operations": ["register", "describe", "list", "rotate", "revoke", "retire", "resolve"],
+    "durable": true,
+    "async": false,
+    "dependencies": ["AuthBoundry", "AppBoundry", "FeltDB"],
+    "runtimeMounted": false
+  },
+  {
+    "id": "runtime-events",
+    "name": "Runtime Events",
+    "contractVersion": 1,
+    "operations": ["publish", "subscribe", "stream"],
+    "durable": false,
+    "async": true,
+    "dependencies": ["AppPortEvents"],
+    "runtimeMounted": false
+  }
+]

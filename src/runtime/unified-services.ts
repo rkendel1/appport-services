@@ -24,6 +24,7 @@ import { FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNot
 import { FileService } from '../files/service.js';
 import { FeltDbFileAuditSink, FeltDbFileStore } from '../storage/files.js';
 import { ScheduleService } from '../schedules/service.js';
+import { describeCapabilities, type RuntimeCapabilityDescriptor } from './discovery.js';
 
 /**
  * Unified AppPort Services instance.
@@ -42,6 +43,8 @@ export interface AppPortServices {
   readonly gateway: ServiceGateway;
   /** Deterministic capability manifest. */
   readonly capabilities: readonly ServiceCapability[];
+  /** Capability discovery derived from the mounted implementation. */
+  readonly discovery: readonly RuntimeCapabilityDescriptor[];
 
   /** The safe service API: AuthBoundry authorizes, then the effect runs. */
   invoke(capability: string, input: Record<string, unknown>, options: { readonly principal: VerifiedPrincipal }): Promise<unknown>;
@@ -170,6 +173,18 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
   return {
     ...invokable,
     capabilities: SERVICE_CAPABILITY_MANIFEST,
+    discovery: describeCapabilities({
+      apikeys: true,
+      webhooks: true,
+      jobs: true,
+      schedules: true,
+      notifications: true,
+      files: true,
+      configuration: true,
+      credentials: true,
+      secrets: false,
+      'runtime-events': false,
+    }),
     invoke: (capability, input, invokeOptions) => invokeService(invokable, capability, input, invokeOptions),
     authorize: (capability, principal, resource) => {
       const verified = requireVerifiedPrincipal(principal);
