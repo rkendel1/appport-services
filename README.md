@@ -106,7 +106,7 @@ npx @appport/runtime job list --tenant acme
 
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
 
-The repository defines AppPort capabilities for **tenant-scoped API keys**, **durable webhooks**, **durable job execution** (including schedules), provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts, **durable notifications**, and **files**. Legacy runtime state uses **`@feltdb/core@0.11.6`**. Secret material remains with an authorized provider and is never durable AppPort state.
+The repository defines AppPort capabilities for **tenant-scoped API keys**, **durable webhooks**, **durable job execution** (including schedules), provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts, **durable notifications**, and **files**. Legacy runtime state uses **`@feltdb/core@0.11.9`**. Secret material remains with an authorized provider and is never durable AppPort state.
 
 ```text
             Application
@@ -237,7 +237,7 @@ feltdb.flow (generated authoritative application contract)
        ↓
 TypeScript implementation
        ↓
-FeltDB (@feltdb/core@0.11.6)
+FeltDB (@feltdb/core@0.11.9)
 ```
 
 The Flow contract is parsed and validated at test time. The TypeScript stores (FeltDbApiKeyStore, FeltDbWebhookEndpointStore, etc.) implement the contract semantics directly against FeltDB collections.
@@ -268,7 +268,7 @@ Dependencies are pinned, including:
 ```json
 {
   "dependencies": {
-    "@feltdb/core": "0.11.6"
+    "@feltdb/core": "0.11.9"
   }
 }
 ```
@@ -612,7 +612,7 @@ authorization, and the sensitive-data boundary.
 
 ## Where does durable state live?
 
-AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.11.6`.
+AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.11.9`.
 
 ```text
 feltdb.flow (generated Flow contract)
@@ -627,7 +627,7 @@ AppPort Services
       └─→ Secrets protocol (Secrets, SecretVersions, SecretAuditEvents)
       │
       ▼
- @feltdb/core@0.11.6
+ @feltdb/core@0.11.9
       │
       ▼
  real FeltDB
