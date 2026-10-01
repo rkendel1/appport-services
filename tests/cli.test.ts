@@ -196,3 +196,35 @@ test('operational CLI and runtime use the same contract-derived state', async ()
   assert.equal((await application.api.keys.authenticateApiKey(secret))?.tenantId, 'development');
   await application.close();
 });
+
+// `serve` has no sub-action: its options follow the command directly. Reading
+// them from the `[group, action, ...rest]` tail consumed the first flag as the
+// "action", so `serve --port 4109` was parsed as an unexpected argument.
+test('serve receives its own options rather than a sub-action', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'appport-serve-args-'));
+  const stdout = capture();
+  const stderr = capture();
+  await runCli(['init', '--use', 'api'], { stdout: stdout.stream, stderr: stderr.stream }, undefined, cwd);
+
+  // Every documented form must reach the serve option parser. A bad value
+  // proves the flag was parsed as an option rather than as a stray argument.
+  await assert.rejects(
+    runCli(['serve', '--port', 'not-a-port'], { stdout: stdout.stream, stderr: stderr.stream }, undefined, cwd),
+    /Invalid --port "not-a-port"/,
+  );
+  await assert.rejects(
+    runCli(['serve', '--host', '127.0.0.1', '--port', '70000'], { stdout: stdout.stream, stderr: stderr.stream }, undefined, cwd),
+    /Invalid --port "70000"/,
+  );
+  // A missing value is still a missing value, not an unknown command.
+  await assert.rejects(
+    runCli(['serve', '--port'], { stdout: stdout.stream, stderr: stderr.stream }, undefined, cwd),
+    /Missing value for --port/,
+  );
+  // A retired flag stays rejected on serve too.
+  await assert.rejects(
+    runCli(['serve', '--created-by', 'operator'], { stdout: stdout.stream, stderr: stderr.stream }, undefined, cwd),
+    /--created-by is no longer accepted/,
+  );
+});
+

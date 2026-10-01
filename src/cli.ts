@@ -2,13 +2,13 @@
 
 import process from 'node:process';
 import { access, copyFile, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { formatFlowSpec, parseFlowSpec } from '@feltdb/core';
 
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import type { ApiKeyService } from './api-keys/service.js';
 import { parseAppPortConfig } from './runtime/dsl.js';
@@ -79,7 +79,13 @@ export async function runCli(
     } else if (group === 'job') {
       return handleJobCommand(action, rest, io, cwd, createOperator(cwd, authority));
     } else if (group === 'serve') {
-      return handleServeCommand(rest, io, cwd, authority);
+      // `serve` has no sub-action: its options begin immediately after the
+      // command, so they must be sliced from the group rather than from
+      // `rest`. Reading them from `rest` consumed the first flag as the
+      // "action" and made `serve --port 4109` fail to parse.
+      const serveOptions = argv.slice(1);
+      rejectActorFlags(serveOptions);
+      return handleServeCommand(serveOptions, io, cwd, authority);
     } else {
       writeLine(
         io.stderr,
@@ -771,11 +777,14 @@ async function handleServeCommand(
   authority?: CliAuthority,
 ): Promise<number> {
   const options = parseOptions(tokens);
+  const host = firstOption(options, 'host');
   const port = firstOption(options, 'port');
   const authorityModule = await loadAuthority(cwd, authority);
   const runtime = await startManagementHost({
     cwd,
-    ...(firstOption(options, 'host') ? { host: firstOption(options, 'host')! } : {}),
+    // CLI flags win; when absent the host falls back to appport.toml [http]
+    // and then to the package defaults (see startManagementHost).
+    ...(host ? { host } : {}),
     ...(port ? { port: parsePort(port) } : {}),
     ...(authorityModule?.authorizer ? { authorizer: authorityModule.authorizer } : {}),
     ...(authorityModule?.credentials ? { credentials: authorityModule.credentials } : {}),
@@ -844,7 +853,39 @@ function writeLine(stream: NodeJS.WritableStream, line: string): void {
   stream.write(`${line}\n`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * True when this module is the process entry point, so the CLI runs.
+ *
+ * npm does not run the `bin` target by its real path: it links
+ * `node_modules/.bin/appport-services -> ../<pkg>/dist/src/cli.js` and executes
+ * the link, so `process.argv[1]` is the symlink while `import.meta.url` is the
+ * real module URL. A literal `import.meta.url === 'file://' + argv[1]`
+ * comparison therefore never matches an installed package, and the CLI exits
+ * silently with status 0. The same happens when the install prefix itself
+ * contains symlinks (macOS `/tmp` -> `/private/tmp`, version-manager shims).
+ *
+ * Comparing the fully resolved real paths of both sides is the smallest fix
+ * that is correct for a direct `node dist/src/cli.js`, an npm `.bin` link, and a
+ * symlinked prefix alike. `import.meta.url` is a percent-encoded URL and
+ * `process.argv[1]` is an OS path, so each is converted to a path first.
+ */
+function isCliEntrypoint(): boolean {
+  const invoked = process.argv[1];
+  if (!invoked) return false;
+  const modulePath = fileURLToPath(import.meta.url);
+  // Fall back to the literal path when either side cannot be resolved, so a
+  // direct `node dist/src/cli.js` still runs even on an exotic filesystem.
+  const resolveOrSelf = (path: string): string => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return path;
+    }
+  };
+  return resolveOrSelf(invoked) === resolveOrSelf(modulePath);
+}
+
+if (isCliEntrypoint()) {
   runCli(process.argv.slice(2)).then(
     (code) => {
       process.exitCode = code;
