@@ -5,6 +5,7 @@ import type { ApiKeyService } from '../api-keys/service.js';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import { createConfigurationRouter } from '../configuration/http.js';
 import { createConfigurationUiRouter } from '../configuration/ui.js';
+import { UI_DISCOVERY_PATH, createUiContribution, createUiDiscoveryDocument } from './ui.js';
 import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from '../configuration/service.js';
 import { FileAuthorizationError, type FileService } from '../files/service.js';
 import type { JobService } from '../jobs/service.js';
@@ -70,12 +71,6 @@ export interface CreateManagementRouterOptions {
   readonly includeUi?: boolean;
 }
 
-export const APPPORT_UI_CONTRIBUTIONS = Object.freeze([{
-  protocol: 'AppPort/ui/1',
-  id: 'api-keys',
-  requiredCapabilities: Object.freeze(Object.values(API_KEY_MANAGEMENT_CAPABILITIES)),
-}] as const);
-
 export class ManagementAuthenticationError extends Error {
   readonly status = 401;
   readonly code = 'UNAUTHENTICATED';
@@ -128,18 +123,23 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   if (options.includeConfiguration !== false && options.services.configuration) {
     router.use('/v1/configuration', createConfigurationRouter(options.services.configuration));
   }
+  // AppPort/ui/1 discovery: the surfaces the pages below serve, described as
+  // data. A host that serves no pages advertises none (404, as the protocol's own
+  // server answers when no UI is advertised).
+  const discovery = options.includeUi !== false
+    ? createUiDiscoveryDocument(options.services, { includeConfiguration: options.includeConfiguration !== false })
+    : undefined;
+  router.get(UI_DISCOVERY_PATH, (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!discovery) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No composable UI is advertised' } }); return; }
+    res.json(discovery);
+  });
   if (options.includeUi !== false) {
     const ui = createConfigurationUiRouter();
-    const supportedUiPaths = new Set([
-      ...(options.services.apiKeys ? ['/api-keys'] : []),
-      ...(options.includeConfiguration !== false && options.services.configuration ? ['/configuration', '/secrets'] : []),
-      ...(options.services.webhooks ? ['/webhooks'] : []),
-      ...(options.services.jobs ? ['/jobs'] : []),
-      ...(options.services.schedules ? ['/schedules'] : []),
-      ...(options.services.files ? ['/files'] : []),
-      ...(options.services.notifications ? ['/notifications'] : []),
-    ]);
-    if (supportedUiPaths.size > 2) supportedUiPaths.add('/services');
+    // The pages served are exactly the surfaces the contribution describes.
+    const supportedUiPaths = new Set(
+      createUiContribution(options.services, { includeConfiguration: options.includeConfiguration !== false })?.surfaces.map((surface) => surface.route) ?? [],
+    );
     router.use((req, res, next) => supportedUiPaths.has(req.path) ? ui(req, res, next) : next());
   }
 

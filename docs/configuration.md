@@ -34,3 +34,10 @@ AuthBoundry as `configuration.read`, `configuration.write`,
 `credential.detach` (see [AUTHORITY.md](./AUTHORITY.md)). The optional management UI is served by
 `createConfigurationUiRouter()` at `/configuration`; it uses the API and does
 not use browser storage.
+
+## Default HTTP port
+
+There are two defaults, and they differ on purpose (both are tested in `tests/runtime-boundaries.test.ts`):
+
+- **Generated** applications (`appport init`, `create-appport`) write `[http] port = 4100`, so they never collide with the Compute control plane, whose default is `8787`.
+- The **parser** default, used when an `appport.toml` enables HTTP but omits `port`, remains `8787`. Changing it would silently move every existing application that relies on it. If you write the file by hand and run next to Compute, set `port` explicitly.

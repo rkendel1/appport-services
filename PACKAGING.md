@@ -175,3 +175,35 @@ A developer can:
 8. ✓ Never use workspace paths or file: dependencies
 
 All criteria met and tested.
+
+## Publish order and the protocol dependency
+
+`@appport/services` depends on `@appport/protocol` (the `AppPort/ui/1` contract,
+`validateUiContribution`, `filterUiContribution`). Publish in this order:
+
+1. `@appport/protocol` (repository `rkendel1/appport`), with any change this
+   package needs;
+2. `@appport/services` (and `@appport/runtime`, `create-appport`);
+3. consumers.
+
+`scripts/publish-packages.sh` refuses to publish unless a published
+`@appport/protocol` satisfies the range in `package.json`. The test
+`tests/runtime-boundaries.test.ts` fails if the installed protocol is outside the
+declared range or lacks the UI exports. Today the range is `^1.0.3`, npm has
+1.0.3, and the protocol repository is at 1.0.3 (same gitHead), so this package is
+built and tested against the **published** 1.0.3. If a later protocol change is
+needed, raise the range here only after that version is on npm.
+
+## Verifying the packed artifact (`GET /v1/ui`)
+
+`tests/package-artifact.test.ts` runs as part of `npm test` and closes the
+distribution gap the workspace tests cannot see:
+
+1. `npm pack` into a temp directory (exactly what npm would publish);
+2. a clean `npm install <tarball>` in a temp consumer **outside** the workspace;
+3. the consumer starts `createManagementRouter` from the installed package and
+   asserts `GET /v1/ui` answers 200 with an `AppPort/ui/1` document accepted by
+   the **installed** `@appport/protocol` validator, that the document reports the
+   packed version, that only capability-free surfaces are shown to an anonymous
+   caller, and that every route the contribution describes is served;
+4. the test fails if `@appport/services` resolves to the workspace copy.
