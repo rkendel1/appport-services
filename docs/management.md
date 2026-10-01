@@ -39,11 +39,18 @@ The authenticated principal's tenant and principal ID are authoritative. A diffe
 
 A host that serves the packaged pages (`includeUi`, the default for `createManagementRouter`) also serves `GET /v1/ui`, the discovery path defined by the AppPort protocol (`@appport/protocol`, `UI_DISCOVERY_PATH`). It returns an `AppPort/ui/1` document built from the services actually mounted: one surface per page (`id`, `title`, `route`, the capabilities the page drives), navigation entries pointing at those surfaces, `composition.requires: []`, and a `capabilities` list. The document is validated with the protocol's own `validateUiContribution`; this package defines no UI schema of its own. `APPPORT_UI_CONTRIBUTIONS` is the same document for a host that mounts everything.
 
-Notes that matter to a consumer:
+Meaning (this is the protocol's, not this package's): `GET /v1/ui` is **caller-contextual**. The AppPort protocol server returns the contribution filtered by the capabilities the caller holds (`filterUiContribution`); there is no public mode, and a surface that needs no capability is visible to everyone.
 
-- Discovery is **anonymous**, like `/_appport/capabilities`: it names pages and the capabilities they need, and grants nothing. It does not filter by the caller's permissions (`capabilities` is what the surfaces need, not what the caller holds). Every surface authenticates and authorizes its own caller; opening a route is not authorization.
-- A host that serves no pages (`includeUi: false`, and the standalone `appport()` server) answers `404 NOT_FOUND` ("No composable UI is advertised"), as the protocol's own server does.
+What this package does with that:
+
+- `@appport/services` cannot ask "may this caller?" without side effects (`ServiceGateway.authorize` throws on denial and records refusal evidence), so `GET /v1/ui` treats the caller as holding **no asserted capabilities**. The protocol's own filter therefore leaves only the capability-free surface: the **AppPort Services overview** (`/services`). The pages behind it each authenticate and authorize their own caller (an anonymous request to `/api-keys` is `401`).
+- `APPPORT_UI_CONTRIBUTIONS` is the **full** contribution (overview plus one surface per page, with the capabilities the page drives). A host that knows its callers' capabilities can hand it to the AppPort protocol server's `ui` option, or call `createUiDiscoveryDocument(services, { callerCapabilities })`, and get per-caller filtering unchanged.
+- Discovery is not authorization, and a consumer must not forward an identity it does not own (for example a control plane's operator token) to obtain more. A host that serves no pages (`includeUi: false`) answers `404 NOT_FOUND` ("No composable UI is advertised"), as the protocol server does.
 - Routes are relative to the host that serves `/v1/ui`; they are never absolute URLs.
+
+### `appport()` and the management router are different on purpose
+
+`appport()` is an **application runtime**: it serves the application's routes and the `/_appport/*` JSON contract, and no pages and no `/v1/ui` (tested in `tests/runtime-boundaries.test.ts`). The packaged pages and the contribution exist only in a **host that mounts `createManagementRouter`**. Serving the pages from every runtime would turn every AppPort application into a management application, and Bearer-only standalone mode cannot authenticate the pages. A management UI therefore needs a host application that mounts the router.
 
 (Before this change `APPPORT_UI_CONTRIBUTIONS` was `[{protocol, id, requiredCapabilities}]` for API keys only, which was not an `AppPort/ui/1` document.)
 

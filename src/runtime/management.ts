@@ -5,7 +5,7 @@ import type { ApiKeyService } from '../api-keys/service.js';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import { createConfigurationRouter } from '../configuration/http.js';
 import { createConfigurationUiRouter } from '../configuration/ui.js';
-import { UI_DISCOVERY_PATH, createUiDiscoveryDocument } from './ui.js';
+import { UI_DISCOVERY_PATH, createUiContribution, createUiDiscoveryDocument } from './ui.js';
 import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from '../configuration/service.js';
 import { FileAuthorizationError, type FileService } from '../files/service.js';
 import type { JobService } from '../jobs/service.js';
@@ -136,16 +136,10 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   });
   if (options.includeUi !== false) {
     const ui = createConfigurationUiRouter();
-    const supportedUiPaths = new Set([
-      ...(options.services.apiKeys ? ['/api-keys'] : []),
-      ...(options.includeConfiguration !== false && options.services.configuration ? ['/configuration', '/secrets'] : []),
-      ...(options.services.webhooks ? ['/webhooks'] : []),
-      ...(options.services.jobs ? ['/jobs'] : []),
-      ...(options.services.schedules ? ['/schedules'] : []),
-      ...(options.services.files ? ['/files'] : []),
-      ...(options.services.notifications ? ['/notifications'] : []),
-    ]);
-    if (supportedUiPaths.size > 2) supportedUiPaths.add('/services');
+    // The pages served are exactly the surfaces the contribution describes.
+    const supportedUiPaths = new Set(
+      createUiContribution(options.services, { includeConfiguration: options.includeConfiguration !== false })?.surfaces.map((surface) => surface.route) ?? [],
+    );
     router.use((req, res, next) => supportedUiPaths.has(req.path) ? ui(req, res, next) : next());
   }
 

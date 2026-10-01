@@ -4,6 +4,16 @@ set -eu
 
 npm run test
 
+# Publish order is protocol -> services -> consumers. This package declares the
+# @appport/protocol range it needs; refuse to publish unless a published version
+# satisfies it, so a consumer never installs a services release that depends on a
+# protocol version that does not exist on npm.
+protocol_range="$(node -p "require('./package.json').dependencies['@appport/protocol']")"
+if ! npm view "@appport/protocol@$protocol_range" version >/dev/null 2>&1; then
+  printf 'No published @appport/protocol satisfies %s. Publish the protocol first.\n' "$protocol_range" >&2
+  exit 1
+fi
+
 publish_args="--access public"
 
 if [ -f .env.local ]; then

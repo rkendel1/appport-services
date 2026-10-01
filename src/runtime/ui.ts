@@ -13,6 +13,12 @@ import {
  * (`packages/protocol/src/ui.ts` in rkendel1/appport). This module only
  * *describes* this package's surfaces in that shape and validates the result
  * with the protocol's own validator; it defines no schema of its own.
+ *
+ * `GET /v1/ui` is caller-contextual in the protocol: the server returns the
+ * contribution **filtered by the capabilities the caller holds**
+ * (`filterUiContribution`; `appport` `Server.uiDiscovery`). There is no public
+ * mode. A surface that needs no capability is visible to everyone; one that
+ * needs capabilities appears only for a caller who holds them all.
  */
 export { UI_DISCOVERY_PATH, UI_PROTOCOL_ID };
 
@@ -38,6 +44,9 @@ interface SurfaceDefinition {
 }
 
 const SURFACES: readonly SurfaceDefinition[] = [
+  // The landing page: it only links to the pages below, each of which
+  // authenticates and authorizes its own caller, so it needs no capability.
+  { id: 'overview', title: 'AppPort Services', route: '/services', order: 0, mounted: (s, c) => countPages(s, c) > 2, capabilities: [] },
   { id: 'api-keys', title: 'API Keys', route: '/api-keys', order: 10, mounted: (s) => Boolean(s.apiKeys), capabilities: ['apikeys.read', 'apikeys.create', 'apikeys.revoke'] },
   { id: 'webhooks', title: 'Webhooks', route: '/webhooks', order: 20, mounted: (s) => Boolean(s.webhooks), capabilities: ['webhooks.read', 'webhooks.register', 'webhooks.remove'] },
   { id: 'jobs', title: 'Jobs', route: '/jobs', order: 30, mounted: (s) => Boolean(s.jobs), capabilities: ['jobs.read', 'jobs.create', 'jobs.retry'] },
@@ -47,6 +56,11 @@ const SURFACES: readonly SurfaceDefinition[] = [
   { id: 'configuration', title: 'Configuration', route: '/configuration', order: 70, mounted: (s, c) => c && Boolean(s.configuration), capabilities: ['configuration.read', 'configuration.write', 'configuration.delete'] },
   { id: 'secrets', title: 'Secrets', route: '/secrets', order: 80, mounted: (s, c) => c && Boolean(s.configuration), capabilities: ['configuration.read', 'credential.attach', 'credential.rotate', 'credential.detach'] },
 ];
+
+/** The number of management pages (everything but the overview) that are mounted. */
+function countPages(services: UiMountedServices, includeConfiguration: boolean): number {
+  return SURFACES.filter((surface) => surface.id !== 'overview' && surface.mounted(services, includeConfiguration)).length;
+}
 
 const PRODUCT_ID = 'appport-services';
 const GROUP = 'AppPort Services';
@@ -82,14 +96,23 @@ export function createUiContribution(services: UiMountedServices, options: { rea
 }
 
 /**
- * The document `GET /v1/ui` returns. It advertises what is mounted; it does not
- * evaluate the caller's permissions (the surfaces do that), so `capabilities`
- * lists what the surfaces need, not what the caller holds.
+ * The document `GET /v1/ui` returns for a caller holding `callerCapabilities`.
+ *
+ * `@appport/services` has no way to ask "may this caller?" without side effects
+ * (`ServiceGateway.authorize` throws on denial and records refusal evidence), so
+ * the router passes none: the caller is treated as holding no capabilities and
+ * the protocol's own filter leaves only capability-free surfaces (the overview).
+ * A host that knows its callers' capabilities can pass them here, or hand
+ * `APPPORT_UI_CONTRIBUTIONS` to the AppPort protocol server's `ui` option and
+ * get the protocol's per-caller filtering unchanged.
  */
-export function createUiDiscoveryDocument(services: UiMountedServices, options: { readonly includeConfiguration?: boolean } = {}): UiDiscoveryDocument | undefined {
+export function createUiDiscoveryDocument(
+  services: UiMountedServices,
+  options: { readonly includeConfiguration?: boolean; readonly callerCapabilities?: readonly string[] } = {},
+): UiDiscoveryDocument | undefined {
   const contribution = createUiContribution(services, options);
   if (!contribution) return undefined;
-  return filterUiContribution(contribution, contribution.surfaces.flatMap((surface) => surface.capabilities));
+  return filterUiContribution(contribution, options.callerCapabilities ?? []);
 }
 
 /** Every surface this package can contribute, for hosts that mount everything. */

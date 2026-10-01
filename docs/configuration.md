@@ -37,4 +37,7 @@ not use browser storage.
 
 ## Default HTTP port
 
-`appport init` (and `create-appport`) write `[http] port = 4100`. They used to write `8787`, which is also the default port of the Compute control plane (`compute`, `compute start`), so running both with defaults made the second fail to bind. An explicit `port` in an existing `appport.toml` is unchanged, and the parser's own default when `[http] port` is omitted is still `8787`; set `port` explicitly (the generated file does) if you run next to Compute.
+There are two defaults, and they differ on purpose (both are tested in `tests/runtime-boundaries.test.ts`):
+
+- **Generated** applications (`appport init`, `create-appport`) write `[http] port = 4100`, so they never collide with the Compute control plane, whose default is `8787`.
+- The **parser** default, used when an `appport.toml` enables HTTP but omits `port`, remains `8787`. Changing it would silently move every existing application that relies on it. If you write the file by hand and run next to Compute, set `port` explicitly.

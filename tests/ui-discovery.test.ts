@@ -36,8 +36,8 @@ async function stop(server: Server): Promise<void> {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-test('GET /v1/ui returns a valid AppPort/ui/1 document for the mounted surfaces, anonymously', async () => {
-  const { server, base } = await host();
+test('GET /v1/ui is the protocol\'s caller-filtered view: with no asserted capabilities, only capability-free surfaces', async () => {
+  const { services, server, base } = await host();
   try {
     const response = await fetch(`${base}/v1/ui`);
     assert.equal(response.status, 200);
@@ -48,17 +48,38 @@ test('GET /v1/ui returns a valid AppPort/ui/1 document for the mounted surfaces,
     assert.equal(validated.product.id, 'appport-services');
     assert.match(validated.product.version, /^\d+\.\d+\.\d+/);
     assert.deepEqual(validated.composition.requires, []);
-    for (const surface of validated.surfaces) {
-      // Every route is one the packaged pages serve, and every navigation entry points at a surface.
+    // Filtering by "holds nothing" leaves exactly the capability-free overview.
+    assert.deepEqual(validated.surfaces.map((surface) => surface.id), ['overview']);
+    assert.deepEqual(document.capabilities, []);
+    assert.deepEqual(validated.navigation.map((item) => item.surface), ['overview']);
+    // Discovery is not authorization: the surfaces named in the full contribution
+    // are real pages, and they do not open for an unauthenticated caller.
+    const full = createUiContribution(services)!;
+    assert.ok(full.surfaces.length > 3);
+    for (const surface of full.surfaces) {
       const page = await fetch(`${base}${surface.route}`);
       assert.notEqual(page.status, 404, surface.route);
     }
-    assert.deepEqual(
-      validated.navigation.map((item) => item.surface).sort(),
-      validated.surfaces.map((surface) => surface.id).sort(),
-    );
-    assert.ok(Array.isArray(document.capabilities));
+    assert.equal((await fetch(`${base}/api-keys`)).status, 401);
   } finally { await stop(server); }
+});
+
+test('the caller-capability filter is the protocol\'s: a caller holding a surface\'s capabilities sees it', () => {
+  const services = { apiKeys: true, webhooks: true, jobs: true };
+  const document = createUiDiscoveryDocument(services, { callerCapabilities: ['apikeys.read', 'apikeys.create', 'apikeys.revoke', 'jobs.read'] })!;
+  // The overview, plus API keys (all three capabilities held); jobs lacks create/retry, webhooks all.
+  assert.deepEqual(document.surfaces.map((surface) => surface.id).sort(), ['api-keys', 'overview']);
+  assert.deepEqual(document.capabilities, ['apikeys.create', 'apikeys.read', 'apikeys.revoke']);
+  assert.deepEqual(document.navigation.map((item) => item.surface).sort(), ['api-keys', 'overview']);
+});
+
+test('the full contribution is what the AppPort protocol server serves per caller', () => {
+  // A host with capability context hands this to the protocol's own server; the
+  // protocol filters it. The full contribution must therefore itself be valid.
+  const [full] = APPPORT_UI_CONTRIBUTIONS;
+  assert.deepEqual(validateUiContribution(full), full);
+  assert.ok(full!.surfaces.some((surface) => surface.capabilities.length === 0));
+  assert.ok(full!.surfaces.some((surface) => surface.capabilities.length > 0));
 });
 
 test('every capability a surface names is a real service capability', () => {
@@ -83,6 +104,8 @@ test('only mounted services are described, and nothing mounted means no contribu
   assert.equal(createUiDiscoveryDocument({}), undefined);
   const keysOnly = createUiContribution({ apiKeys: true })!;
   assert.deepEqual(keysOnly.surfaces.map((surface) => surface.id), ['api-keys']);
+  // The overview page is served (and described) only with more than two pages.
+  assert.ok(createUiContribution({ apiKeys: true, webhooks: true, jobs: true })!.surfaces.some((surface) => surface.id === 'overview'));
   // Configuration pages are described only when they are served.
   const withoutConfiguration = createUiContribution({ apiKeys: true, configuration: true }, { includeConfiguration: false })!;
   assert.deepEqual(withoutConfiguration.surfaces.map((surface) => surface.id), ['api-keys']);

@@ -175,3 +175,22 @@ A developer can:
 8. ✓ Never use workspace paths or file: dependencies
 
 All criteria met and tested.
+
+## Publish order and the protocol dependency
+
+`@appport/services` depends on `@appport/protocol` (the `AppPort/ui/1` contract,
+`validateUiContribution`, `filterUiContribution`). Publish in this order:
+
+1. `@appport/protocol` (repository `rkendel1/appport`), with any change this
+   package needs;
+2. `@appport/services` (and `@appport/runtime`, `create-appport`);
+3. consumers.
+
+`scripts/publish-packages.sh` refuses to publish unless a published
+`@appport/protocol` satisfies the range in `package.json`. The test
+`tests/runtime-boundaries.test.ts` fails if the installed protocol is outside the
+declared range or lacks the UI exports. Today the range is `^1.0.2`; npm has
+1.0.2 (it contains `dist/ui.js`) and the protocol repository is at 1.0.3, so
+this package is built and tested against the **published** 1.0.2. If a later
+protocol change is needed, raise the range here only after that version is on
+npm.
