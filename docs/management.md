@@ -35,7 +35,17 @@ The API-key page uses these stable endpoints:
 
 The authenticated principal's tenant and principal ID are authoritative. A different `tenantId` in a request body is denied (`403`), a different `createdBy` is rejected (`400`), and `scopes` are rejected (`400`): API keys carry no scopes. Creation returns the plaintext credential once. Lists contain metadata only, revoked keys are omitted, and revoke responses contain no credential material.
 
-`APPPORT_UI_CONTRIBUTIONS` describes the `AppPort/ui/1` API-key contribution and declares all three capabilities because the packaged page supports list, create, and revoke as one management experience.
+## UI discovery (`AppPort/ui/1`)
+
+A host that serves the packaged pages (`includeUi`, the default for `createManagementRouter`) also serves `GET /v1/ui`, the discovery path defined by the AppPort protocol (`@appport/protocol`, `UI_DISCOVERY_PATH`). It returns an `AppPort/ui/1` document built from the services actually mounted: one surface per page (`id`, `title`, `route`, the capabilities the page drives), navigation entries pointing at those surfaces, `composition.requires: []`, and a `capabilities` list. The document is validated with the protocol's own `validateUiContribution`; this package defines no UI schema of its own. `APPPORT_UI_CONTRIBUTIONS` is the same document for a host that mounts everything.
+
+Notes that matter to a consumer:
+
+- Discovery is **anonymous**, like `/_appport/capabilities`: it names pages and the capabilities they need, and grants nothing. It does not filter by the caller's permissions (`capabilities` is what the surfaces need, not what the caller holds). Every surface authenticates and authorizes its own caller; opening a route is not authorization.
+- A host that serves no pages (`includeUi: false`, and the standalone `appport()` server) answers `404 NOT_FOUND` ("No composable UI is advertised"), as the protocol's own server does.
+- Routes are relative to the host that serves `/v1/ui`; they are never absolute URLs.
+
+(Before this change `APPPORT_UI_CONTRIBUTIONS` was `[{protocol, id, requiredCapabilities}]` for API keys only, which was not an `AppPort/ui/1` document.)
 
 The packaged API-key page is mounted at `/api-keys` and requires AuthBoundry to allow all three API-key capabilities. When present on the supplied instance, the router also mounts the webhook, job, schedule, file, and notification handlers and their packaged pages. Each operation maps to one manifest capability (for example `webhooks.register`, `jobs.create`, `files.write`, `notifications.send`, `schedules.cancel`). Configuration composes `/v1/configuration` and its `/configuration` and `/secrets` pages with `configuration.read`, `configuration.write`, `configuration.delete`, `credential.attach`, `credential.rotate`, and `credential.detach`. UI pages are mounted only when their corresponding service handler is present.
 

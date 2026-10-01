@@ -40,10 +40,12 @@ export type { AppPortConfig, AppPortContractSnapshot, DeploymentMode } from './r
 export { AppPortEvents, AppPortTenantContext } from './runtime/platform.js';
 export type { AppPortEvent, AppPortHttpRuntime, EventSubscription } from './runtime/platform.js';
 export {
-  API_KEY_MANAGEMENT_CAPABILITIES, APPPORT_UI_CONTRIBUTIONS,
+  API_KEY_MANAGEMENT_CAPABILITIES,
   createManagementRouter, managementErrorHandler,
   ManagementAuthenticationError, ManagementAuthorizationError,
 } from './runtime/management.js';
+export { APPPORT_UI_CONTRIBUTIONS, UI_DISCOVERY_PATH, UI_PROTOCOL_ID, createUiContribution, createUiDiscoveryDocument } from './runtime/ui.js';
+export type { UiMountedServices } from './runtime/ui.js';
 export type {
   ApiKeyManagementCapability, CreateManagementRouterOptions, ManagementAuthenticationAdapter,
   ManagementAuthorizationAdapter, ManagementAuthorizationContext, ManagementAuthorizationResult, ManagementServices,

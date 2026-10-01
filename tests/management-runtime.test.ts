@@ -152,11 +152,16 @@ test('management API rejects missing principals and enforces each operation capa
 });
 
 test('API key UI contribution declares the exact capabilities used by the page', () => {
-  assert.deepEqual(APPPORT_UI_CONTRIBUTIONS, [{
-    protocol: 'AppPort/ui/1',
-    id: 'api-keys',
-    requiredCapabilities: ['apikeys.read', 'apikeys.create', 'apikeys.revoke'],
-  }]);
+  // The exported contribution is a valid AppPort/ui/1 document (the protocol's
+  // own validator ran when it was built), and its API-key surface names exactly
+  // the capabilities the packaged page drives.
+  const [contribution] = APPPORT_UI_CONTRIBUTIONS;
+  assert.equal(contribution!.protocol, 'AppPort/ui/1');
+  const surface = contribution!.surfaces.find((candidate) => candidate.id === 'api-keys');
+  assert.deepEqual(surface, {
+    id: 'api-keys', title: 'API Keys', route: '/api-keys',
+    capabilities: ['apikeys.read', 'apikeys.create', 'apikeys.revoke'],
+  });
 });
 
 test('packaged API-key UI requires its complete capability set and unsupported surfaces are not mounted', async () => {
