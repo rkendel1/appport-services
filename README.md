@@ -104,6 +104,17 @@ npx @appport/runtime webhook list --tenant acme
 npx @appport/runtime job list --tenant acme
 ```
 
+### Standalone management host
+
+You do not need an application to operate AppPort Services. `serve` starts the management host, which owns its durable state, `ServiceGateway`, authentication, management router, and HTTP server:
+
+```sh
+npx @appport/services init     # appport.toml + feltdb.flow for this deployment
+npx @appport/services serve    # GET /v1/ui, /services, and the other management pages
+```
+
+It binds `127.0.0.1:4100` by default; override with `--host` / `--port`. State is the same durable FeltDB deployment the CLI commands use, so it survives restart. Management requests authenticate with an AppPort API key (`Authorization: Bearer <secret>`) or an operator identity adapter; authorization stays with AuthBoundry. See [docs/management.md](docs/management.md).
+
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
 
 The repository defines AppPort capabilities for **tenant-scoped API keys**, **durable webhooks**, **durable job execution** (including schedules), provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts, **durable notifications**, and **files**. Legacy runtime state uses **`@feltdb/core@0.11.9`**. Secret material remains with an authorized provider and is never durable AppPort state.

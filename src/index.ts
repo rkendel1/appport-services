@@ -51,6 +51,15 @@ export type {
   ManagementAuthorizationAdapter, ManagementAuthorizationContext, ManagementAuthorizationResult, ManagementServices,
 } from './runtime/management.js';
 
+// Standalone management host (`appport-services serve`)
+export {
+  createManagementHostAuthenticate, startManagementHost,
+  DEFAULT_MANAGEMENT_HOST, DEFAULT_MANAGEMENT_PORT,
+} from './runtime/management-host.js';
+export type { ManagementHostOptions, ManagementHostRuntime } from './runtime/management-host.js';
+export { resolveDeployment, createConfiguredRuntime, DEFAULT_APPLICATION, DEFAULT_STATE_DIRECTORY } from './runtime/deployment.js';
+export type { ResolvedDeployment } from './runtime/deployment.js';
+
 // Service classes (consumers construct services via createServices)
 export { ApiKeyService } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';

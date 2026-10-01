@@ -20,11 +20,12 @@ async function init(): Promise<{ path: string; text: string }> {
 
 // `appport()` is an application runtime, not a management application. It serves
 // the application's routes and the `/_appport/*` JSON contract; the packaged
-// management pages and the AppPort/ui/1 contribution exist only in a host that
-// deliberately mounts `createManagementRouter`. This is intentional: mounting
-// the pages in every runtime would turn every AppPort application into a
-// management application and expose pages that Bearer-only standalone mode
-// cannot authenticate.
+// management pages and the AppPort/ui/1 contribution are served only by a host
+// that mounts `createManagementRouter` — either an embedded application host or
+// `appport-services serve` (see docs/management.md). This is intentional:
+// mounting the pages in every application runtime would turn every AppPort
+// application into a management application and expose pages that Bearer-only
+// standalone mode cannot authenticate.
 test('the standalone runtime serves the service API and no management pages or UI contribution', async () => {
   const { path, text } = await init();
   const config = join(path, 'appport.toml');

@@ -12,6 +12,8 @@ import { pathToFileURL } from 'node:url';
 
 import type { ApiKeyService } from './api-keys/service.js';
 import { parseAppPortConfig } from './runtime/dsl.js';
+import { createConfiguredRuntime } from './runtime/deployment.js';
+import { startManagementHost } from './runtime/management-host.js';
 import type { ServiceAuthorizer } from './authority/authorizer.js';
 import { ServiceMigrationError } from './authority/errors.js';
 import { FeltDbEffectEvidenceStore } from './authority/evidence.js';
@@ -76,10 +78,12 @@ export async function runCli(
       return handleWebhookCommand(action, rest, io, cwd, createOperator(cwd, authority));
     } else if (group === 'job') {
       return handleJobCommand(action, rest, io, cwd, createOperator(cwd, authority));
+    } else if (group === 'serve') {
+      return handleServeCommand(rest, io, cwd, authority);
     } else {
       writeLine(
         io.stderr,
-        'Usage: appport-runtime init [--use api,webhooks,jobs,notifications,files] | appport-runtime config migrate | appport-runtime <api-key|webhook|job> <command>',
+        'Usage: appport-runtime init [--use api,webhooks,jobs,notifications,files] | appport-runtime config migrate | appport-runtime serve [--host <host>] [--port <port>] | appport-runtime <api-key|webhook|job> <command>',
       );
       return 1;
     }
@@ -220,17 +224,6 @@ function canonicalConfig(applicationName: string, selected: readonly string[]): 
     '', ...selected.map((capability) => `use ${capability}`), '',
   );
   return lines.join('\n');
-}
-
-function createConfiguredRuntime(cwd: string): { runtime: ReturnType<typeof createFeltDbRuntime>; config?: ReturnType<typeof parseAppPortConfig> } {
-  const configPath = resolve(cwd, 'appport.toml');
-  if (!existsSync(configPath)) return { runtime: createFeltDbRuntime() };
-  const config = parseAppPortConfig(configPath);
-  if (config.deployment.storage === 'memory') return { runtime: createFeltDbRuntime({ memory: true, namespace: config.state.namespace }), config };
-  if (config.deployment.mode !== 'local' && process.env.FELTDB_URL) {
-    return { runtime: createFeltDbRuntime({ namespace: config.state.namespace, server: { url: process.env.FELTDB_URL, token: process.env.FELTDB_TOKEN, applicationId: config.application.name, environment: process.env.FELTDB_ENVIRONMENT } }), config };
-  }
-  return { runtime: createFeltDbRuntime({ mode: 'local', namespace: config.state.namespace, path: resolve(cwd, '.appport/state') }), config };
 }
 
 function createConfiguredApiKeyService(cwd: string, operator: Operator): ApiKeyService {
@@ -762,6 +755,53 @@ function getTimeRemaining(targetTime: string): string {
 
 async function closeQuietly(service: ApiKeyService): Promise<void> {
   await service.close().catch(() => undefined);
+}
+
+/**
+ * `appport-services serve` — start the standalone management host.
+ *
+ * The host owns its state, gateway, authentication, router, and HTTP server, so
+ * an operator can run AppPort Services without embedding it in an application.
+ * It stays up until the process is signalled; the host closes itself.
+ */
+async function handleServeCommand(
+  tokens: readonly string[],
+  io: CommandIo,
+  cwd: string,
+  authority?: CliAuthority,
+): Promise<number> {
+  const options = parseOptions(tokens);
+  const port = firstOption(options, 'port');
+  const authorityModule = await loadAuthority(cwd, authority);
+  const runtime = await startManagementHost({
+    cwd,
+    ...(firstOption(options, 'host') ? { host: firstOption(options, 'host')! } : {}),
+    ...(port ? { port: parsePort(port) } : {}),
+    ...(authorityModule?.authorizer ? { authorizer: authorityModule.authorizer } : {}),
+    ...(authorityModule?.credentials ? { credentials: authorityModule.credentials } : {}),
+    // The operator adapter is AppPort Services' own identity boundary; it is
+    // never an external control plane's credential.
+    ...(authorityModule?.identify ? { identify: authorityModule.identify } : {}),
+    logger: (line) => writeLine(io.stderr, line),
+  });
+
+  // `serve` is long-lived: resolve only after shutdown so the CLI keeps the
+  // process alive and an operator can stop it with Ctrl-C.
+  await new Promise<void>((resolvePromise) => {
+    const stop = () => resolvePromise();
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+  });
+  await runtime.close();
+  return 0;
+}
+
+function parsePort(value: string): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`Invalid --port ${JSON.stringify(value)}; expected an integer between 0 and 65535`);
+  }
+  return port;
 }
 
 function parseOptions(tokens: readonly string[]): Map<string, string[]> {

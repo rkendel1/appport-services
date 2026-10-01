@@ -2,6 +2,50 @@
 
 AppPort Services owns service behavior, durable state, validation, API-key generation, and the management HTTP contract. The host application owns authentication. AuthBoundry is the authorization authority: the router is a thin adapter, and every operation is authorized by the services' `ServiceGateway` (see [AUTHORITY.md](./AUTHORITY.md)). AppPort Services does not authenticate an embedded browser, inspect host roles or claims, or require a second AppPort API key.
 
+## Two ways to host the management runtime
+
+AppPort Services can be **embedded by a host application** or run as **its own management host**:
+
+- **Embedded** — an application calls `createManagementRouter(...)` and supplies its own `authenticate` adapter (see below).
+- **Standalone** — `appport-services serve` starts the management host, which owns its state, `ServiceGateway`, authentication, router, and HTTP server. No application and no external control plane is required.
+
+Both modes mount the **same** `createManagementRouter`, so the router is the single source of truth for which routes exist. The standalone host is an additional supported hosting option; it does not change or remove the embedded API.
+
+## Standalone management host
+
+```sh
+appport-services init     # write appport.toml + feltdb.flow for this deployment
+appport-services serve    # start the management host
+```
+
+`serve` hosts `createManagementRouter(...)` and therefore serves:
+
+- `GET /v1/ui` — the `AppPort/ui/1` discovery document (public metadata, `Cache-Control: no-store`).
+- `/services` and every other management page the mounted services advertise.
+- The `/_appport/*` management API.
+
+Which pages exist is **not** hard-coded. The host derives them from the same contribution the router serves, so a host that mounts fewer services advertises fewer surfaces.
+
+| Concern | Behaviour |
+| --- | --- |
+| Default bind address | `127.0.0.1` (loopback). The host serves an operator UI, not the public internet. |
+| Default port | `4100`. Overrides `--port 8787`; set `--host`/`--port` to change it. `--port 0` binds an ephemeral port. |
+| Configuration | `appport.toml` (`[http] host` / `port`) and `--host` / `--port` flags, with the flags winning. |
+| State | The same durable FeltDB deployment the `api-key`, `webhook`, and `job` commands use (`.appport/state`). Survives restart. |
+| Authentication | AppPort Services' own. An AppPort API key as `Authorization: Bearer <secret>`, or an operator identity adapter. |
+| Authorization | AuthBoundry, per operation, through the `ServiceGateway`. |
+| Shutdown | `SIGINT`/`SIGTERM` close the listener, drain connections, and close the database. `close()` is idempotent. |
+
+**Authentication setup.** A management request needs an AppPort API key. Mint one with the existing command and use it as a bearer credential:
+
+```sh
+appport-services api-key create --name operator --tenant-id <tenant>
+```
+
+Set `APPPORT_AUTHORITY` to a module exporting `{ authorizer, identify, credentials }` to supply an AuthBoundry authorizer and an operator identity adapter, exactly as the other CLI commands do. The standalone host never accepts an external control plane's credential and never requires one.
+
+Discovery (`GET /v1/ui`) and the capability-free pages are public; the packaged API-key page and every `/_appport/*` operation require a valid identity. Without an AuthBoundry authorizer the host still serves discovery, but management operations fail closed with `503 AUTHORITY_UNAVAILABLE` — it never weakens the boundary to make discovery work.
+
 ## Embedded Express host
 
 Mount the supported router against the same `AppPortServices` instance used by the application:
