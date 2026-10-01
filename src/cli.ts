@@ -200,7 +200,7 @@ function canonicalConfig(applicationName: string, selected: readonly string[]): 
     '[http]',
     'enabled = true',
     'host = "127.0.0.1"',
-    'port = 8787',
+    'port = 4100',
     '',
     '[cors]',
     'enabled = true',

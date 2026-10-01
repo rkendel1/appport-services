@@ -34,3 +34,7 @@ AuthBoundry as `configuration.read`, `configuration.write`,
 `credential.detach` (see [AUTHORITY.md](./AUTHORITY.md)). The optional management UI is served by
 `createConfigurationUiRouter()` at `/configuration`; it uses the API and does
 not use browser storage.
+
+## Default HTTP port
+
+`appport init` (and `create-appport`) write `[http] port = 4100`. They used to write `8787`, which is also the default port of the Compute control plane (`compute`, `compute start`), so running both with defaults made the second fail to bind. An explicit `port` in an existing `appport.toml` is unchanged, and the parser's own default when `[http] port` is omitted is still `8787`; set `port` explicitly (the generated file does) if you run next to Compute.

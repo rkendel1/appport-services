@@ -110,7 +110,7 @@ test('generated contract materializes HTTP, state, events, identity, and lifecyc
   await runCli(['init', '--use', 'api,jobs,webhooks'], { stdout: sink, stderr: sink }, undefined, path);
   const configPath = join(path, 'appport.toml');
   const source = (await readFile(configPath, 'utf8'))
-    .replace('port = 8787', 'port = 0')
+    .replace('port = 4100', 'port = 0')
     .replace('[authorization]\nenabled = true', '[authorization]\nenabled = false');
   await writeFile(configPath, source);
   const application = await appport({
@@ -170,7 +170,7 @@ test('unmanaged lifecycle exposes explicit idempotent start and close', async ()
   await runCli(['init', '--use', 'api'], { stdout: sink, stderr: sink }, undefined, path);
   const configPath = join(path, 'appport.toml');
   const source = (await readFile(configPath, 'utf8'))
-    .replace('port = 8787', 'port = 0')
+    .replace('port = 4100', 'port = 0')
     .replace('[authorization]\nenabled = true', '[authorization]\nenabled = false')
     .replace('[lifecycle]\nmanaged = true', '[lifecycle]\nmanaged = false');
   await writeFile(configPath, source);
@@ -189,7 +189,7 @@ test('standalone HTTP runtime composes the supported API-key management contract
   await runCli(['init', '--use', 'api'], { stdout: sink, stderr: sink }, undefined, path);
   const configPath = join(path, 'appport.toml');
   const source = (await readFile(configPath, 'utf8'))
-    .replace('port = 8787', 'port = 0')
+    .replace('port = 4100', 'port = 0')
     .replace('[lifecycle]\nmanaged = true', '[lifecycle]\nmanaged = false');
   await writeFile(configPath, source);
   const authorizer = new TestAuthority();
