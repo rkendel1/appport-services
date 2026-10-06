@@ -4,6 +4,8 @@ import rateLimit from 'express-rate-limit';
 import type { ApiKeyService } from '../api-keys/service.js';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import { createConfigurationRouter } from '../configuration/http.js';
+import { createIntelligenceRouter } from '../intelligence/http.js';
+import type { IntelligenceService } from '../intelligence/service.js';
 import { createConfigurationUiRouter } from '../configuration/ui.js';
 import { UI_DISCOVERY_PATH, createUiContribution, createUiDiscoveryDocument } from './ui.js';
 import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from '../configuration/service.js';
@@ -50,6 +52,7 @@ export type ManagementAuthorizationAdapter = (
 export interface ManagementServices {
   readonly apiKeys?: Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'revokeApiKey'>;
   readonly configuration?: ConfigurationService;
+  readonly intelligence?: IntelligenceService;
   readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'>;
   readonly jobs?: Pick<JobService, 'enqueue' | 'listJobs' | 'retry'>;
   readonly notifications?: Pick<NotificationService, 'notify' | 'get' | 'list' | 'deliveries' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete' | 'retryDelivery'>;
@@ -122,6 +125,9 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
 
   if (options.includeConfiguration !== false && options.services.configuration) {
     router.use('/v1/configuration', createConfigurationRouter(options.services.configuration));
+  }
+  if (options.includeConfiguration !== false && options.services.intelligence) {
+    router.use('/v1/intelligence', createIntelligenceRouter(options.services.intelligence));
   }
   // AppPort/ui/1 discovery: the surfaces the pages below serve, described as
   // data. A host that serves no pages advertises none (404, as the protocol's own

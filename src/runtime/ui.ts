@@ -31,6 +31,7 @@ export interface UiMountedServices {
   readonly files?: unknown;
   readonly notifications?: unknown;
   readonly configuration?: unknown;
+  readonly intelligence?: unknown;
 }
 
 interface SurfaceDefinition {
@@ -54,6 +55,7 @@ const SURFACES: readonly SurfaceDefinition[] = [
   { id: 'notifications', title: 'Notifications', route: '/notifications', order: 50, mounted: (s) => Boolean(s.notifications), capabilities: ['notifications.read', 'notifications.send', 'notifications.update', 'notifications.delete'] },
   { id: 'files', title: 'Files', route: '/files', order: 60, mounted: (s) => Boolean(s.files), capabilities: ['files.read', 'files.write', 'files.delete'] },
   { id: 'configuration', title: 'Configuration', route: '/configuration', order: 70, mounted: (s, c) => c && Boolean(s.configuration), capabilities: ['configuration.read', 'configuration.write', 'configuration.delete'] },
+  { id: 'intelligence', title: 'Intelligence', route: '/intelligence', order: 75, mounted: (s, c) => c && Boolean(s.intelligence), capabilities: ['intelligence.catalog', 'intelligence.read', 'intelligence.write', 'intelligence.credential.set', 'intelligence.credential.remove'] },
   { id: 'secrets', title: 'Secrets', route: '/secrets', order: 80, mounted: (s, c) => c && Boolean(s.configuration), capabilities: ['configuration.read', 'credential.attach', 'credential.rotate', 'credential.detach'] },
 ];
 
@@ -117,5 +119,5 @@ export function createUiDiscoveryDocument(
 
 /** Every surface this package can contribute, for hosts that mount everything. */
 export const APPPORT_UI_CONTRIBUTIONS: readonly UiContribution[] = Object.freeze(
-  [createUiContribution({ apiKeys: true, webhooks: true, jobs: true, schedules: true, files: true, notifications: true, configuration: true })!],
+  [createUiContribution({ apiKeys: true, webhooks: true, jobs: true, schedules: true, files: true, notifications: true, configuration: true, intelligence: true })!],
 );

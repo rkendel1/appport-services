@@ -80,6 +80,16 @@
     "runtimeMounted": true
   },
   {
+    "id": "intelligence",
+    "name": "Intelligence",
+    "contractVersion": 1,
+    "operations": ["catalog", "read", "write", "credential.set", "credential.remove", "resolve"],
+    "durable": true,
+    "async": false,
+    "dependencies": ["configuration", "ServiceGateway", "FeltDB"],
+    "runtimeMounted": true
+  },
+  {
     "id": "secrets",
     "name": "Secrets",
     "contractVersion": 1,

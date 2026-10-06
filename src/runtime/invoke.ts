@@ -1,5 +1,6 @@
 import type { ApiKeyService } from '../api-keys/service.js';
 import type { ConfigurationService } from '../configuration/service.js';
+import type { IntelligenceService } from '../intelligence/service.js';
 import type { FileService } from '../files/service.js';
 import type { JobService } from '../jobs/service.js';
 import type { NotificationService } from '../notifications/service.js';
@@ -19,6 +20,7 @@ export interface InvokableServices {
   readonly notifications?: NotificationService;
   readonly files?: FileService;
   readonly configuration?: ConfigurationService;
+  readonly intelligence?: IntelligenceService;
 }
 
 export interface InvokeOptions {
@@ -104,4 +106,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'credential.attach': (s, input, p) => need(s.configuration, 'configuration').createSecret(input as never, p),
   'credential.rotate': (s, input, p) => need(s.configuration, 'configuration').rotateSecret(input as never, p),
   'credential.detach': (s, input, p) => need(s.configuration, 'configuration').delete({ ...input, kind: 'secret' } as never, p),
+
+  'intelligence.catalog': (s, input, p) => need(s.intelligence, 'intelligence').catalog(input as never, p),
+  'intelligence.read': (s, input, p) => need(s.intelligence, 'intelligence').get(input as never, p),
+  'intelligence.write': (s, input, p) => need(s.intelligence, 'intelligence').set(input as never, p),
+  'intelligence.credential.set': (s, input, p) => need(s.intelligence, 'intelligence').setCredential(input as never, p),
+  'intelligence.credential.remove': (s, input, p) => need(s.intelligence, 'intelligence').removeCredential(input as never, p),
+  'intelligence.resolve': (s, input, p) => need(s.intelligence, 'intelligence').resolveRuntime(input as never, p),
 };

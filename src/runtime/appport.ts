@@ -320,6 +320,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
       files: Boolean(filesFacade),
       configuration: false,
       credentials: false,
+      intelligence: false,
       secrets: false,
       'runtime-events': config.events.enabled,
     }),

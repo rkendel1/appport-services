@@ -131,20 +131,29 @@ export class ConfigurationService {
 
   /** Resolve durable ownership from the verified principal and this deployment's application. */
   private own(scope: Scope, caller: AuthenticatedPrincipal): { principal: VerifiedPrincipal; owned: ConfigurationScope } {
-    const principal = requireVerifiedPrincipal(caller);
-    rejectCallerActor(scope, principal);
-    const tenantId = resolveTenant(scope, principal);
-    const application = this.gateway().application;
-    if (scope.applicationId !== undefined && scope.applicationId !== application) {
-      throw new ServiceAuthorityError('DENIED', 'Configuration belongs to a different application', { reason: 'application_mismatch' });
-    }
-    if (!CONFIGURATION_ENVIRONMENTS.includes(scope.environment)) throw new ConfigurationValidationError('Invalid environment');
-    return { principal, owned: { tenantId, applicationId: application, environment: scope.environment } };
+    return resolveConfigurationOwnership(this.gateway(), scope, caller);
   }
 
   private async record(type: ConfigurationAuditEvent['type'], item: ConfigurationVariable | ConfigurationSecret, kind: 'variable' | 'secret', actor: string, operation: string, status: ConfigurationAuditEvent['status']) {
     await this.options.store.audit({ id: randomUUID(), type, tenantId: item.tenantId, applicationId: item.applicationId, environment: item.environment, name: item.name, kind, actor, timestamp: this.now().toISOString(), operation, status });
   }
+}
+
+/**
+ * Ownership comes from the verified principal and the gateway's application,
+ * never from caller-selected identifiers. Shared by every service that keeps
+ * durable state in the configuration store.
+ */
+export function resolveConfigurationOwnership(gateway: ServiceGateway, scope: Scope, caller: AuthenticatedPrincipal): { principal: VerifiedPrincipal; owned: ConfigurationScope } {
+  const principal = requireVerifiedPrincipal(caller);
+  rejectCallerActor(scope, principal);
+  const tenantId = resolveTenant(scope, principal);
+  const application = gateway.application;
+  if (scope.applicationId !== undefined && scope.applicationId !== application) {
+    throw new ServiceAuthorityError('DENIED', 'Configuration belongs to a different application', { reason: 'application_mismatch' });
+  }
+  if (!CONFIGURATION_ENVIRONMENTS.includes(scope.environment)) throw new ConfigurationValidationError('Invalid environment');
+  return { principal, owned: { tenantId, applicationId: application, environment: scope.environment } };
 }
 
 function resource(scope: ConfigurationScope, name?: string, type: 'configuration' | 'credential' = 'configuration', credentialRef?: string) {

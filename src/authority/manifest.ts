@@ -59,6 +59,13 @@ const ENTRIES: readonly Entry[] = [
   ['credential.attach', 'configuration', 'createSecret', 'consequential', 'credential'],
   ['credential.rotate', 'configuration', 'rotateSecret', 'consequential', 'credential'],
   ['credential.detach', 'configuration', 'delete', 'consequential', 'credential'],
+
+  ['intelligence.catalog', 'intelligence', 'catalog', 'observation', 'intelligence'],
+  ['intelligence.read', 'intelligence', 'get', 'observation', 'intelligence'],
+  ['intelligence.write', 'intelligence', 'set', 'consequential', 'intelligence'],
+  ['intelligence.credential.set', 'intelligence', 'setCredential', 'consequential', 'credential'],
+  ['intelligence.credential.remove', 'intelligence', 'removeCredential', 'consequential', 'credential'],
+  ['intelligence.resolve', 'intelligence', 'resolveRuntime', 'observation', 'intelligence', false],
 ];
 
 function freezeCapability([name, service, operation, effect, resource, invocable = true]: Entry): ServiceCapability {

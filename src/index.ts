@@ -60,6 +60,13 @@ export type { ManagementHostOptions, ManagementHostRuntime } from './runtime/man
 export { resolveDeployment, createConfiguredRuntime, DEFAULT_APPLICATION, DEFAULT_STATE_DIRECTORY } from './runtime/deployment.js';
 export type { ResolvedDeployment } from './runtime/deployment.js';
 
+// Intelligence (provider/model/endpoint/credential configuration)
+export { IntelligenceService, IntelligenceValidationError, INTELLIGENCE_CATALOG, CUSTOM_PROVIDER_ID, getIntelligenceProvider } from './intelligence/index.js';
+export type {
+  IntelligenceProvider, IntelligenceModel, IntelligenceEndpoint, IntelligenceProtocol, CredentialRequirement,
+  IntelligenceConfigurationView, IntelligenceRuntimeConfiguration, IntelligenceSelection, IntelligenceWriteInput, IntelligenceCredentialInput,
+} from './intelligence/index.js';
+
 // Service classes (consumers construct services via createServices)
 export { ApiKeyService } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';

@@ -19,6 +19,7 @@ import { TransactionContextImpl } from './transaction-services.js';
 import { parseAppPortConfig, type AppPortConfig } from './dsl.js';
 import { ConfigurationService } from '../configuration/service.js';
 import { FeltDbConfigurationStore } from '../configuration/storage.js';
+import { IntelligenceService } from '../intelligence/service.js';
 import { NotificationService } from '../notifications/service.js';
 import { FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNotificationStore } from '../storage/notifications.js';
 import { FileService } from '../files/service.js';
@@ -36,6 +37,8 @@ export interface AppPortServices {
   readonly webhooks: WebhookService;
   readonly jobs: JobService;
   readonly configuration: ConfigurationService;
+  /** Canonical provider/model/endpoint/credential configuration. Configuration only; never executes a model. */
+  readonly intelligence: IntelligenceService;
   readonly notifications: NotificationService;
   readonly files: FileService;
   readonly schedules: ScheduleService;
@@ -145,7 +148,9 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     auditSink: new FeltDbJobAuditSink(db),
     ...(authority ? { authority } : {}),
   });
-  const configurationService = new ConfigurationService({ store: new FeltDbConfigurationStore(db), ...(authority ? { authority } : {}) });
+  const configurationStore = new FeltDbConfigurationStore(db);
+  const configurationService = new ConfigurationService({ store: configurationStore, ...(authority ? { authority } : {}) });
+  const intelligenceService = new IntelligenceService({ store: configurationStore, ...(authority ? { authority } : {}) });
   const notificationService = new NotificationService({
     store: new FeltDbNotificationStore(db),
     deliveryStore: new FeltDbNotificationDeliveryStore(db),
@@ -165,6 +170,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     webhooks: webhookService,
     jobs: jobService,
     configuration: configurationService,
+    intelligence: intelligenceService,
     notifications: notificationService,
     files: fileService,
     schedules: scheduleService,
@@ -182,6 +188,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
       files: true,
       configuration: true,
       credentials: true,
+      intelligence: true,
       secrets: false,
       'runtime-events': false,
     }),

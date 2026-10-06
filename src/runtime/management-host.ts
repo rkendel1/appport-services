@@ -121,6 +121,7 @@ export async function startManagementHost(options: ManagementHostOptions = {}): 
     files: services.files,
     notifications: services.notifications,
     configuration: services.configuration,
+    intelligence: services.intelligence,
   } satisfies UiMountedServices);
   if (!contribution) throw new Error('AppPort Services has no management surfaces to serve');
 

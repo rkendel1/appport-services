@@ -7,6 +7,7 @@ export type CapabilityCatalogId =
   | 'files'
   | 'configuration'
   | 'credentials'
+  | 'intelligence'
   | 'secrets'
   | 'runtime-events';
 
@@ -92,6 +93,15 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     name: 'Credentials',
     contractVersion: 1,
     operations: Object.freeze(['attach', 'rotate', 'detach']),
+    durable: true,
+    async: false,
+    dependencies: Object.freeze(['configuration', 'ServiceGateway', 'FeltDB']),
+  }),
+  intelligence: Object.freeze({
+    id: 'intelligence',
+    name: 'Intelligence',
+    contractVersion: 1,
+    operations: Object.freeze(['catalog', 'read', 'write', 'credential.set', 'credential.remove', 'resolve']),
     durable: true,
     async: false,
     dependencies: Object.freeze(['configuration', 'ServiceGateway', 'FeltDB']),
