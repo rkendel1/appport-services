@@ -1,0 +1,24 @@
+/* AppPort Services' own page styles, on the shared Stack tokens only. */
+body { margin: 0; background: var(--stack-color-bg-canvas); color: var(--stack-color-text-default); font-family: var(--stack-font-family-sans); }
+.stack-shell__main { max-width: 1120px; }
+.stack-shell__main > section { margin-top: var(--stack-space-6); }
+.stack-shell__main h2 { margin: 0 0 var(--stack-space-3); font-size: var(--stack-text-lg-size); line-height: var(--stack-text-lg-line); }
+.appport-create { margin: var(--stack-space-4) 0; }
+.appport-outcome { margin: 0 0 var(--stack-space-4); }
+.appport-outcome:has(> .appport-outcome__ok:empty):has(> .appport-outcome__problem:empty) { margin: 0; }
+/* Empty but still rendered: a live region must exist before its text changes. */
+.appport-outcome__ok:empty { padding: 0; border: 0; }
+.appport-outcome__ok:focus { outline: var(--stack-focus-ring-width) solid var(--stack-focus-ring-color); outline-offset: var(--stack-focus-ring-offset); }
+.appport-outcome__ok { margin: 0; padding: var(--stack-space-2) var(--stack-space-3); border: var(--stack-border-width-thin) solid var(--stack-color-status-positive-border); border-radius: var(--stack-radius-md); background: var(--stack-color-status-positive-bg); color: var(--stack-color-status-positive-fg); overflow-wrap: anywhere; }
+.appport-secret { font-family: var(--stack-font-family-mono); font-weight: var(--stack-font-weight-semibold); overflow-wrap: anywhere; }
+.appport-summary { margin: 0 0 var(--stack-space-3); color: var(--stack-color-text-muted); }
+.appport-summary:empty { display: none; }
+.appport-list { margin: var(--stack-space-3) 0; }
+.appport-list code { overflow-wrap: anywhere; }
+.appport-list .stack-table__cell .stack-button + .stack-button { margin-left: var(--stack-space-2); }
+.appport-services { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--stack-space-4); margin: var(--stack-space-6) 0 0; padding: 0; list-style: none; }
+.appport-service { padding: var(--stack-space-4); border: var(--stack-border-width-thin) solid var(--stack-color-border-default); border-radius: var(--stack-radius-lg); background: var(--stack-color-bg-surface); }
+.appport-service__title { margin: 0 0 var(--stack-space-2); font-size: var(--stack-text-md-size); }
+.appport-service__title a { color: var(--stack-color-text-link); }
+.appport-service__body { margin: 0; color: var(--stack-color-text-muted); }
+.appport-noscript { padding: var(--stack-space-6); }

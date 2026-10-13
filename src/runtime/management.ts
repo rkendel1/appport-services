@@ -7,7 +7,7 @@ import { createConfigurationRouter } from '../configuration/http.js';
 import { createIntelligenceRouter } from '../intelligence/http.js';
 import type { IntelligenceService } from '../intelligence/service.js';
 import { createConfigurationUiRouter } from '../configuration/ui.js';
-import { UI_DISCOVERY_PATH, createUiContribution, createUiDiscoveryDocument } from './ui.js';
+import { UI_DISCOVERY_PATH, createUiContribution, createUiDiscoveryDocument, createUiPages } from './ui.js';
 import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from '../configuration/service.js';
 import { FileAuthorizationError, type FileService } from '../files/service.js';
 import type { JobService } from '../jobs/service.js';
@@ -141,7 +141,8 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
     res.json(discovery);
   });
   if (options.includeUi !== false) {
-    const ui = createConfigurationUiRouter();
+    // The navigation lists exactly the pages this host mounts.
+    const ui = createConfigurationUiRouter({ pages: createUiPages(options.services, { includeConfiguration: options.includeConfiguration !== false }) });
     // The pages served are exactly the surfaces the contribution describes.
     const supportedUiPaths = new Set(
       createUiContribution(options.services, { includeConfiguration: options.includeConfiguration !== false })?.surfaces.map((surface) => surface.route) ?? [],

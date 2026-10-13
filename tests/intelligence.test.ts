@@ -199,10 +199,14 @@ test('the Intelligence page is a discoverable surface and the management adapter
     assert.equal(surface?.route, '/intelligence');
     assert.ok(surface!.capabilities.every((name) => SERVICE_CAPABILITY_MANIFEST.some((c) => c.name === name)));
 
+    // Pages are rendered in the browser from a page description the server
+    // sends (src/configuration/ui.ts); tests/browser covers the rendered page.
+    const describe = (html: string) => JSON.parse(/<script type="application\/json" id="appport-page">([^<]*)<\/script>/.exec(html)![1]) as { page: string; navigation: Array<{ route: string }> };
     const page = await (await fetch(`${base}/intelligence`)).text();
-    assert.match(page, /<h1>Intelligence<\/h1>/);
+    assert.equal(describe(page).page, 'intelligence');
+    assert.match(page, /<title>AppPort Services · Intelligence<\/title>/);
     assert.ok(!/localStorage|sessionStorage|indexedDB/.test(page), 'page uses no browser storage');
-    assert.match(await (await fetch(`${base}/services`)).text(), /href="\/intelligence"/);
+    assert.ok(describe(await (await fetch(`${base}/services`)).text()).navigation.some((item) => item.route === '/intelligence'));
 
     const put = await fetch(`${base}/v1/intelligence`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'openai', model: 'gpt-4o', credentialRef: ref }) });
     const saved = await put.text();

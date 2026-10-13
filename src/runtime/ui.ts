@@ -117,7 +117,30 @@ export function createUiDiscoveryDocument(
   return filterUiContribution(contribution, options.callerCapabilities ?? []);
 }
 
+/** A management page as the packaged pages need it: its surface, title, route and place in the navigation. */
+export interface UiPage {
+  readonly id: string;
+  readonly title: string;
+  readonly route: string;
+  readonly order: number;
+}
+
+const EVERYTHING: UiMountedServices = { apiKeys: true, webhooks: true, jobs: true, schedules: true, files: true, notifications: true, configuration: true, intelligence: true };
+
+/**
+ * The pages that are actually mounted, in navigation order: the same surfaces
+ * the contribution describes, so the packaged navigation never links to a page
+ * this host does not serve. With no services given, every page.
+ */
+export function createUiPages(services: UiMountedServices = EVERYTHING, options: { readonly includeConfiguration?: boolean } = {}): UiPage[] {
+  const includeConfiguration = options.includeConfiguration !== false;
+  return SURFACES
+    .filter((surface) => surface.mounted(services, includeConfiguration))
+    .sort((a, b) => a.order - b.order)
+    .map(({ id, title, route, order }) => ({ id, title, route, order }));
+}
+
 /** Every surface this package can contribute, for hosts that mount everything. */
 export const APPPORT_UI_CONTRIBUTIONS: readonly UiContribution[] = Object.freeze(
-  [createUiContribution({ apiKeys: true, webhooks: true, jobs: true, schedules: true, files: true, notifications: true, configuration: true, intelligence: true })!],
+  [createUiContribution(EVERYTHING)!],
 );

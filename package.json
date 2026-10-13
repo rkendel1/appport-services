@@ -18,6 +18,8 @@
   },
   "files": [
     "dist/src",
+    "ui",
+    "vendor/stack-ui",
     "appport.flow",
     "docs/credentials.md",
     "docs/configuration.md",
@@ -37,7 +39,8 @@
     "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test --test-concurrency=1 dist/tests/**/*.test.js",
-    "publish:packages": "sh scripts/publish-packages.sh"
+    "publish:packages": "sh scripts/publish-packages.sh",
+    "test:browser": "npm run build && node --test --test-concurrency=1 dist/tests/browser/*.browser.js"
   },
   "keywords": [
     "appport",
@@ -55,6 +58,8 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "22.10.2",
+    "axe-core": "^4.10.3",
+    "playwright-core": "^1.56.1",
     "typescript": "5.6.3"
   }
 }

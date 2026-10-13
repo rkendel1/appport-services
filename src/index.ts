@@ -44,7 +44,7 @@ export {
   createManagementRouter, managementErrorHandler,
   ManagementAuthenticationError, ManagementAuthorizationError,
 } from './runtime/management.js';
-export { APPPORT_UI_CONTRIBUTIONS, UI_DISCOVERY_PATH, UI_PROTOCOL_ID, createUiContribution, createUiDiscoveryDocument } from './runtime/ui.js';
+export { APPPORT_UI_CONTRIBUTIONS, UI_DISCOVERY_PATH, UI_PROTOCOL_ID, createUiContribution, createUiDiscoveryDocument, createUiPages, type UiPage } from './runtime/ui.js';
 export type { UiMountedServices } from './runtime/ui.js';
 export type {
   ApiKeyManagementCapability, CreateManagementRouterOptions, ManagementAuthenticationAdapter,
