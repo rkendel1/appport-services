@@ -1,69 +1,94 @@
+import { readFileSync } from 'node:fs';
+
 import { Router } from 'express';
 
-const styles = `body{font:16px system-ui;max-width:1000px;margin:3rem auto;padding:0 1rem;color:#172033}a{color:#175cd3}nav{margin-bottom:2rem}table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{text-align:left;padding:.65rem;border-bottom:1px solid #ddd}button{padding:.5rem .8rem}form{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}input,select,textarea{padding:.5rem}.muted{color:#667085}.services{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem}.service{border:1px solid #ddd;border-radius:8px;padding:1rem}.danger{color:#b42318}`;
+import { createUiPages, type UiPage } from '../runtime/ui.js';
 
-const nav = (active: string): string => `<nav><strong>AppPort Services</strong> · <a href="/services">Overview</a> · <a href="/configuration">Configuration</a> · <a href="/intelligence">Intelligence</a> · <a href="/api-keys">API Keys</a> · <a href="/jobs">Jobs</a> · <a href="/schedules">Schedules</a> · <a href="/files">Files</a> · <a href="/secrets">Secrets</a> · <a href="/webhooks">Webhooks</a> · <a href="/notifications">Notifications</a></nav>`;
+/**
+ * The packaged management pages, on the shared Stack design system.
+ *
+ * Every page is one HTML document: the vendored design-system styles and
+ * stateless classic script (`vendor/stack-ui`, checked against its
+ * `SHA256SUMS`; it has no theme preference, so the pages keep nothing in
+ * browser storage and follow the operating system's colour scheme), this
+ * package's page styles and script (`ui/`), and a JSON description of the page
+ * and its navigation. The navigation is the list of surfaces actually mounted,
+ * so it never links to a page this host does not serve. The browser renders the
+ * page with the design system's DOM helpers; nothing is parsed as markup.
+ *
+ * No route is added: the assets are inlined, and each page is served at the
+ * route its surface declares, exactly as before.
+ */
 
-function page(title: string, active: string, content: string, script = ''): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>AppPort Services${title ? ` · ${title}` : ''}</title><style>${styles}</style></head><body>${active ? nav(active) : ''}${content}${script ? `<script>${script}</script>` : ''}</body></html>`;
+export interface ConfigurationUiOptions {
+  /** The mounted pages, in navigation order. Defaults to every page this package can serve. */
+  readonly pages?: readonly UiPage[];
 }
 
-const clientHelpers = `const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));async function send(path,body,method='POST'){const r=await fetch(path,{method,headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok&&r.status!==204)throw new Error((await r.json()).error?.message||'Request failed');return r.status===204?null:r.json()}function formData(form){return Object.fromEntries(new FormData(form))}`;
+/** What each page is for, shown on the overview. */
+const DESCRIPTIONS: Readonly<Record<string, string>> = {
+  'api-keys': 'Application caller identities. AuthBoundry authorizes what they may do.',
+  webhooks: 'Register durable event endpoints.',
+  jobs: 'Queue durable work and retry failed records.',
+  schedules: 'Create recurring work using plain English intervals.',
+  notifications: 'Create and manage durable notifications.',
+  files: 'Create and update durable file metadata.',
+  configuration: 'Variables and secret references for each environment.',
+  intelligence: 'Provider, model, endpoint and credential for AI features. Optional.',
+  secrets: 'Provider-neutral secret metadata.',
+};
 
-export function createConfigurationUiRouter(): Router {
+interface Assets { readonly style: string; readonly designSystem: string; readonly page: string }
+let assets: Assets | undefined;
+
+/** The page assets, read once. Paths are relative to `dist/src/configuration/`. */
+function loadAssets(): Assets {
+  if (assets) return assets;
+  const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
+  assets = {
+    style: [read('vendor/stack-ui/tokens.css'), read('vendor/stack-ui/core.css'), read('ui/management.css')].join('\n'),
+    // The stateless build: these pages keep nothing in browser storage.
+    designSystem: read('vendor/stack-ui/stack-ui-core-stateless.js'),
+    page: read('ui/management.js'),
+  };
+  return assets;
+}
+
+/** JSON that is safe inside a <script> element: no `<`, and no line separators. */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+const escapeText = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+
+/** One management page. Exported for tests. */
+export function renderManagementPage(page: UiPage, pages: readonly UiPage[]): string {
+  const { style, designSystem, page: pageScript } = loadAssets();
+  const title = page.id === 'overview' ? 'AppPort Services' : `AppPort Services · ${page.title}`;
+  const description = {
+    page: page.id,
+    navigation: pages.map(({ id, title: label, route, order }) => ({ id, label, route, order })),
+    descriptions: DESCRIPTIONS,
+  };
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    + `<title>${escapeText(title)}</title><style>${style}</style></head><body>`
+    + `<noscript><p class="appport-noscript">The ${escapeText(page.title)} page needs JavaScript.</p></noscript>`
+    + `<script type="application/json" id="appport-page">${scriptJson(description)}</script>`
+    + `<script>${designSystem}</script><script>${pageScript}</script>`
+    + '</body></html>';
+}
+
+export function createConfigurationUiRouter(options: ConfigurationUiOptions = {}): Router {
+  const pages = options.pages ?? createUiPages();
   const router = Router();
-  router.get('/services', (_req, res) => {
-    res.type('html').send(page('', '', `<h1>AppPort Services</h1><p>Durable application infrastructure backed by FeltDB.</p><div class="services">
-      <div class="service"><h2>API Keys</h2><p>Application caller identities. AuthBoundry authorizes what they may do.</p><a href="/api-keys">Manage</a></div>
-      <div class="service"><h2>Jobs</h2><p>Queue durable work and retry failed records.</p><a href="/jobs">Manage</a></div>
-      <div class="service"><h2>Schedules</h2><p>Create recurring work using plain English intervals.</p><a href="/schedules">Manage</a></div>
-      <div class="service"><h2>Files</h2><p>Create and update durable file metadata.</p><a href="/files">Manage</a></div>
-      <div class="service"><h2>Intelligence</h2><p>Provider, model, endpoint and credential for AI features. Optional.</p><a href="/intelligence">Manage</a></div>
-      <div class="service"><h2>Secrets</h2><p>Provider-neutral secret metadata.</p><a href="/secrets">Manage</a></div>
-      <div class="service"><h2>Webhooks</h2><p>Register durable event endpoints.</p><a href="/webhooks">Manage</a></div>
-      <div class="service"><h2>Notifications</h2><p>Create and manage durable notifications.</p><a href="/notifications">Manage</a></div>
-    </div>`));
-  });
-  router.get('/configuration', (_req, res) => {
-    res.type('html').send(page('Configuration', 'Configuration', `<main><h1>Configuration</h1><p id="status" class="muted"></p><section><h2>Variables</h2><table><thead><tr><th>Name</th><th>Value</th><th>Status</th><th></th></tr></thead><tbody id="variables"></tbody></table><form id="variable-form"><input name="name" placeholder="NAME" pattern="[A-Z][A-Z0-9_]*" required><input name="value" placeholder="Value" required><select name="environment"><option>production</option><option>staging</option><option>development</option></select><button>+ Add variable</button></form></section><section><h2>Secrets</h2><table><thead><tr><th>Name</th><th>Status</th><th>Last updated</th><th></th></tr></thead><tbody id="secrets"></tbody></table><form id="secret-form"><input name="name" placeholder="NAME" pattern="[A-Z][A-Z0-9_]*" required><input name="credentialRef" placeholder="credential-ref:&lt;id&gt; (AuthBoundry custody)" pattern="credential-ref:.+" required><select name="environment"><option>production</option><option>staging</option><option>development</option></select><button>+ Add secret</button></form></section></main>`, `${clientHelpers}
-const api='/v1/configuration';async function load(){const r=await fetch(api);if(!r.ok){document.querySelector('#status').textContent='Unable to load configuration';return}const d=await r.json();document.querySelector('#variables').innerHTML=d.variables.map(v=>'<tr><td>'+esc(v.name)+'</td><td>'+esc(v.value)+'</td><td>configured</td><td><button data-edit-variable="'+esc(v.name)+'">Edit</button> <button data-delete="variables/'+esc(v.name)+'">Delete</button></td></tr>').join('')||'<tr><td colspan="4">No configuration yet.</td></tr>';document.querySelector('#secrets').innerHTML=d.secrets.map(s=>'<tr><td>'+esc(s.name)+'</td><td>configured</td><td>'+esc(s.updatedAt)+'</td><td><button data-rotate-secret="'+esc(s.name)+'">Rotate</button> <button data-delete="secrets/'+esc(s.name)+'">Delete</button></td></tr>').join('')||'<tr><td colspan="4">No secrets yet.</td></tr>';document.querySelector('#status').textContent=d.declarations.filter(x=>x.required&&!d.variables.some(v=>v.name===x.name)&&!d.secrets.some(v=>v.name===x.name)).length+' required values missing'}async function submit(form,path){const data=formData(form);data.required=false;try{await send(api+path,data);form.reset();await load()}catch(e){alert(e.message)}}document.querySelector('#variable-form').onsubmit=e=>{e.preventDefault();submit(e.target,'/variables')};document.querySelector('#secret-form').onsubmit=e=>{e.preventDefault();submit(e.target,'/secrets')};document.addEventListener('click',async e=>{const p=e.target.dataset.delete;if(p&&confirm('Delete this configuration?')){await send(api+'/'+p,undefined,'DELETE');await load()}const name=e.target.dataset.editVariable;if(name){const value=prompt('Replacement value');if(value!==null)await send(api+'/variables/'+encodeURIComponent(name),{value,required:false},'PATCH').then(load)}const secret=e.target.dataset.rotateSecret;if(secret){const credentialRef=prompt('Replacement credential reference (credential-ref:<id>)');if(credentialRef)await send(api+'/secrets/'+encodeURIComponent(secret),{credentialRef,required:false},'PUT').then(load)}});load();`));
-  });
-  router.get('/files', (_req, res) => {
-    res.type('html').send(page('Files', 'Files', `<main><h1>Files</h1><p class="muted">Create durable file metadata records; binary content remains in your storage provider.</p><form id="create"><input name="name" placeholder="File name" required><input name="storageKey" placeholder="Storage key" required><input name="size" type="number" min="0" placeholder="Size in bytes" required><input name="contentType" placeholder="Content type"><button>Create file record</button></form><p id="status" class="muted"></p><table><thead><tr><th>Name</th><th>Owner</th><th>Size</th><th>Storage key</th><th>Updated</th></tr></thead><tbody id="files"><tr><td colspan="5">Loading…</td></tr></tbody></table></main>`, `${clientHelpers}
-async function load(){const r=await fetch('/_appport/files');const d=r.ok?await r.json():[];document.querySelector('#files').innerHTML=d.map(f=>'<tr><td>'+esc(f.name)+'</td><td>'+esc(f.owner)+'</td><td>'+esc(f.size)+'</td><td>'+esc(f.storageKey)+'</td><td>'+esc(f.updatedAt||f.createdAt)+'</td><td><button data-edit="'+f.id+'">Edit</button> <button data-delete="'+f.id+'">Delete</button></td></tr>').join('')||'<tr><td colspan="6">No files yet.</td></tr>'}document.querySelector('#create').onsubmit=async e=>{e.preventDefault();try{await send('/_appport/files',{...formData(e.target),size:Number(e.target.size.value)});e.target.reset();document.querySelector('#status').textContent='File record created durably';await load()}catch(error){document.querySelector('#status').textContent=error.message}};document.addEventListener('click',async e=>{const id=e.target.dataset.delete;if(id&&confirm('Delete this file record?')){await send('/_appport/files/'+id,undefined,'DELETE');await load()}const edit=e.target.dataset.edit;if(edit){const name=prompt('File name');if(name)await send('/_appport/files/'+edit,{name},'PATCH').then(load)}});load();`));
-  });
-  router.get('/schedules', (_req, res) => {
-    res.type('html').send(page('Schedules', 'Schedules', `<main><h1>Schedules</h1><p class="muted">Create recurring execution definitions using plain English. Each one is stored durably in FeltDB.</p><form id="create"><input name="type" placeholder="Job type, e.g. invoice.process" required><select name="interval"><option value="15m">Every 15 minutes</option><option value="30m">Every 30 minutes</option><option value="1h">Every hour</option><option value="6h">Every 6 hours</option><option value="1d">Every day</option><option value="7d">Every week</option></select><button>Create schedule</button></form><p id="status" class="muted"></p><table><thead><tr><th>Type</th><th>Frequency</th><th>Next run</th><th>Created by</th><th>Status</th></tr></thead><tbody id="schedules"><tr><td colspan="5">Loading…</td></tr></tbody></table></main>`, `${clientHelpers}
-const words={s:'second',m:'minute',h:'hour',d:'day'};function english(value){const match=String(value).match(/^(\\d+)([smhd])$/);return match?'Every '+match[1]+' '+words[match[2]]+(match[1]==='1'?'':'s'):value}async function load(){const r=await fetch('/_appport/schedules');const d=r.ok?await r.json():[];document.querySelector('#schedules').innerHTML=d.map(s=>'<tr><td>'+esc(s.type)+'</td><td>'+esc(english(s.interval))+'</td><td>'+esc(s.nextRunAt)+'</td><td>'+esc(s.createdBy)+'</td><td>'+(s.enabled?'enabled':'disabled')+'</td><td>'+(s.enabled?'<button data-disable="'+s.id+'">Disable</button>':'disabled')+'</td></tr>').join('')||'<tr><td colspan="6">No schedules yet.</td></tr>'}document.querySelector('#create').onsubmit=async e=>{e.preventDefault();try{await send('/_appport/schedules',formData(e.target));e.target.reset();document.querySelector('#status').textContent='Schedule created durably';await load()}catch(error){document.querySelector('#status').textContent=error.message}};document.addEventListener('click',async e=>{const id=e.target.dataset.disable;if(id&&confirm('Disable this schedule?')){await send('/_appport/schedules/'+id,undefined,'DELETE');await load()}});load();`));
-  });
-  router.get('/api-keys', (_req, res) => {
-    res.type('html').send(page('API Keys', 'API Keys', `<main><h1>API Keys</h1><p class="muted">Create durable caller identities. The secret is returned only when the record is created. Keys carry no scopes: AuthBoundry authorizes each capability.</p><form id="create"><input name="name" placeholder="Key name" required><button>Create API key</button></form><p id="status" class="muted"></p><table><thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>State</th></tr></thead><tbody id="items"><tr><td colspan="5">Loading…</td></tr></tbody></table></main>`, `${clientHelpers}
-async function load(){const r=await fetch('/_appport/api/keys');const d=r.ok?await r.json():[];document.querySelector('#items').innerHTML=d.map(k=>'<tr><td>'+esc(k.name)+'</td><td>'+esc(k.keyPrefix)+'</td><td>'+esc(k.createdAt)+'</td><td>'+(k.revokedAt?'revoked':'active')+'</td><td>'+(!k.revokedAt?'<button data-revoke="'+k.id+'">Revoke</button>':'revoked')+'</td></tr>').join('')||'<tr><td colspan="6">No API keys yet.</td></tr>'}document.querySelector('#create').onsubmit=async e=>{e.preventDefault();try{const data=formData(e.target);const created=await send('/_appport/api/keys',{name:data.name});e.target.reset();document.querySelector('#status').textContent=created.secret?('Created. Copy this secret now: '+created.secret):'API key created durably';await load()}catch(error){document.querySelector('#status').textContent=error.message}};document.addEventListener('click',async e=>{const id=e.target.dataset.revoke;if(id&&confirm('Revoke this API key?')){await send('/_appport/api/keys/'+id,undefined,'DELETE');await load()}});load();`));
-  });
-  router.get('/jobs', (_req, res) => {
-    res.type('html').send(page('Jobs', 'Jobs', `<main><h1>Jobs</h1><p class="muted">Queue durable work for execution by a worker.</p><form id="create"><input name="type" placeholder="Job type, e.g. invoice.process" required><textarea name="payload" placeholder='Payload JSON'>{}</textarea><button>Queue job</button></form><p id="status" class="muted"></p><table><thead><tr><th>Type</th><th>Status</th><th>Attempts</th><th>Run at</th><th>Last error</th></tr></thead><tbody id="items"><tr><td colspan="5">Loading…</td></tr></tbody></table></main>`, `${clientHelpers}
-async function load(){const r=await fetch('/_appport/jobs');const d=r.ok?await r.json():[];document.querySelector('#items').innerHTML=d.map(j=>'<tr><td>'+esc(j.type)+'</td><td>'+esc(j.status)+'</td><td>'+esc(j.attemptCount)+' / '+esc(j.maxAttempts)+'</td><td>'+esc(j.runAt)+'</td><td>'+esc(j.lastError||'')+'</td><td>'+((j.status==='failed'||j.status==='completed')?'<button data-retry="'+j.id+'">Retry</button>':'')+'</td></tr>').join('')||'<tr><td colspan="6">No jobs yet.</td></tr>'}document.querySelector('#create').onsubmit=async e=>{e.preventDefault();try{const data=formData(e.target);await send('/_appport/jobs',{type:data.type,payload:JSON.parse(data.payload||'{}')});e.target.reset();document.querySelector('#status').textContent='Job queued durably';await load()}catch(error){document.querySelector('#status').textContent=error.message}};document.addEventListener('click',async e=>{const id=e.target.dataset.retry;if(id){await send('/_appport/jobs/'+id+'/retry');await load()}});load();`));
-  });
-  router.get('/webhooks', (_req, res) => {
-    res.type('html').send(page('Webhooks', 'Webhooks', `<main><h1>Webhooks</h1><p class="muted">Register durable event endpoints for outbound delivery.</p><form id="create"><input name="url" type="url" placeholder="https://example.com/webhook" required><input name="events" placeholder="Events, comma separated" required><input name="signingCredentialRef" placeholder="credential-ref:&lt;id&gt; signing secret" pattern="credential-ref:.+" required><button>Register endpoint</button></form><p id="status" class="muted"></p><table><thead><tr><th>URL</th><th>Events</th><th>Created</th><th>Status</th></tr></thead><tbody id="items"><tr><td colspan="4">Loading…</td></tr></tbody></table></main>`, `${clientHelpers}
-async function load(){const r=await fetch('/_appport/webhooks');const d=r.ok?await r.json():[];document.querySelector('#items').innerHTML=d.map(w=>'<tr><td>'+esc(w.url)+'</td><td>'+esc((w.events||[]).join(', '))+'</td><td>'+esc(w.createdAt)+'</td><td>'+(w.disabledAt?'disabled':'enabled')+'</td><td>'+(!w.disabledAt?'<button data-disable="'+w.id+'">Disable</button>':'')+'</td></tr>').join('')||'<tr><td colspan="5">No webhooks yet.</td></tr>'}document.querySelector('#create').onsubmit=async e=>{e.preventDefault();try{const data=formData(e.target);await send('/_appport/webhooks',{url:data.url,events:data.events.split(',').map(s=>s.trim()).filter(Boolean),signingCredentialRef:data.signingCredentialRef});e.target.reset();document.querySelector('#status').textContent='Webhook endpoint created durably';await load()}catch(error){document.querySelector('#status').textContent=error.message}};document.addEventListener('click',async e=>{const id=e.target.dataset.disable;if(id&&confirm('Disable this webhook?')){await send('/_appport/webhooks/'+id,undefined,'DELETE');await load()}});load();`));
-  });
-  router.get('/notifications', (_req, res) => {
-    res.type('html').send(page('Notifications', 'Notifications', `<main><h1>Notifications</h1><p class="muted">Create durable notification records. Attn remains the attention layer.</p><form id="create"><input name="recipient" placeholder="Recipient" required><input name="type" placeholder="Notification type" required><input name="title" placeholder="Title" required><select name="priority"><option>normal</option><option>low</option><option>high</option><option>urgent</option></select><button>Create notification</button></form><p id="status" class="muted"></p><table><thead><tr><th>Recipient</th><th>Type</th><th>Priority</th><th>Created</th><th>State</th></tr></thead><tbody id="items"><tr><td colspan="5">Loading…</td></tr></tbody></table></main>`, `${clientHelpers}
-async function load(){const r=await fetch('/_appport/notifications?limit=50');const d=r.ok?await r.json():{items:[]};document.querySelector('#items').innerHTML=d.items.map(n=>'<tr><td>'+esc(n.recipient)+'</td><td>'+esc(n.type)+'</td><td>'+esc(n.priority)+'</td><td>'+esc(n.createdAt)+'</td><td>'+(n.dismissedAt?'dismissed':esc(n.status||(n.readAt?'read':'unread')))+'</td><td>'+(!n.readAt?'<button data-read="'+n.id+'">Mark read</button> ':'')+(!n.dismissedAt?'<button data-dismiss="'+n.id+'">Dismiss</button> ':'')+'<button data-delete="'+n.id+'">Delete</button></td></tr>').join('')||'<tr><td colspan="6">No notifications yet.</td></tr>'}document.querySelector('#create').onsubmit=async e=>{e.preventDefault();try{await send('/_appport/notifications',formData(e.target));e.target.reset();document.querySelector('#status').textContent='Notification created durably';await load()}catch(error){document.querySelector('#status').textContent=error.message}};document.addEventListener('click',async e=>{const id=e.target.dataset.read;if(id){await send('/_appport/notifications/'+id+'/read');await load()}const dismiss=e.target.dataset.dismiss;if(dismiss){await send('/_appport/notifications/'+dismiss+'/dismiss');await load()}const del=e.target.dataset.delete;if(del&&confirm('Delete this notification?')){await send('/_appport/notifications/'+del,undefined,'DELETE');await load()}});load();`));
-  });
-  router.get('/intelligence', (_req, res) => {
-    res.type('html').send(page('Intelligence', 'Intelligence', `<main><h1>Intelligence</h1><p class="muted">The canonical provider, model, endpoint and credential for this application. Optional: nothing else depends on it. The credential is held in AuthBoundry custody; it is never shown here after saving.</p><p id="status" class="muted"></p><form id="intelligence-form" style="display:grid;gap:.75rem;max-width:520px"><label>Provider<br><select name="provider" id="provider" required></select></label><label>Model<br><input name="model" id="model" list="models" placeholder="Model identifier" required><datalist id="models"></datalist></label><label>Endpoint<br><select id="endpoint-kind"><option value="default">Default</option><option value="custom">Custom</option></select> <input name="endpoint" id="endpoint" placeholder="http://localhost:11434/v1" hidden></label><label>API credential<br><input name="credentialRef" id="credential" placeholder="credential-ref:&lt;id&gt; (leave blank to keep)" autocomplete="off"></label><p id="credential-status" class="muted"></p><div><button>Save</button> <button type="button" id="remove-credential" hidden>Remove credential</button></div></form></main>`, `${clientHelpers}
-const api='/v1/intelligence';let catalog=[];const el=id=>document.getElementById(id);
-const current=()=>catalog.find(p=>p.id===el('provider').value);
-function sync(){const p=current();if(!p)return;el('models').innerHTML=p.models.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.displayName)+'</option>').join('');el('endpoint-kind').querySelector('[value=custom]').disabled=!p.customEndpoint;if(!p.customEndpoint)el('endpoint-kind').value='default';el('endpoint').hidden=el('endpoint-kind').value!=='custom';el('endpoint').required=!el('endpoint').hidden;const def=p.endpoints[0];el('endpoint-kind').querySelector('[value=default]').textContent=def?'Default ('+def.url+')':'Default (none; supply a custom endpoint)';el('credential').placeholder=p.credential==='required'?'credential-ref:<id> (required)':'credential-ref:<id> (optional)'}
-async function load(){const[c,r]=await Promise.all([fetch(api+'/catalog'),fetch(api)]);if(!c.ok||!r.ok){el('status').textContent='Unable to load intelligence configuration';return}catalog=await c.json();const d=await r.json();el('provider').innerHTML=catalog.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.displayName)+'</option>').join('');if(d.configured){el('provider').value=d.provider;el('model').value=d.model;el('endpoint-kind').value=d.endpoint.kind;el('endpoint').value=d.endpoint.kind==='custom'?d.endpoint.url:''}sync();el('status').textContent=d.configured?'Configured: '+d.provider+' / '+d.model:'Not configured. The platform works without it.';el('credential-status').textContent=d.credentialConfigured?'Credential: configured':'Credential: not configured';el('credential').value='';el('remove-credential').hidden=!(d.configured&&d.credentialConfigured&&current().credential!=='required')}
-el('provider').onchange=sync;el('endpoint-kind').onchange=sync;
-el('intelligence-form').onsubmit=async e=>{e.preventDefault();const body={provider:el('provider').value,model:el('model').value,endpoint:el('endpoint-kind').value==='custom'?el('endpoint').value:'default'};if(el('credential').value)body.credentialRef=el('credential').value;try{await send(api,body,'PUT');await load()}catch(err){alert(err.message)}};
-el('remove-credential').onclick=async()=>{if(confirm('Remove the credential?')){try{await send(api+'/credential',undefined,'DELETE');await load()}catch(err){alert(err.message)}}};load();`));
-  });
-  router.get('/secrets', (_req, res) => {
-    res.type('html').send(page('Secrets', 'Secrets', `<main><h1>Secrets</h1><p class="muted">Provider-neutral secret metadata. Values stay out of the UI and durable state snapshots.</p><table><thead><tr><th>Name</th><th>Status</th><th>Environment</th><th>Updated</th></tr></thead><tbody id="items"><tr><td colspan="4">Loading…</td></tr></tbody></table></main>`, `${clientHelpers}fetch('/v1/configuration').then(r=>r.ok?r.json():Promise.reject()).then(d=>{document.querySelector('#items').innerHTML=d.secrets.map(s=>'<tr><td>'+esc(s.name)+'</td><td>'+(s.configured?'configured':'missing')+'</td><td>'+esc(s.environment)+'</td><td>'+esc(s.updatedAt)+'</td></tr>').join('')||'<tr><td colspan="4">No secrets yet.</td></tr>'}).catch(()=>{document.querySelector('#items').innerHTML='<tr><td colspan="4">Unable to load secrets.</td></tr>'});`));
-  });
+  for (const page of pages) {
+    router.get(page.route, (_req, res) => {
+      res.type('html').send(renderManagementPage(page, pages));
+    });
+  }
   return router;
 }

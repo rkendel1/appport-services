@@ -24,7 +24,18 @@ appport-services serve    # start the management host
 - `/services` and every other management page the mounted services advertise.
 - The `/_appport/*` management API.
 
-Which pages exist is **not** hard-coded. The host derives them from the same contribution the router serves, so a host that mounts fewer services advertises fewer surfaces.
+Which pages exist is **not** hard-coded. The host derives them from the same contribution the router serves, so a host that mounts fewer services advertises fewer surfaces. The pages' navigation is built from the same list, so it never links to a page the host does not serve.
+
+### How the pages are built
+
+The packaged pages use the shared Stack design system (`rkendel1/stack-ui`), vendored in `vendor/stack-ui` and checked against its `SHA256SUMS`. Each page is one HTML document that inlines the design system's styles and its stateless classic script, this package's `ui/management.css` and `ui/management.js`, and a JSON description of the page and its navigation; no extra route is served. The browser renders the shell, forms and tables with the design system's DOM helpers and never parses markup.
+
+- Every field has a visible label; tables keep one cell per header; statuses use the design system's mappings for these services' own fields (job status, notification status, and so on).
+- Revoking, deleting and disabling go through the design system's `ConfirmAction`, which states the consequences and, for named resources, asks for the name to be typed. Edits that used `prompt()` open a labelled form dialog. Nothing uses `confirm()`, `prompt()` or `alert()`.
+- A list that cannot be read shows the product's error and code with Retry, never an empty list. A change the product answers with `null` (the record was not found or changed meanwhile) is reported as not done.
+- The Configuration page edits the production environment: its requests name no environment, and `/v1/configuration` reads the environment from the query string. The old forms' Environment select, which the server ignored, is gone.
+- The pages keep nothing in browser storage. There is no theme control; the colour scheme follows the operating system.
+- `npm run test:browser` drives every page in Chromium against the standalone host, with axe in light and dark at 1280 and 640 pixels.
 
 | Concern | Behaviour |
 | --- | --- |

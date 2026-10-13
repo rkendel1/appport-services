@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Builds, then runs the unit, contract and package tests.
+      - run: npm test
+      - name: Install Chromium
+        run: npx playwright-core install --with-deps chromium
+      # The management pages in a real browser against the standalone host: axe, keyboard, ConfirmAction.
+      - run: npm run test:browser
