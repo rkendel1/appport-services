@@ -29,7 +29,7 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     id: 'apikeys',
     name: 'API Keys',
     contractVersion: 1,
-    operations: Object.freeze(['create', 'read', 'revoke', 'authenticate']),
+    operations: Object.freeze(['create', 'read', 'update', 'rotate', 'revoke', 'revokeAll', 'audit', 'authenticate']),
     durable: true,
     async: false,
     dependencies: Object.freeze(['ServiceGateway', 'FeltDB']),

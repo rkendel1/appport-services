@@ -25,6 +25,10 @@ No AuthBoundry authorization  →  no service effect
 No authorized credential      →  no provider credential
 ```
 
+API-key **restrictions** (see [api-keys.md](./api-keys.md)) are not authority
+either: they are a per-key ceiling the gateway applies before asking
+AuthBoundry, so they can only turn an allow into a deny.
+
 None of these can become authority on its own: API-key scopes, actor strings,
 job metadata, the worker process, webhook payloads, service configuration,
 or provider credentials.
@@ -62,6 +66,8 @@ Every protected operation goes through `ServiceGateway` in this fixed order:
    application is the gateway's own. A different caller-supplied tenant or
    application is **denied**, not silently replaced.
 4. resolve the declared capability from the manifest
+   - for an API-key principal: re-read the key and deny if it is revoked,
+     expired, or its restrictions do not permit this capability and resource
 5. ask AuthBoundry (`ServiceAuthorizer.authorize`) with a timeout
 6. only if allowed: resolve credentials through AuthBoundry custody, passing
    the decision id as `authorizationRef`
@@ -161,7 +167,7 @@ AuthBoundry a stable hash to pin.
 
 | Service | Capabilities |
 | --- | --- |
-| API keys | `apikeys.read`, `apikeys.create`, `apikeys.revoke` |
+| API keys | `apikeys.read`, `apikeys.create`, `apikeys.update`, `apikeys.rotate`, `apikeys.revoke`, `apikeys.audit` |
 | Webhooks | `webhooks.read`, `webhooks.register`, `webhooks.remove`, `webhooks.emit`, `webhooks.replay`, `webhooks.integrations.register`, `webhooks.deliver`*, `webhooks.receive`* |
 | Jobs | `jobs.read`, `jobs.create`, `jobs.retry`, `jobs.execute`* |
 | Schedules | `schedules.read`, `schedules.create`, `schedules.cancel` |

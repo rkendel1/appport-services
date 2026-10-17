@@ -148,7 +148,7 @@ app.use(createManagementRouter({
 }));
 ```
 
-The host owns authentication, AuthBoundry owns authorization, and AppPort Services enforces AuthBoundry's decisions before any effect. **@appport/services executes effects. It does not decide who is allowed to cause them.** See [the authority model](docs/AUTHORITY.md), [webhook security](docs/WEBHOOK-SECURITY.md), and [job security](docs/JOB-SECURITY.md). API-key management requires `apikeys.read`, `apikeys.create`, and `apikeys.revoke`, always uses the authenticated tenant, and returns a plaintext credential only in the creation response. See [Composable management runtime](docs/management.md) for the full contract and standalone/embedded behavior.
+The host owns authentication, AuthBoundry owns authorization, and AppPort Services enforces AuthBoundry's decisions before any effect. **@appport/services executes effects. It does not decide who is allowed to cause them.** See [the authority model](docs/AUTHORITY.md), [webhook security](docs/WEBHOOK-SECURITY.md), and [job security](docs/JOB-SECURITY.md). API-key management requires `apikeys.read`, `apikeys.create`, and `apikeys.revoke` (plus `apikeys.update`, `apikeys.rotate`, and `apikeys.audit` for editing, rotation, and audit), always uses the authenticated tenant, and returns a plaintext credential only in creation and rotation responses. See [Composable management runtime](docs/management.md) for the full contract and standalone/embedded behavior.
 
 Outbound credentials use a server-only scoped protocol. AppPort defines the reference, context, lifecycle, audit, errors, and callback contract; AuthBoundry authorizes and AppBoundry resolves provider-held material. AppPort ships no resolver, secret store, provider adapter, or policy engine, and exposes no browser-facing credential-value route.
 
@@ -312,6 +312,27 @@ console.log(created.secret); // only returned once
 An API key identifies a caller and its application. It carries no scopes:
 AuthBoundry decides what the caller may do. Passing `scopes` is rejected with
 a migration error ([docs/AUTHORITY.md](docs/AUTHORITY.md#migration)).
+
+A key can be given **restrictions**, a ceiling that only narrows what
+AuthBoundry allows, plus an expiry. Keys can be edited, rotated with an
+optional overlap, revoked one at a time or in bulk, and audited:
+
+```ts
+const key = await services.apiKeys.createApiKey({
+  name: 'reporting-worker',
+  restrictions: { capabilities: ['files.read'], resources: [{ type: 'file', attributes: { owner: 'reporting' } }] },
+  expiresAt: new Date(Date.now() + 90 * 86_400_000),
+}, operator);
+
+const next = await services.apiKeys.rotateApiKey({ id: key.id, overlapSeconds: 300 }, operator); // next.secret shown once
+await services.apiKeys.updateApiKey({ id: next!.id, name: 'reporting-worker-v2' }, operator);
+const events = await services.apiKeys.listApiKeyAuditEvents({ credentialId: next!.id }, operator);
+await services.apiKeys.revokeAllApiKeys({ createdBy: 'ops@example.com' }, operator);
+```
+
+Revocation and restriction changes apply on the next operation in every
+process. See [docs/api-keys.md](docs/api-keys.md) for the permission model,
+rotation semantics, verifier keys, errors, and migration notes.
 
 CLI (the operator is identified through `APPPORT_AUTHORITY` or `APPPORT_API_KEY`):
 

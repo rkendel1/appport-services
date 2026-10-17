@@ -102,7 +102,12 @@ test('the packed npm artifact serves a valid AppPort/ui/1 document at GET /v1/ui
   const declaredProtocol = installed.dependencies['@appport/protocol'];
   assert.ok(declaredProtocol, 'the packed package must declare @appport/protocol');
   const protocol = JSON.parse(await readFile(join(consumer, 'node_modules/@appport/protocol/package.json'), 'utf8')) as { version: string };
-  assert.match(protocol.version, /^1\.0\.\d+$/, `published protocol ${protocol.version} must satisfy ${declaredProtocol}`);
+  // Caret range, checked the way tests/runtime-boundaries.test.ts checks it.
+  const parse = (value: string) => value.replace(/^[^\d]*/, '').split('.').map(Number);
+  const [floorMajor, floorMinor, floorPatch] = parse(declaredProtocol);
+  const [major, minor, patch] = parse(protocol.version);
+  assert.equal(major, floorMajor, `published protocol ${protocol.version} must satisfy ${declaredProtocol}`);
+  assert.ok(minor! > floorMinor! || (minor === floorMinor && patch! >= floorPatch!), `published protocol ${protocol.version} must satisfy ${declaredProtocol}`);
 
   // 4. Start the management host from the installed copy and probe it.
   await writeFile(join(consumer, 'verify.mjs'), VERIFIER);

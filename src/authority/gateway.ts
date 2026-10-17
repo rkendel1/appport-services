@@ -4,6 +4,7 @@ import type { ResolvedSecret, ScopedSecretsResolver, SecretReference } from '../
 import { SecretError } from '../secrets/errors.js';
 import type { ServiceAuthorizationDecision, ServiceAuthorizationRequest, ServiceAuthorizer } from './authorizer.js';
 import { assertExecutionContext, mintExecutionContext, resourceUri, type ServiceExecutionContext, type ServiceResource } from './context.js';
+import { enforceCredential } from './credential-binding.js';
 import { credentialReference, type CredentialRef } from './credentials.js';
 import { ServiceAuthorityError, isServiceAuthorityError } from './errors.js';
 import type { EffectEvidence, EffectEvidenceStore } from './evidence.js';
@@ -41,8 +42,8 @@ export interface EffectTools {
  * Policy Enforcement Point for every protected service operation.
  *
  * Order is fixed: validate request, require a verified principal, enforce
- * tenant/application ownership, resolve the declared capability, ask
- * AuthBoundry, then (only when allowed) resolve credentials and perform the
+ * tenant/application ownership, re-validate the principal's credential
+ * (API keys: live, unexpired, within its restrictions), ask AuthBoundry, then (only when allowed) resolve credentials and perform the
  * effect, recording durable evidence. Nothing here caches grants,
  * decisions, delegation status, or credential validity.
  */
@@ -83,6 +84,8 @@ export class ServiceGateway {
     }
     const principal = requireVerifiedPrincipal(principalInput);
     this.assertOwnership(principal, resource, capabilityName);
+    // A key's restrictions and lifecycle can only deny; AuthBoundry still decides.
+    await enforceCredential(principal, capability.name, resource);
     const uri = resourceUri(this.application, resource);
     const request: ServiceAuthorizationRequest = {
       request_id: requestId,

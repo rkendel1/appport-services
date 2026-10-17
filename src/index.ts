@@ -97,10 +97,21 @@ export {
 export type {
   ApiKey,
   ApiKeyAuditEvent,
+  ApiKeyAuditQuery,
+  ApiKeyAuditType,
+  ApiKeyListOptions,
+  ApiKeyResourceRule,
+  ApiKeyRestrictions,
+  ApiKeyStatus,
   ApiKeyView,
   CreateApiKeyInput,
   CreatedApiKey,
+  RevokeAllApiKeysInput,
+  RevokeAllApiKeysResult,
   RevokeApiKeyInput,
+  RotateApiKeyInput,
+  RotatedApiKey,
+  UpdateApiKeyInput,
 } from './api-keys/models.js';
 export type {
   WebhookEndpoint,
