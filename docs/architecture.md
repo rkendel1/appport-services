@@ -25,7 +25,7 @@ FeltDB
 ## API-key boundaries
 
 - `ApiKey` / `ApiKeyView` — credential state and safe read model
-- `ApiKeyService` — create, list, get, revoke, authenticate
+- `ApiKeyService` — create, list, get, update, rotate, revoke, revoke-all, audit, authenticate
 - `ApiKeyStore` — semantic persistence boundary, implemented by `FeltDbApiKeyStore`
 - `AuditSink` — semantic audit boundary, implemented by `FeltDbAuditSink`
 - `AuthenticatedPrincipal` — machine-principal contract for AuthPort authorization

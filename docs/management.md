@@ -85,10 +85,16 @@ The router does not construct services, open another FeltDB connection, or make 
 The API-key page uses these stable endpoints:
 
 - `GET /_appport/api/keys` requires `apikeys.read`.
-- `POST /_appport/api/keys` requires `apikeys.create`.
+- `POST /_appport/api/keys` requires `apikeys.create` (`{ name, restrictions?, expiresAt? }`).
+- `PATCH /_appport/api/keys/:id` requires `apikeys.update` (`{ name?, restrictions?, expiresAt? }`; `null` clears).
+- `POST /_appport/api/keys/:id/rotate` requires `apikeys.rotate` (`{ overlapSeconds? }`); the response carries the new secret once.
 - `DELETE /_appport/api/keys/:id` requires `apikeys.revoke`.
+- `POST /_appport/api/keys/revoke-all` requires `apikeys.revoke` on the collection with attribute `createdBy` (`{ createdBy? }`, `*` when omitted).
+- `GET /_appport/api/keys/:id/audit` requires `apikeys.audit`.
 
-The authenticated principal's tenant and principal ID are authoritative. A different `tenantId` in a request body is denied (`403`), a different `createdBy` is rejected (`400`), and `scopes` are rejected (`400`): API keys carry no scopes. Creation returns the plaintext credential once. Lists contain metadata only, revoked keys are omitted, and revoke responses contain no credential material.
+The update, rotate, revoke-all, and audit routes are mounted when the supplied `apiKeys` service provides those methods. The page edits, rotates, audits, and bulk-revokes keys through them; see [api-keys.md](api-keys.md).
+
+The authenticated principal's tenant and principal ID are authoritative. A different `tenantId` in a request body is denied (`403`), a different `createdBy` is rejected (`400`), and `scopes` are rejected (`400`): API keys carry no scopes. Creation and rotation return the plaintext credential once. Lists contain metadata only, revoked keys are omitted, and revoke responses contain no credential material.
 
 ## UI discovery (`AppPort/ui/1`)
 

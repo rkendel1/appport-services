@@ -156,6 +156,70 @@ test('API keys: create shows the secret once; revoking needs the typed key name,
   }
 });
 
+test('API keys: restricted create, edit, rotate with a one-time secret, audit, and revoke all', async () => {
+  const { page, errors, close } = await open('/api-keys');
+  try {
+    const form = page.getByRole('form', { name: 'Create API key' });
+    await form.getByLabel('Key name').fill('reporting');
+    await form.getByLabel('Permissions').selectOption('restricted');
+    await form.getByLabel('Allowed capabilities').fill('files.read, jobs.create');
+    await form.getByRole('button', { name: 'Create API key' }).click();
+    await page.waitForFunction(() => /Copy this secret now/.test(document.querySelector('.appport-create .appport-outcome__ok')?.textContent ?? ''));
+    const firstSecret = await page.locator('.appport-create .appport-outcome__ok code').innerText();
+    const row = page.locator('tr[data-key="reporting"]');
+    await row.waitFor();
+    assert.match(await row.innerText(), /files\.read, jobs\.create/);
+
+    // Edit in a dialog: rename and lift the ceiling.
+    await row.getByRole('button', { name: 'Edit reporting' }).click();
+    const edit = page.getByRole('dialog', { name: 'Edit API key reporting' });
+    await edit.waitFor();
+    await edit.getByLabel('Key name').fill('reporting-2');
+    await edit.getByLabel('Permissions').selectOption('unrestricted');
+    await edit.getByRole('button', { name: 'Save changes' }).click();
+    await edit.waitFor({ state: 'detached' });
+    const renamed = page.locator('tr[data-key="reporting-2"]');
+    await renamed.waitFor();
+    assert.match(await renamed.innerText(), /No ceiling/);
+
+    // Rotate: the new secret is shown once, and differs from the first.
+    await renamed.getByRole('button', { name: 'Rotate reporting-2' }).click();
+    const rotate = page.getByRole('dialog', { name: 'Rotate API key reporting-2' });
+    await rotate.waitFor();
+    await rotate.getByRole('button', { name: 'Rotate API key' }).click();
+    await rotate.waitFor({ state: 'detached' });
+    const outcome = page.locator('.appport-outcome__ok').filter({ hasText: 'Rotated reporting-2' });
+    await outcome.waitFor();
+    const rotatedSecret = await outcome.locator('code').innerText();
+    assert.ok(rotatedSecret.startsWith('app_live_') && rotatedSecret !== firstSecret);
+    // The replaced key is revoked (no overlap) and leaves the list; its replacement is listed.
+    await page.waitForFunction(() => document.querySelectorAll('tr[data-key="reporting-2"]').length === 1);
+    const replacement = page.locator('tr[data-key="reporting-2"]');
+    assert.equal(await replacement.getByRole('button', { name: 'Rotate reporting-2' }).count(), 1);
+
+    // Audit for the replacement, without any secret on the page outside the one outcome line.
+    await replacement.getByRole('button', { name: 'Audit reporting-2' }).click();
+    await page.getByRole('heading', { name: 'Audit for reporting-2' }).waitFor();
+    await page.locator('table').filter({ hasText: 'api_key.created' }).waitFor();
+    const pageText = await page.locator('.stack-shell__main').innerText();
+    assert.equal(pageText.split(rotatedSecret).length - 1, 1, 'the secret appears once, in the outcome');
+    assert.equal(pageText.includes(firstSecret), false, 'the replaced secret is no longer shown');
+
+    // Revoke all, with typed confirmation.
+    await page.getByRole('button', { name: 'Revoke all API keys' }).click();
+    const dialog = page.getByRole('alertdialog', { name: 'Revoke every API key of this tenant?' });
+    await dialog.waitFor();
+    await dialog.getByLabel('Type revoke all to confirm').fill('revoke all');
+    await dialog.getByRole('button', { name: 'Revoke all API keys' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.getByRole('heading', { name: 'No API keys yet' }).waitFor();
+    assert.deepEqual(await axe(page), []);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 test('configuration: add, edit in a dialog, and delete with typed confirmation', async () => {
   const { page, errors, close } = await open('/configuration');
   try {

@@ -1,3 +1,4 @@
+import type { ApiKeyListOptions } from '../api-keys/models.js';
 import type { ApiKeyService } from '../api-keys/service.js';
 import type { ConfigurationService } from '../configuration/service.js';
 import type { IntelligenceService } from '../intelligence/service.js';
@@ -64,6 +65,13 @@ function id(input: Input): string {
   return input.id;
 }
 
+/** List options are opt-in: without any, apikeys.read keeps returning the whole tenant list. */
+function apiKeyListOptions(input: Input): ApiKeyListOptions | undefined {
+  const keys = ['status', 'createdBy', 'limit', 'after'] as const;
+  if (!keys.some((key) => input[key] !== undefined)) return undefined;
+  return Object.fromEntries(keys.filter((key) => input[key] !== undefined).map((key) => [key, input[key]])) as ApiKeyListOptions;
+}
+
 /** Wrap a tenant-keyed observation API with an explicit read authorization. */
 function observe(services: InvokableServices, capability: string, type: string, input: Input, principal: VerifiedPrincipal, read: (tenantId: string) => Promise<unknown>): Promise<unknown> {
   const tenantId = resolveTenant(input, principal);
@@ -72,9 +80,16 @@ function observe(services: InvokableServices, capability: string, type: string, 
 }
 
 const HANDLERS: Readonly<Record<string, Handler>> = {
-  'apikeys.read': (s, input, p) => { const keys = need(s.apiKeys, 'api'); return observe(s, 'apikeys.read', 'api_key', input, p, (t) => typeof input.id === 'string' ? keys.getApiKey(t, input.id) : keys.listApiKeys(t)); },
+  'apikeys.read': (s, input, p) => { const keys = need(s.apiKeys, 'api'); return observe(s, 'apikeys.read', 'api_key', input, p, (t) => typeof input.id === 'string' ? keys.getApiKey(t, input.id) : keys.listApiKeys(t, apiKeyListOptions(input))); },
   'apikeys.create': (s, input, p) => need(s.apiKeys, 'api').createApiKey(input as never, p),
-  'apikeys.revoke': (s, input, p) => need(s.apiKeys, 'api').revokeApiKey({ ...input, id: id(input) } as never, p),
+  'apikeys.update': (s, input, p) => need(s.apiKeys, 'api').updateApiKey({ ...input, id: id(input) } as never, p),
+  'apikeys.rotate': (s, input, p) => need(s.apiKeys, 'api').rotateApiKey({ ...input, id: id(input) } as never, p),
+  'apikeys.revoke': (s, input, p) => {
+    const keys = need(s.apiKeys, 'api');
+    if (input.all === true) { const { all: _all, ...rest } = input; return keys.revokeAllApiKeys(rest as never, p); }
+    return keys.revokeApiKey({ ...input, id: id(input) } as never, p);
+  },
+  'apikeys.audit': (s, input, p) => need(s.apiKeys, 'api').listApiKeyAuditEvents(input as never, p),
 
   'webhooks.read': (s, input, p) => { const hooks = need(s.webhooks, 'webhooks'); return observe(s, 'webhooks.read', 'webhook_endpoint', input, p, (t) => typeof input.id === 'string' ? hooks.getWebhookEndpoint(t, input.id) : hooks.listWebhookEndpoints(t)); },
   'webhooks.register': (s, input, p) => need(s.webhooks, 'webhooks').createWebhookEndpoint(input as never, p),

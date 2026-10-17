@@ -50,7 +50,8 @@ export type ManagementAuthorizationAdapter = (
 ) => ManagementAuthorizationResult | Promise<ManagementAuthorizationResult>;
 
 export interface ManagementServices {
-  readonly apiKeys?: Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'revokeApiKey'>;
+  /** Update, rotation, and audit routes are mounted only when the service provides them. */
+  readonly apiKeys?: Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'revokeApiKey'> & Partial<Pick<ApiKeyService, 'updateApiKey' | 'rotateApiKey' | 'revokeAllApiKeys' | 'listApiKeyAuditEvents'>>;
   readonly configuration?: ConfigurationService;
   readonly intelligence?: IntelligenceService;
   readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'>;
@@ -203,8 +204,24 @@ function mountExistingServiceRoutes(router: Router, services: ManagementServices
   if (services.apiKeys) {
     const keys = services.apiKeys;
     router.get('/_appport/api/keys', handler(async (_req, principal) => ({ body: (await read('apikeys.read', 'api_key', principal, () => keys.listApiKeys(principal.tenantId))).filter((key) => !key.revokedAt) })));
-    router.post('/_appport/api/keys', handler(async (req, principal) => ({ status: 201, body: await keys.createApiKey({ name: requiredText(req.body?.name, 'name'), ...(req.body?.scopes === undefined ? {} : { scopes: stringList(req.body.scopes, 'scopes') }), ...(req.body?.tenantId === undefined ? {} : { tenantId: req.body.tenantId }), ...(req.body?.createdBy === undefined ? {} : { createdBy: req.body.createdBy }) }, principal) })));
+    router.post('/_appport/api/keys', handler(async (req, principal) => ({ status: 201, body: await keys.createApiKey({ name: requiredText(req.body?.name, 'name'), ...(req.body?.scopes === undefined ? {} : { scopes: stringList(req.body.scopes, 'scopes') }), ...(req.body?.restrictions === undefined ? {} : { restrictions: objectValue(req.body.restrictions, 'restrictions') as never }), ...(req.body?.expiresAt === undefined ? {} : { expiresAt: dateValue(req.body.expiresAt, 'expiresAt') }), ...(req.body?.tenantId === undefined ? {} : { tenantId: req.body.tenantId }), ...(req.body?.createdBy === undefined ? {} : { createdBy: req.body.createdBy }) }, principal) })));
     router.delete('/_appport/api/keys/:id', handler(async (req, principal) => { await keys.revokeApiKey({ id: req.params.id }, principal); return { status: 204 }; }));
+    if (keys.updateApiKey) {
+      const update = keys.updateApiKey.bind(keys);
+      router.patch('/_appport/api/keys/:id', handler(async (req, principal) => ({ body: found(await update({ id: req.params.id, ...(req.body?.name === undefined ? {} : { name: requiredText(req.body.name, 'name') }), ...(req.body?.restrictions === undefined ? {} : { restrictions: req.body.restrictions === null ? null : objectValue(req.body.restrictions, 'restrictions') as never }), ...(req.body?.expiresAt === undefined ? {} : { expiresAt: req.body.expiresAt === null ? null : dateValue(req.body.expiresAt, 'expiresAt') }) }, principal)) })));
+    }
+    if (keys.rotateApiKey) {
+      const rotate = keys.rotateApiKey.bind(keys);
+      router.post('/_appport/api/keys/:id/rotate', handler(async (req, principal) => ({ status: 201, body: found(await rotate({ id: req.params.id, ...(req.body?.overlapSeconds === undefined ? {} : { overlapSeconds: nonNegativeInteger(req.body.overlapSeconds, 'overlapSeconds') }) }, principal)) })));
+    }
+    if (keys.revokeAllApiKeys) {
+      const revokeAll = keys.revokeAllApiKeys.bind(keys);
+      router.post('/_appport/api/keys/revoke-all', handler(async (req, principal) => ({ body: await revokeAll({ ...(req.body?.createdBy === undefined ? {} : { createdBy: requiredText(req.body.createdBy, 'createdBy') }) }, principal) })));
+    }
+    if (keys.listApiKeyAuditEvents) {
+      const audit = keys.listApiKeyAuditEvents.bind(keys);
+      router.get('/_appport/api/keys/:id/audit', handler(async (req, principal) => ({ body: await audit({ credentialId: req.params.id, ...(typeof req.query.limit === 'string' ? { limit: Number(req.query.limit) } : {}), ...(typeof req.query.after === 'string' ? { after: req.query.after } : {}) }, principal) })));
+    }
   }
   if (services.webhooks) {
     const hooks = services.webhooks;
@@ -273,6 +290,17 @@ function objectValue(value: unknown, property: string): Record<string, unknown> 
 function nonNegativeInteger(value: unknown, property: string): number {
   if (!Number.isInteger(value) || Number(value) < 0) throw inputError(`${property} must be a non-negative integer`);
   return Number(value);
+}
+
+function dateValue(value: unknown, property: string): Date {
+  const date = typeof value === 'string' ? new Date(value) : undefined;
+  if (!date || Number.isNaN(date.getTime())) throw inputError(`${property} must be an ISO 8601 date string`);
+  return date;
+}
+
+function found<T>(value: T | null): T {
+  if (value === null) throw Object.assign(new Error('API key not found'), { status: 404, code: 'NOT_FOUND' });
+  return value;
 }
 
 function stringQuery(value: unknown): string | undefined {

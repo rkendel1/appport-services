@@ -3,7 +3,7 @@
     "id": "apikeys",
     "name": "API Keys",
     "contractVersion": 1,
-    "operations": ["create", "read", "revoke", "authenticate"],
+    "operations": ["create", "read", "update", "rotate", "revoke", "revokeAll", "audit", "authenticate"],
     "durable": true,
     "async": false,
     "dependencies": ["ServiceGateway", "FeltDB"],

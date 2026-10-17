@@ -64,13 +64,15 @@ export interface AppPortOptions extends FeltDBOptions {
   readonly authorizationTimeoutMs?: number;
   /** Trusted host-only override for local development (e.g. allowPrivateNetworks). */
   readonly webhookDestinationPolicy?: WebhookDestinationPolicy;
+  /** Server-held API-key verifier key (>= 32 bytes). Never persisted; see ApiKeyService. */
+  readonly apiKeyVerifierKey?: string | Uint8Array;
 }
 
 export type AppPortJobHandler = (job: import('../jobs/models.js').Job, execution: JobExecution) => Promise<void>;
 
 export interface AppPortRouteContext { readonly application: AppPortApplication; readonly services: AppPortTenantServices; readonly request: IncomingMessage; readonly body: unknown; readonly tenantId: string; readonly principal: import('../contract/principals.js').AuthenticatedPrincipal | null }
 export type AppPortRouteHandler = (context: AppPortRouteContext) => unknown | Promise<unknown>;
-export interface AppPortApiKeys extends Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'getApiKey' | 'revokeApiKey' | 'authenticateApiKey'> {}
+export interface AppPortApiKeys extends Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'getApiKey' | 'updateApiKey' | 'rotateApiKey' | 'revokeApiKey' | 'revokeAllApiKeys' | 'listApiKeyAuditEvents' | 'authenticateApiKey'> {}
 export interface AppPortWebhooks extends Pick<WebhookService, 'createWebhookEndpoint' | 'getWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint' | 'emitWebhookEvent' | 'getWebhookDelivery' | 'listWebhookDeliveries' | 'replayWebhookDelivery'> {}
 export interface AppPortJobs extends Pick<JobService, 'enqueue' | 'schedule' | 'scheduleRecurring' | 'getJob' | 'listJobs' | 'getSchedule' | 'listSchedules' | 'disableSchedule' | 'retry'> {}
 export interface AppPortNotifications extends Pick<NotificationService, 'notify' | 'create' | 'get' | 'list' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete' | 'deliveries' | 'retryDelivery' | 'recoverDeliveries' | 'registerChannel' | 'channelTypes'> {}
@@ -180,6 +182,7 @@ interface InitializedCapabilities {
 
 export interface CapabilityFactoryContext {
   readonly authority?: ServiceGateway;
+  readonly apiKeyVerifierKey?: string | Uint8Array;
   readonly destinationPolicy?: WebhookDestinationPolicy;
   readonly events: AppPortEvents;
 }
@@ -193,7 +196,7 @@ type CapabilityFactory = (
 ) => void;
 
 export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, CapabilityFactory>> = {
-  api(db, config, services, runtime, { authority }) {
+  api(db, config, services, runtime, { authority, apiKeyVerifierKey }) {
     if (!config.api.keys.enabled) return;
     services.apiKeys = new ApiKeyService({
       store: new FeltDbApiKeyStore(db),
@@ -201,6 +204,7 @@ export const capabilityRegistry: Readonly<Record<AppPortCapabilityName, Capabili
       runtime,
       applicationId: config.application.name,
       authority,
+      ...(apiKeyVerifierKey ? { verifierKey: apiKeyVerifierKey } : {}),
     });
   },
   webhooks(db, config, services, _runtime, { authority, destinationPolicy }) {
@@ -263,7 +267,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const plan = createCapabilityPlan(config, flow);
   const {
     config: _config, flow: _flow, routes = {}, jobs = {}, jobHandlers = {}, webhooks: webhookHandlers = {}, inbound = {},
-    authorizer, credentials, identify, authorizationTimeoutMs, webhookDestinationPolicy,
+    authorizer, credentials, identify, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey,
     ...explicitFeltDbOptions
   } = options;
   const feltDbOptions = runtimeOptionsFromContract(config, explicitFeltDbOptions, dirname(configPath));
@@ -280,7 +284,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   const authority = authorizer || credentials || identify ? gateway : undefined;
 
   for (const capability of plan.capabilities) {
-    capabilityRegistry[capability](runtime.db, config, services, runtime, { ...(authority ? { authority } : {}), destinationPolicy: webhookDestinationPolicy, events });
+    capabilityRegistry[capability](runtime.db, config, services, runtime, { ...(authority ? { authority } : {}), ...(apiKeyVerifierKey ? { apiKeyVerifierKey } : {}), destinationPolicy: webhookDestinationPolicy, events });
   }
   if (services.jobs) services.schedules = new ScheduleService({ jobs: services.jobs, ...(authority ? { authority } : {}) });
 
@@ -300,7 +304,7 @@ export async function appport(options: AppPortOptions = {}): Promise<AppPortAppl
   let started = false;
   const workerTimers: NodeJS.Timeout[] = [];
   const shutdown = () => void application.close();
-  const apiKeysFacade: AppPortApiKeys | undefined = services.apiKeys ? bindMethods(services.apiKeys, ['createApiKey', 'listApiKeys', 'getApiKey', 'revokeApiKey', 'authenticateApiKey']) : undefined;
+  const apiKeysFacade: AppPortApiKeys | undefined = services.apiKeys ? bindMethods(services.apiKeys, ['createApiKey', 'listApiKeys', 'getApiKey', 'updateApiKey', 'rotateApiKey', 'revokeApiKey', 'revokeAllApiKeys', 'listApiKeyAuditEvents', 'authenticateApiKey']) : undefined;
   const webhooksFacade: AppPortWebhooks | undefined = services.webhooks ? bindMethods(services.webhooks, ['createWebhookEndpoint', 'getWebhookEndpoint', 'listWebhookEndpoints', 'disableWebhookEndpoint', 'emitWebhookEvent', 'getWebhookDelivery', 'listWebhookDeliveries', 'replayWebhookDelivery']) : undefined;
   const jobsFacade: AppPortJobs | undefined = services.jobs ? bindMethods(services.jobs, ['enqueue', 'schedule', 'scheduleRecurring', 'getJob', 'listJobs', 'getSchedule', 'listSchedules', 'disableSchedule', 'retry']) : undefined;
   const notificationsFacade: AppPortNotifications | undefined = services.notifications ? bindMethods(services.notifications, ['notify', 'create', 'get', 'list', 'markRead', 'acknowledge', 'dismiss', 'delete', 'deliveries', 'retryDelivery', 'recoverDeliveries', 'registerChannel', 'channelTypes']) : undefined;

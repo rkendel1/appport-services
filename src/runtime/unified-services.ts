@@ -91,6 +91,8 @@ export interface CreateServicesOptions extends FeltDBOptions {
   authorizationTimeoutMs?: number;
   /** Trusted host-only destination policy override (local development, tests). */
   webhookDestinationPolicy?: WebhookDestinationPolicy;
+  /** Server-held API-key verifier key (>= 32 bytes) from the host's secret manager. Never persisted. */
+  apiKeyVerifierKey?: string | Uint8Array;
 }
 
 /**
@@ -112,7 +114,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
 
   // Create one FeltDB runtime shared by all services
   // Extract FeltDB options (exclude config)
-  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, ...feltdbOptions } = options;
+  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, ...feltdbOptions } = options;
   const runtime = createFeltDbRuntime(feltdbOptions);
   const { db } = runtime;
   const gateway = new ServiceGateway({
@@ -130,6 +132,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     runtime,
     applicationId: gateway.application,
     authority,
+    ...(apiKeyVerifierKey ? { verifierKey: apiKeyVerifierKey } : {}),
   });
 
   const webhookService = new WebhookService({

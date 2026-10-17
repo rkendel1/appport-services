@@ -7,7 +7,7 @@
 // navigation built from the surfaces actually mounted); this script renders the
 // shell and the page with StackUI's DOM helpers. It builds nodes with
 // createElement and textContent only: it never parses markup. Every request
-// goes to the routes these pages have always used; nothing new is called.
+// goes to the product's own management routes under /_appport.
 'use strict';
 (function () {
   const S = window.StackUI;
@@ -62,6 +62,8 @@
   /// A timestamp as the design system shows them, or undefined (shown as —).
   const when = (value) => (value ? el('time', { datetime: value }, S.formatTime(value)) : undefined);
   const text = (value) => (value === null || value === undefined || value === '' ? undefined : String(value));
+  /// An ISO timestamp as a datetime-local value in the viewer's time zone.
+  const localInput = (iso) => { const d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 
   /// Where a section reports what happened: a polite status line for success,
   /// the shared ErrorPanel for a failure.
@@ -209,52 +211,159 @@
 
     'api-keys'() {
       const report = outcome();
+      const base = '/_appport/api/keys';
+      const path = (key, suffix) => base + '/' + encodeURIComponent(key.id) + (suffix || '');
+      // A secret is shown once, in an outcome line, and only one at a time:
+      // showing a new one removes any earlier one from the page.
+      const forgetSecrets = () => {
+        for (const shown of document.querySelectorAll('.appport-secret')) {
+          shown.closest('.appport-outcome__ok').replaceChildren('An earlier secret was shown here and has been removed from the page.');
+        }
+      };
+      const secretShown = (lead, secret) => { forgetSecrets(); return [lead + ' Copy this secret now; it is not shown again: ', el('code', { class: 'appport-secret' }, secret)]; };
+
+      // Restrictions are a ceiling: they only narrow what AuthBoundry allows.
+      const RESTRICTION_FIELDS = (key) => [
+        { name: 'mode', label: 'Permissions', value: key && key.restrictions ? 'restricted' : 'unrestricted', options: [
+          { value: 'unrestricted', label: 'No ceiling' },
+          { value: 'restricted', label: 'Only listed capabilities' },
+        ] },
+        { name: 'capabilities', label: 'Allowed capabilities', value: key && key.restrictions ? key.restrictions.capabilities.join(', ') : '', placeholder: 'files.read, jobs.create',
+          hint: 'Comma-separated capability names. With "Only listed capabilities", anything not listed is denied and an empty list denies everything. With "No ceiling", AuthBoundry alone decides.' },
+        { name: 'resources', label: 'Resource rules (JSON, optional)', multiline: true, rows: 3, value: key && key.restrictions && key.restrictions.resources ? JSON.stringify(key.restrictions.resources) : '',
+          placeholder: '[{"type": "file", "attributes": {"owner": "alice"}}]', hint: 'When given, each request must match one rule. A rule with an id never matches a list.' },
+      ];
+      const EXPIRY_FIELD = (key) => ({ name: 'expiresAt', label: 'Expires at (optional)', type: 'datetime-local', value: key && key.expiresAt ? localInput(key.expiresAt) : '', hint: 'Your local time. Leave empty for no expiry.' });
+      function restrictionsFrom(values) {
+        if (values.mode !== 'restricted') return null;
+        const capabilities = String(values.capabilities || '').split(',').map((entry) => entry.trim()).filter(Boolean);
+        const restrictions = { capabilities };
+        if (String(values.resources || '').trim()) {
+          let rules;
+          try { rules = JSON.parse(values.resources); } catch { throw new Error('The resource rules are not valid JSON.'); }
+          if (!Array.isArray(rules)) throw new Error('The resource rules must be a JSON array, like [{"type": "file"}].');
+          restrictions.resources = rules;
+        }
+        return restrictions;
+      }
+      const expiryFrom = (values) => (values.expiresAt ? new Date(values.expiresAt).toISOString() : null);
+      const ceiling = (key) => (!key.restrictions ? 'No ceiling'
+        : key.restrictions.capabilities.length ? key.restrictions.capabilities.join(', ') + (key.restrictions.resources ? ' · ' + key.restrictions.resources.length + ' resource rule(s)' : '') : 'Denies everything');
+      const state = (key) => (key.status === 'expired'
+        ? S.dom.StatusIndicator({ tone: 'neutral', label: 'Expired' })
+        : S.dom.StatusIndicator({ field: 'appport.api_key.revoked', value: Boolean(key.revokedAt), ...(key.rotatedTo && !key.revokedAt ? { detail: 'replaced' } : {}) }));
+
+      // Audit: shown for one key at a time, below the keys.
+      const auditHeading = el('h2', { id: 'api-key-audit-heading' }, 'Audit');
+      let auditKey = null;
+      const audit = list({
+        label: 'Audit events',
+        empty: 'Choose Audit on a key to see its events',
+        columns: [{ id: 'time', header: 'Time' }, { id: 'type', header: 'Event' }, { id: 'result', header: 'Result' }, { id: 'by', header: 'Principal' }, { id: 'detail', header: 'Detail' }],
+        read: async () => (auditKey ? request(path(auditKey, '/audit')) : []),
+        row: (event) => ({
+          key: event.id,
+          cells: {
+            time: when(event.timestamp),
+            type: el('code', {}, event.type),
+            result: text(event.result),
+            by: text(event.principalId),
+            detail: text([event.changes ? 'changed ' + event.changes.join(', ') : '', event.relatedCredentialId ? 'related ' + event.relatedCredentialId : ''].filter(Boolean).join('; ')),
+          },
+        }),
+      });
+
       const keys = list({
         label: 'API keys',
         empty: 'No API keys yet',
         columns: [
-          { id: 'name', header: 'Name' }, { id: 'prefix', header: 'Prefix' }, { id: 'created', header: 'Created' },
-          { id: 'state', header: 'State' }, { id: 'actions', header: 'Actions' },
+          { id: 'name', header: 'Name' }, { id: 'prefix', header: 'Prefix' }, { id: 'ceiling', header: 'Permissions' },
+          { id: 'expires', header: 'Expires' }, { id: 'used', header: 'Last used' }, { id: 'state', header: 'State' }, { id: 'actions', header: 'Actions' },
         ],
-        read: () => request('/_appport/api/keys'),
+        read: () => request(base),
         row: (key) => ({
           key: key.id,
           attrs: { 'data-key': key.name },
           cells: {
             name: text(key.name),
             prefix: key.keyPrefix ? el('code', {}, key.keyPrefix) : undefined,
-            created: when(key.createdAt),
-            // The management route lists active keys only (revoked ones are
-            // filtered out), so this reads Active; it is still read from the record.
-            state: S.dom.StatusIndicator({ field: 'appport.api_key.revoked', value: Boolean(key.revokedAt) }),
-            actions: key.revokedAt ? [] : action('Revoke', key.name, () => confirmThen({
-              id: 'revoke-key',
-              title: 'Revoke API key ' + key.name + '?',
-              consequences: ['Requests that present this key are refused from then on.', 'A revoked key cannot be restored. Create a new key to replace it.'],
-              confirmLabel: 'Revoke API key',
-              requireText: key.name,
-              action: () => request('/_appport/api/keys/' + encodeURIComponent(key.id), 'DELETE'),
-              doneMessage: 'Revoked ' + key.name + '. Revoked keys are not listed.',
-            }, report, keys.refresh), 'danger'),
+            ceiling: text(ceiling(key)),
+            expires: when(key.expiresAt),
+            used: when(key.lastUsedAt),
+            // The management route lists unrevoked keys only; state is still read from the record.
+            state: state(key),
+            actions: key.revokedAt ? [] : [
+              action('Edit', key.name, async () => {
+                const values = await S.formDialog({
+                  id: 'edit-api-key', title: 'Edit API key ' + key.name, submitLabel: 'Save changes',
+                  description: 'Changes the name, permissions ceiling, or expiry. The secret does not change.',
+                  fields: [{ name: 'name', label: 'Key name', required: true, value: key.name }, ...RESTRICTION_FIELDS(key), EXPIRY_FIELD(key)],
+                  action: async (input) => changed(await request(path(key), 'PATCH', { name: input.name, restrictions: restrictionsFrom(input), expiresAt: expiryFrom(input) }), 'The API key ' + key.name),
+                });
+                if (values) { report.ok('Saved ' + values.name + '.', null, true); await keys.refresh(); }
+              }),
+              key.status === 'active' && !key.rotatedTo ? action('Rotate', key.name, async () => {
+                let rotated;
+                const values = await S.formDialog({
+                  id: 'rotate-api-key', title: 'Rotate API key ' + key.name, submitLabel: 'Rotate API key',
+                  description: 'Issues a new secret with the same name, permissions, and expiry. The old secret stops working after the overlap.',
+                  fields: [{ name: 'overlapSeconds', label: 'Overlap in seconds', type: 'number', min: 0, max: 604800, value: '0', required: true,
+                    hint: '0 revokes the old secret immediately. Up to 604800 (7 days) lets callers switch over; never beyond the key’s expiry.' }],
+                  action: async (input) => { rotated = changed(await request(path(key, '/rotate'), 'POST', { overlapSeconds: Number(input.overlapSeconds) }), 'The API key ' + key.name); },
+                });
+                if (values && rotated) {
+                  report.ok(...secretShown('Rotated ' + key.name + '. The old secret works until ' + S.formatTime(rotated.replacedKeyValidUntil) + '.', rotated.secret));
+                  await keys.refresh();
+                }
+              }) : null,
+              action('Audit', key.name, async () => {
+                auditKey = key;
+                auditHeading.textContent = 'Audit for ' + key.name;
+                await audit.refresh();
+                auditHeading.scrollIntoView({ block: 'nearest' });
+              }),
+              action('Revoke', key.name, () => confirmThen({
+                id: 'revoke-key',
+                title: 'Revoke API key ' + key.name + '?',
+                consequences: ['Requests that present this key are refused from then on, in every process.', 'A revoked key cannot be restored. Create a new key to replace it.'],
+                confirmLabel: 'Revoke API key',
+                requireText: key.name,
+                action: () => request(path(key), 'DELETE'),
+                doneMessage: 'Revoked ' + key.name + '. Revoked keys are not listed.',
+              }, report, keys.refresh), 'danger'),
+            ].filter(Boolean),
           },
         }),
       });
       keys.refresh();
+      audit.refresh();
       return [
-        S.dom.PageHeader({ title: 'API Keys', description: 'Create durable caller identities. The secret is returned only when the record is created. Keys carry no scopes: AuthBoundry authorizes each capability.' }),
+        S.dom.PageHeader({ title: 'API Keys', description: 'Create durable caller identities. A secret is shown only when a key is created or rotated. A key’s permissions are a ceiling: AuthBoundry still authorizes each capability.' }),
         createForm({
           id: 'create-api-key', label: 'Create API key', submitLabel: 'Create API key',
-          fields: [{ name: 'name', label: 'Key name', required: true }],
-          body: (values) => ({ name: values.name }),
-          send: (body) => request('/_appport/api/keys', 'POST', body),
+          fields: [{ name: 'name', label: 'Key name', required: true }, ...RESTRICTION_FIELDS(null), EXPIRY_FIELD(null)],
+          body: (values) => {
+            const restrictions = restrictionsFrom(values);
+            const expiresAt = expiryFrom(values);
+            return { name: values.name, ...(restrictions ? { restrictions } : {}), ...(expiresAt ? { expiresAt } : {}) };
+          },
+          send: (body) => request(base, 'POST', body),
           // The product returns the secret once; show it once, plainly.
-          done: (created) => (created && created.secret
-            ? ['Created. Copy this secret now; it is not shown again: ', el('code', { class: 'appport-secret' }, created.secret)]
-            : 'API key created.'),
+          done: (created) => (created && created.secret ? secretShown('Created.', created.secret) : 'API key created.'),
           after: keys.refresh,
         }),
         report.node,
         keys.node,
+        el('p', {}, S.dom.Button({ label: 'Revoke all API keys', variant: 'danger', size: 'sm', onClick: () => confirmThen({
+          id: 'revoke-all-keys',
+          title: 'Revoke every API key of this tenant?',
+          consequences: ['Every listed key is refused from then on, in every process, including any key this page is using.', 'Revoked keys cannot be restored.'],
+          confirmLabel: 'Revoke all API keys',
+          requireText: 'revoke all',
+          action: () => request(base + '/revoke-all', 'POST', {}),
+          doneMessage: 'Revoked every API key of this tenant.',
+        }, report, keys.refresh) })),
+        el('section', { 'aria-labelledby': 'api-key-audit-heading' }, [auditHeading, audit.node]),
       ];
     },
 
