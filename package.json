@@ -51,7 +51,7 @@
   "license": "ISC",
   "dependencies": {
     "@appport/protocol": "^1.0.3",
-    "@feltdb/core": "0.11.9",
+    "@feltdb/core": "0.12.0",
     "@iarna/toml": "^2.2.5",
     "express": "^4.18.2",
     "express-rate-limit": "^8.7.0"

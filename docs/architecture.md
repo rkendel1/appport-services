@@ -1,6 +1,6 @@
 # Architecture
 
-AppPort Services is a Node/TypeScript package that consumes FeltDB’s real deployment and persistence model through `@feltdb/core@0.11.9`.
+AppPort Services is a Node/TypeScript package that consumes FeltDB’s real deployment and persistence model through `@feltdb/core@0.12.0`.
 
 ```text
 Application
@@ -11,7 +11,7 @@ ApiKeyService
    ↓
 FeltDbApiKeyStore
    ↓
-@feltdb/core@0.11.9
+@feltdb/core@0.12.0
    ↓
 FeltDB
 ```
