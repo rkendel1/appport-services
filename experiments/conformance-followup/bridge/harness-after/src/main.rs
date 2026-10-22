@@ -106,6 +106,60 @@ fn main() {
             let second = format!("{:?}", client.call("echo", json!({"application_id":"a","input":{"n":1}})).map(|v| v["n"].clone()));
             println!("{}", json!({ "scenario": "missing", "first": first, "after_bridge_appears": second }));
         }
+        // sustained <threads> <seconds> <apps> <sample_seconds> <state_dir>: mixed load
+        // (70% snapshot, 30% create_variable) over more applications than the
+        // child caches; one sample line per interval.
+        "sustained" => {
+            use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+            use std::sync::Mutex;
+            let threads: usize = args[2].parse().unwrap();
+            let seconds: u64 = args[3].parse().unwrap();
+            let apps: usize = args[4].parse().unwrap();
+            let sample: u64 = args[5].parse().unwrap();
+            let state_dir = std::path::PathBuf::from(&args[6]);
+            let stop = Arc::new(AtomicBool::new(false));
+            let window: Arc<Mutex<Vec<f64>>> = Arc::new(Mutex::new(vec![]));
+            let errors: Arc<Mutex<std::collections::BTreeMap<String, u64>>> = Arc::new(Mutex::new(Default::default()));
+            let next = Arc::new(AtomicU64::new(0));
+            let workers: Vec<_> = (0..threads).map(|t| {
+                let (client, stop, window, errors, next) = (client.clone(), stop.clone(), window.clone(), errors.clone(), next.clone());
+                std::thread::spawn(move || {
+                    let mut seed = 0x9E3779B97F4A7C15u64 ^ (t as u64 + 1);
+                    while !stop.load(Ordering::Relaxed) {
+                        seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+                        let app = format!("app-{}", seed % apps as u64);
+                        let op = if seed % 10 < 7 { "snapshot" } else { "configuration.create_variable" };
+                        let n = next.fetch_add(1, Ordering::Relaxed) as usize;
+                        let s = Instant::now();
+                        let r = client.call(op, request(op, &app, n));
+                        let ms = s.elapsed().as_secs_f64() * 1e3;
+                        window.lock().unwrap().push(ms);
+                        if let Err(e) = r { *errors.lock().unwrap().entry(format!("{e:?}")).or_default() += 1; }
+                    }
+                })
+            }).collect();
+            let start = Instant::now();
+            let size = |dir: &std::path::Path| -> u64 {
+                fn walk(p: &std::path::Path) -> u64 { std::fs::read_dir(p).map(|d| d.flatten().map(|e| { let m = e.metadata().unwrap(); if m.is_dir() { walk(&e.path()) } else { m.len() } }).sum()).unwrap_or(0) }
+                walk(dir)
+            };
+            let mut total = 0usize;
+            while start.elapsed().as_secs() < seconds {
+                std::thread::sleep(Duration::from_secs(sample));
+                let mut w = std::mem::take(&mut *window.lock().unwrap());
+                total += w.len();
+                w.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let stats = client.stats();
+                let q = |p: f64| if w.is_empty() { 0.0 } else { pct(&w, p) };
+                println!("{}", json!({ "scenario": "sustained", "t_s": start.elapsed().as_secs(), "calls": total, "window_calls": w.len(),
+                    "throughput_per_s": w.len() as f64 / sample as f64, "p50_ms": q(0.5), "p95_ms": q(0.95), "max_ms": w.last(),
+                    "child_rss_kb": stats.child_pid.map(rss_kb), "state_bytes": size(&state_dir),
+                    "recycles": stats.recycles, "timeouts": stats.timeouts, "overloaded": stats.overloaded, "starts": stats.starts,
+                    "errors": errors.lock().unwrap().clone() }));
+            }
+            stop.store(true, Ordering::Relaxed);
+            for w in workers { w.join().unwrap(); }
+        }
         other => panic!("unknown scenario {other}"),
     }
 }
