@@ -1,0 +1,1 @@
+{"consecutive_failures":0,"event":"appport_services_bridge","kind":"child_ready","operation":"configuration.create_variable","pid":11046,"reason":"ready","recycles":0,"starts":1}

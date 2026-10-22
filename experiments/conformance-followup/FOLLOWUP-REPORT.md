@@ -4,6 +4,10 @@ Date: 2026-10-22. Branch `experiment/rust-interop-assessment` (worktree `/home/u
 This follows `experiments/rust-interop/REPORT.md` at `9f8e235`, which is preserved unchanged.
 Everything new is under `experiments/conformance-followup/`.
 
+**Closeout:** §8 records the finalize-and-verify pass that followed this plan and the bridge hardening
+(`BRIDGE-HARDENING-REPORT.md`). Its changes are local commits on dedicated branches in four product
+repositories. Statements in §0–§7 about "unmodified" repositories describe the state before §8.
+
 **Evidence labels:**
 
 | Label | Meaning |
@@ -491,3 +495,280 @@ scratchpad.
 | Corpus against protocol source HEAD | 127/127 |
 | Bless and consume gates | All expected passes and failures |
 | Bridge | Fault scenarios ×5; load sweep 24 runs (0 errors); memory 6 runs; multi-application durability; cross-application revoke on 2 versions |
+
+---
+
+## 8. Closeout: finalize, verify and close out
+
+Date: 2026-10-22. Every result in this section was run in this session unless it is marked [read].
+Nothing was pushed, published, deployed or opened as a PR. No production configuration was changed.
+
+### 8.1 Architecture decision
+
+AppPort Services, the AppPort protocol and the SDKs stay in TypeScript/Node.js. Rust and TypeScript
+share **contracts only**: versioned conformance corpora that each repository's own test suite gates.
+There is no Rust port, WASM or Node-API binding, second implementation, sidecar or new protocol.
+
+AuthBoundry keeps its Node subprocess bridge. It was hardened in place: same process model, same
+JSON-lines framing. Protocol 2 is an additive, opt-in extension of it. Nothing in §8 gives new evidence
+against this decision. The one new pressure is memory and throughput under growing state (§8.5), and it
+lives in `@appport/services`/FeltDB local mode, not in the language boundary.
+
+### 8.2 Repository and version map
+
+| Repository | Base (remote `main`, verified current) | Closeout branch (local) | Commits | Relevant versions |
+|---|---|---|---|---|
+| `rkendel1/appport` | `268c9b4` | `closeout/protocol-contract-fixes` (`/home/user/appport-closeout`) | `bd70edb` | `@appport/protocol` 1.2.1 (unreleased change on top) |
+| `rkendel1/appport-services` | `df0afbe` | `closeout/services-conformance` (`/home/user/services-closeout`) | `c442298` | `@appport/services` 0.4.12 |
+| `rkendel1/compute` | `6025818` (the local checkout was stale at `b0900fe`) | `closeout/ui-contract-conformance` (`/home/user/compute-closeout`) | `62a2b49` | `compute-environment` 0.1.21 |
+| `rkendel1/authboundry` | `02191c3` | `bridge-hardening` (`/home/user/authboundry-bridge`) | `2c7c72e`, `31462f3`, `9877fa0`, `ece93d0` | Pins `@appport/services` **0.4.5** and `@feltdb/core` 0.11.7 (override) |
+| `rkendel1/rust-interop-experiment` worktree | — | `experiment/rust-interop-assessment` | through `412fd4a` and this report | Harnesses and results; not for release |
+| `appboundry`, `flow_db`, `appworks` | — | none | — | Read only (§8.8) |
+
+**Deployment runtime** [read + run]:
+- AuthBoundry's Docker builder is `rust:1.88.0`.
+- The runtime image installs Debian bookworm `nodejs`, which is **Node 18.20.4**.
+- The Fly VM has 512 MB, 2 shared CPUs, and `FELTDB_DEPLOYMENT = 'local'`.
+- All bridge suites were run on Node 18.20.4 (downloaded, checksum verified) and on Rust 1.88.0, as
+  well as on Node 22 and Rust 1.97.
+
+### 8.3 Changes
+
+| Repository / commit | Files | What |
+|---|---|---|
+| appport `bd70edb` | `packages/protocol/src/names.ts` | `parseCapabilityRef` accepts only `name@` + `^[1-9][0-9]*$` within the safe-integer range (was `Number(...)`) |
+| | `packages/protocol/src/ui.ts` | `validateUiContribution` is total: a hostile `protocol` value gives `INVALID_PROTOCOL`, and any non-AppPort throw while reading becomes `INVALID_REQUEST` with the cause attached. Ordinary messages are unchanged. |
+| | `conformance/contracts/{README.md, tools/{reference,bless}.mjs, appport-ui-1/*, capability-name-1/*}` | Corpus home: 127 UI cases and 44 name cases, version 1.1.0, history imported from the prototype |
+| | `packages/protocol/test/{conformance-corpus,protocol,fulfillment,ui}.test.ts`, `docs/audit.json` (+2 lines) | Corpus gate, canonical-reference tests, error-boundary tests |
+| appport-services `c442298` | `conformance/contracts/{README.md, tools/{reference,bless,make-cases}.mjs, webhook-signature-1/*, api-key-restrictions-1/*, services-manifest-1/*}`, `tests/conformance-corpus.test.ts` | Corpora for the contracts this package owns: 18 + 45 + 3 cases, gated in `npm test`. No source change. |
+| compute `62a2b49` | `crates/compute-environment/src/service_ui.rs` | Text length in UTF-16 code units, plus an in-module corpus gate test |
+| | `crates/compute-environment/tests/fixtures/appport-conformance/appport-ui-1/{cases,expected,narrowings}.json` | Vendored corpus 1.1.0 (sha256 pinned) and 16 declared narrowings |
+| authboundry `2c7c72e`, `31462f3` | See `BRIDGE-HARDENING-REPORT.md` §6 | Bounded, recoverable bridge client; protocol 2; LRU cache; error mapping |
+| authboundry `9877fa0` | `bin/authboundry.js`, `test/cli-launcher.test.js` | The npm launcher points the native runtime at the packaged `bridge/appport-services.cjs`. Before, it fell back to a path baked in on the build machine. The test fails before the change and passes after. |
+| | `crates/server/tests/{appport_services_bridge.rs, fixtures/fake-appport-bridge.cjs}` | New-client/old-bridge test: an old bridge is never sent a request |
+| | `crates/server/tests/credential_boundary.rs` | Non-disclosure test: revoking a foreign key is byte-identical to revoking a nonexistent one, and the foreign key stays usable |
+| | `docs/APPPORT-SERVICES-BRIDGE.md` | Compatibility matrix, non-disclosure contract, verified runtimes |
+| authboundry `ece93d0` | `docs/APPPORT-SERVICES-BRIDGE.md` | Measured sizing under sustained load (§8.5) |
+| experiment `412fd4a` and this commit | `bridge/harness-after/src/main.rs`, `results/closeout/*` | `sustained` load scenario; load and corpus results |
+
+### 8.4 Conformance results per consumer
+
+| Corpus (version) | Consumer | Comparison | Result |
+|---|---|---|---|
+| `appport-ui-1` (1.1.0, 127 cases) | `@appport/protocol` source (reference) | exact bytes | 127/127, gated in `pnpm test` |
+| `capability-name-1` (1.1.0, 44 cases) | `@appport/protocol` source (reference) | exact bytes | 44/44, gated in `pnpm test` |
+| `appport-ui-1` (1.1.0) | Compute `service_ui` | verdict | 105 identical, 16 declared narrowings, 6 not applicable (filter operation), **0 undeclared**. Before the UTF-16 fix the gate failed on the 2 astral over-acceptances. |
+| `webhook-signature-1` (18) | `@appport/services` source 0.4.12 (reference) | exact | 18/18, gated in `npm test` |
+| | `@appport/services` **0.4.5** (AuthBoundry's pin) | exact | 18/18 [`results/closeout/services-corpora-by-version.txt`] |
+| | AuthBoundry `crates/services` `WebhookAuthority` | exact | 4/18 (from §2 prototype). **Not reachable**: no callers, not published. |
+| `api-key-restrictions-1` (45) | 0.4.12 | exact | 45/45 |
+| | 0.4.5 | — | Not applicable: 0.4.5 has no restrictions module. The feature postdates it. |
+| `services-manifest-1` (3) | 0.4.12 | exact | 3/3; digest `74fd1a3f…c020`, identical under 5 locales |
+| | 0.4.5 | exact | 1/3. Legacy-scope map identical; manifest and digest differ because 0.4.12 adds operations. This is a version difference, not a defect. |
+
+**Compute narrowings by kind:**
+- 10 host-policy: composition ×2, 65 and 1000 surfaces, 6 routes.
+- 5 over-rejection: `order` written `1e21`, `20.0`, `2e1`, `-0`, or beyond f64 range. Compute rejects
+  these, so it is stricter, never looser.
+- 1 representation: a lone UTF-16 surrogate, which `serde_json` cannot hold.
+
+The gate also fails on stale or unknown narrowings and on a checksum change.
+
+**Mutation checks** (each gate caught a deliberate defect, then the source was restored):
+- **Protocol:** with the `names.ts`/`ui.ts` fixes stashed, the vitest corpus gate failed on the
+  versioned ids.
+- **Services:** widening restriction containment to `return true` failed
+  `akr1.within.child-drops-resources`.
+- **Compute:** reverting to `chars().count()` failed on the 2 astral cases.
+
+### 8.5 Bridge results
+
+**Failure modes** (all covered by tests; see `BRIDGE-HARDENING-REPORT.md` §4):
+- stall, which is bounded by the deadline;
+- late answer, never misattributed;
+- child death, crash loop with backoff, and failed or missing start;
+- a child that never becomes ready;
+- stray, foreign-id and oversized output;
+- 16-thread concurrency;
+- the queue bound;
+- shutdown and reaping;
+- sanitized errors;
+- no replay;
+- new client against an old bridge: no request is sent.
+
+**Throughput and latency, short runs:**
+- About 60 snapshots/s and 130–150 writes/s, serial. These numbers come from `BRIDGE-HARDENING-REPORT.md`
+  §3 and were measured on fresh state.
+
+**Sustained load (new):**
+- Setup: Node 18.20.4, 16 caller threads, 24 applications, 70% `snapshot` and 30%
+  `configuration.create_variable`, production deadline (15 s) and queue (32).
+- Results: `results/closeout/sustained-node18-16x24*.jsonl`.
+
+| `MAX_APPLICATIONS` | Duration, calls | Throughput, first → last 30 s | p50 / p95 / max latency, last 30 s | State on disk at end | Child RSS (peak) | Timeouts, shed, recycles, errors |
+|---|---|---|---|---|---|---|
+| 2 | 240 s, 1441 | 13.2 → 4.1 /s | 4.0 / 5.1 / 5.8 s | 28 MB | 357 MB (361) | 0, 0, 0, 0 |
+| 8 (default) | 600 s, 2527 | 14.9 → 2.6 /s (low 1.9) | 6.0 / 7.2 / 7.5 s (peak p95 10.8 s at 540 s) | 49 MB | 903 MB (968) | 0, 0, 0, 0 |
+| 24 (all cached) | 240 s, 3526 | 25.9 → 8.7 /s | 1.8 / 2.3 / 2.5 s | 61 MB | 1858 MB (2514) | 0, 0, 0, 0 |
+
+**Interpretation:**
+1. **The bridge stayed correct throughout.** One child served every call: no timeout, shed request,
+   recycle or error.
+2. **Per-call cost grows with stored state, whatever the cache size** (compare 24 against 2 and 8).
+   - The state is a single `state.json` plus journals, and it reached 24 MB at 2527 operations.
+   - Every operation writes durable evidence, so the state, and the work per call, only grow.
+   - This is `@appport/services`/FeltDB local-mode behaviour. Cache misses add a full state reload on
+     top (compare 8 against 24).
+3. **Memory is about `MAX_APPLICATIONS` × in-memory state** (about 110 MB per cached instance at 24 MB of
+   `state.json`).
+   - With the default of 8, the child passed the 512 MB VM once state reached about 27 MB (t = 180 s).
+     In production that means an OOM kill. The client then recovers (503 outcome unknown, backoff,
+     respawn), but repeatedly.
+   - With 2, RSS stayed at or below 361 MB at 28 MB of state, at about the same throughput as 8.
+   - `BRIDGE-HARDENING-REPORT.md` §5 recommended "≤ 8 on the 512 MB VM". **That is superseded:** use 2
+     on a 512 MB VM. Size the VM by `MAX_APPLICATIONS` × state, or decide the evidence retention
+     question (D-9).
+4. **Throughput is serial.** At about 2–4 calls/s, latency approaches the 15 s deadline after a few
+   thousand operations against one state file. This bounds how long a local-mode deployment can absorb
+   write-heavy use.
+
+The default was **not** changed in code: it is a production setting and the decision is listed in D-9.
+The guidance is in `docs/APPPORT-SERVICES-BRIDGE.md` ("Sizing").
+
+**Recovery:**
+- Every recovery path recovered in tests on Node 18.20.4 and on 22.
+- The old bridge with an open dependency handle never exits after stdin closes. A leftover test process
+  from the before-run was still alive after 80 minutes and needed SIGTERM.
+- The new bridge exits on EOF (`limits` test).
+
+### 8.6 Tests (exact commands, on the closeout commits)
+
+| Repository | Command | Before (base) | After |
+|---|---|---|---|
+| appport | `pnpm build && pnpm test` | 1667 passed, 3 skipped | **1676 passed, 0 failed, 3 skipped** |
+| appport | `pnpm typecheck`, `pnpm build`, `pnpm boundary:check` | — | pass |
+| appport | `node conformance/contracts/tools/bless.mjs <corpus> --check` (both) | — | pass |
+| appport-services | `npm test` | 287/287 | **293/293** |
+| appport-services | `npm run test:browser` | — | 13/13 |
+| compute | `cargo test -p compute-environment --lib service_ui` | 9/9 | **10/10** (the new test fails before the fix) |
+| compute | `cargo test -p compute-environment --test service_ui` | 9/9 | 9/9 |
+| compute | `cargo test -p compute-environment --test headless` | — | 7/7 |
+| compute | `cargo clippy -p compute-environment`, `cargo fmt --check` | — | clean |
+| authboundry | `cargo test --workspace` | 478 passed, 0 failed, 6 ignored | **497 passed, 0 failed, 6 ignored** (re-run on `9877fa0`; `ece93d0` is docs only) |
+| authboundry | `npm test` | 69/69 | **70/70** |
+| authboundry | `node --test test/appport-services-bridge-limits.test.js test/appport-services-bridge.test.js test/cli-launcher.test.js` | — | 11/11 on Node 22.22.0 and on Node 18.20.4 |
+| authboundry | `node --test test/audit/appport-services-enforcement.test.js` | 2/3 | **2/3**. Same pre-existing failure (D-8), unchanged message: `signingCredentialRef is required and must be a credential-ref:<id>` |
+| authboundry | `CARGO_TARGET_DIR=target/msrv-1.88 cargo +1.88.0 test -p appport-auth-mesh-server --test appport_services_bridge --test credential_boundary`, `AUTHBOUNDRY_NODE=<node 18.20.4>` | — | 17/17 and 11/11 |
+
+**Notes:**
+- Baselines for appport were taken on a built tree in a temporary worktree. An unbuilt tree skips 8, not
+  3.
+- appport-services, compute and appport were run after their final commits. They were not re-run after
+  the AuthBoundry re-run, and nothing in them has changed since.
+
+### 8.7 Behavioural changes
+
+1. **`parseCapabilityRef`** (`@appport/protocol`) rejects non-canonical versions (`@01`, `@1.0`, `@1e0`,
+   `@0x1`, `@+1`, `@ 1`, `@1 `) and versions above 2^53−1. They returned 1 or a rounded number before.
+   - Effect: a fulfillment claim spelled that way is refused instead of keyed as a second spelling.
+   - Justification: spec §8 writes references as `name@<integer>`, and two spellings of one capability
+     could coexist as distinct keys (F-04b).
+   - Search of all available repositories: no non-canonical reference outside tests.
+     `feltdb.public.substrate@1.0` in `flow_db` is a FeltDB contract label that is never parsed by
+     `parseCapabilityRef`.
+   - Corpus `capability-name-1` 1.1.0 records the 8 changed ids.
+   - **Unreleased:** releasing it is decision D-1.
+2. **`validateUiContribution`** never throws a non-AppPort error. A hostile `protocol` value gives
+   `INVALID_PROTOCOL` (was `TypeError`). Two corpus ids are versioned in 1.1.0.
+3. **Compute** counts UI text in UTF-16 code units. It now rejects the 2 documents with 257 and 400 astral
+   characters that the reference rejects.
+4. **AuthBoundry services routes:**
+   - Status codes 400/403/404/409/500/503/504 by category, with fixed messages for server faults (was 400
+     or 503 with raw internal text).
+   - Revoking, disabling or retrying an unknown item gives **404** (was **200 `null`**). This keeps
+     non-disclosure: foreign and nonexistent are byte-identical, and the test guards it.
+   - Deletes stay `200 {deleted:true}`, because the dependency cannot distinguish the two cases.
+   - `Retry-After` on 503.
+5. **AuthBoundry bridge:**
+   - deadline, bounded queue, recycle, backoff, no replay, LRU application cache;
+   - the child exits on stdin EOF;
+   - protocol 2 is opt-in by environment variable, and the old protocol is unchanged.
+6. **AuthBoundry npm launcher** uses the packaged bridge path when `AUTHBOUNDRY_APPPORT_SERVICES_BRIDGE`
+   is unset.
+
+### 8.8 Findings register: final classification
+
+Classes: **1** fixed, **2** already fixed and verified, **3** not reachable (with evidence), **4**
+deferred pending a decision, **5** out of scope.
+
+| ID | Class | Evidence or decision |
+|---|---|---|
+| B-1 no timeout | 1 | `2c7c72e`; stall and deadline tests |
+| B-2 no restart, failed start cached | 1 | `2c7c72e`; crash-loop, failed-start and missing-bridge tests |
+| B-3 unbounded application cache | 1 (bridge), **4** (growth) | LRU bound fixed. Growth of state and memory per instance remains (§8.5): D-9 |
+| B-4 response desync | 1 | Protocol 2 ids and stdout isolation; stray, foreign and late-answer tests |
+| B-5 serial throughput | 4 | Design limit, measured (§8.5). Concurrency needs a dependency or architecture decision: D-9 |
+| B-6 400 for all failures; revoke 200 `null` | 1 | `error_response`; HTTP revocation and non-disclosure tests |
+| V-1 `@appport/services` 0.4.5 | 3 + 4 | Cross-application revoke bug not reachable: `tenant_id = "<tenant>:<appId>"` [run]. Webhook signatures conform on 0.4.5. Upgrade is D-6. |
+| V-2 stale `OPERATION_SCOPES` names | 4 | Cosmetic. They reach no decision. Rides with the D-6 upgrade. |
+| F-01 `crates/services` webhook verifier | 3 | No callers, not published (crates.io 404). Removal is D-7. |
+| F-02 `crates/services` API-key verifier | 3 | Same: D-7 |
+| F-03 Compute UTF-16 length | 1 | `62a2b49` |
+| F-03 Compute `order` over-rejection | 4 | Declared narrowing (stricter than the reference). Whether Compute should accept `1e21`/`20.0` spellings is the Compute owner's call. Safe as is. |
+| F-03b Compute fixture 0.4.10 vs stack 0.4.11 | 5 | Fixture refresh in Compute, unrelated to AppPort Services |
+| F-04a AuthBoundry identifier grammar | 4 | D-5 (unchanged from §6) |
+| F-04b non-canonical refs | 1, release **4** | `bd70edb`, unreleased: D-1 |
+| F-04c version-blind authorization | 4 | AuthBoundry's contract is per identifier (`normalize_contract_capabilities` rejects duplicates; the version is metadata). Changing it alters an authority boundary: D-2 |
+| F-04d `validate_appport_capability` skips `jobs@9.enqueue` | 4 | No false allow found [read*]. It is an authority-boundary change, so it was not made: D-2 |
+| F-05 `String(value.protocol)` TypeError | 1 | `bd70edb` |
+| F-06 permissive route grammar | 4 | D-3 |
+| F-07 `discoverUi` returns unvalidated documents | 4 | D-4. No caller in available repositories. |
+| Audit `webhooks.create` requires `signingCredentialRef` | 4 | Pre-existing failure, unchanged. Needs a credential-custody decision; no reference was fabricated: D-8 |
+| Duplicate ad-hoc `name@version` parsers (`packages/integration/*`, `client/host.ts`) | 5 | Left as is; they follow the D-1 release |
+| `appboundry` vendors `@appport/protocol` 1.0.0 with the old `parseCapabilityRef` (used in `packages/cli`) | 5 | Another product. It follows the D-1 release. |
+| Configuration secret custody after a failed bridge call | 5 | Ordering predates the bridge work. It is not a bridge defect. |
+| Q-2 deployed Node version | 2 | Node 18.20.4, verified (§8.2) |
+
+### 8.9 Known limitations
+
+1. **Local-mode state grows without bound, and so do per-call cost and per-instance memory** (§8.5). The
+   default `MAX_APPLICATIONS=8` exceeds the 512 MB VM once state is about 27 MB. Set 2 on that VM.
+2. **Throughput is serial:** about 2–15 calls/s under mixed load, depending on state size.
+3. **Unknown outcomes** after a 504 or a lost child are reported, not resolved. There is no idempotency
+   key, and no retry was added for writes.
+4. **Audit test failure:** 1 of 3 tests in `test/audit/appport-services-enforcement.test.js` fails, as
+   before.
+5. **`@appport/core` requires Node ≥ 20.** The bridge does not use it; the JS SDK does. The Debian
+   runtime is Node 18, so anything that loads `@appport/core` in that image is unsupported.
+6. **Corpora don't yet run in other repos' CI.** They are gated in each repository's own test suite.
+   Compute vendors a pinned copy and must refresh it deliberately.
+7. **Platform:** the reaping tests use `/proc` and are Linux only.
+
+### 8.10 Required decisions
+
+| # | Decision | Owner | Evidence |
+|---|---|---|---|
+| D-1 | Release `@appport/protocol` with canonical references and the total UI validator (1.1.0 corpora). Patch or minor? | Protocol | §8.7 (1)–(2) |
+| D-2 | Version-aware authorization in AuthBoundry, including the `validate_appport_capability` guard (F-04c, F-04d) | AuthBoundry / spec §12.3 | §6 |
+| D-3, D-4, D-5 | Route grammar; `discoverUi` validation; AuthBoundry identifier grammar | Protocol / AuthBoundry | §6 |
+| D-6 | Upgrade AuthBoundry to `@appport/services` 0.4.12. This needs the downgrade-safety check (Q-1), removal of the `@feltdb/core` override, the hard-coded `package_version` and the `OPERATION_SCOPES` cleanup. | AuthBoundry | §1 V-1 |
+| D-7 | Delete AuthBoundry `crates/services` (and correct `docs/CREDENTIAL-BOUNDARY.md`). Out-of-tree users cannot be ruled out (Q-3). | AuthBoundry | §1 F-01/F-02 |
+| D-8 | Webhook signing-credential custody for `webhooks.create` (who mints and holds `credential-ref:<id>`) | Security / product | audit test |
+| D-9 | Production sizing and evidence retention: set `MAX_APPLICATIONS=2` (or a larger VM); decide evidence compaction or retention in `@appport/services`/FeltDB, or move off local mode | Operations / product | §8.5 |
+| D-10 | Per-account application quota (was D-6 in §6) | Product | §1 B-3 |
+
+### 8.11 Final status
+
+**DONE WITH EXPLICIT LIMITATIONS.**
+
+- **Done:**
+  - Every reachable defect within AppPort Services' boundaries is fixed and tested on the deployed
+    runtimes (Node 18.20.4, Rust 1.88.0): B-1, B-2, B-3 bridge, B-4, B-6, F-03, F-05 and F-04b.
+  - Conformance is gated per consumer, with 0 undeclared divergences.
+- **Limitations:**
+  - Local-mode growth: state, per-call cost and memory (§8.9).
+  - The default cache size exceeds the 512 MB VM under sustained writes; this needs D-9 before heavy
+    production use.
+- **Not done here, by instruction:**
+  - Push, release (D-1), dependency upgrade (D-6) and deployment.
+  - Changes that alter authority, custody or retention (D-2, D-8, D-9).
