@@ -1,0 +1,16 @@
+{"variant":"before","calls_so_far":50,"child_rss_kb":142120,"distinct_apps":true,"errors":0,"round":0,"round_ms":2085,"scenario":"memory"}
+{"variant":"before","calls_so_far":100,"child_rss_kb":198556,"distinct_apps":true,"errors":0,"round":1,"round_ms":2541,"scenario":"memory"}
+{"variant":"before","calls_so_far":150,"child_rss_kb":288184,"distinct_apps":true,"errors":0,"round":2,"round_ms":3206,"scenario":"memory"}
+{"variant":"before","calls_so_far":200,"child_rss_kb":400028,"distinct_apps":true,"errors":0,"round":3,"round_ms":4378,"scenario":"memory"}
+{"variant":"before","calls_so_far":250,"child_rss_kb":550252,"distinct_apps":true,"errors":0,"round":4,"round_ms":5028,"scenario":"memory"}
+{"variant":"before","calls_so_far":300,"child_rss_kb":733644,"distinct_apps":true,"errors":0,"round":5,"round_ms":5908,"scenario":"memory"}
+{"variant":"before","calls_so_far":350,"child_rss_kb":956176,"distinct_apps":true,"errors":0,"round":6,"round_ms":6722,"scenario":"memory"}
+{"variant":"before","calls_so_far":400,"child_rss_kb":1214876,"distinct_apps":true,"errors":0,"round":7,"round_ms":8919,"scenario":"memory"}
+{"variant":"after","calls_so_far":50,"child_rss_kb":141280,"distinct_apps":true,"errors":0,"round":0,"round_ms":2382,"scenario":"memory"}
+{"variant":"after","calls_so_far":100,"child_rss_kb":176872,"distinct_apps":true,"errors":0,"round":1,"round_ms":2543,"scenario":"memory"}
+{"variant":"after","calls_so_far":150,"child_rss_kb":211728,"distinct_apps":true,"errors":0,"round":2,"round_ms":2864,"scenario":"memory"}
+{"variant":"after","calls_so_far":200,"child_rss_kb":254600,"distinct_apps":true,"errors":0,"round":3,"round_ms":3336,"scenario":"memory"}
+{"variant":"after","calls_so_far":250,"child_rss_kb":276156,"distinct_apps":true,"errors":0,"round":4,"round_ms":4550,"scenario":"memory"}
+{"variant":"after","calls_so_far":300,"child_rss_kb":320980,"distinct_apps":true,"errors":0,"round":5,"round_ms":5424,"scenario":"memory"}
+{"variant":"after","calls_so_far":350,"child_rss_kb":342980,"distinct_apps":true,"errors":0,"round":6,"round_ms":6431,"scenario":"memory"}
+{"variant":"after","calls_so_far":400,"child_rss_kb":350604,"distinct_apps":true,"errors":0,"round":7,"round_ms":7077,"scenario":"memory"}
