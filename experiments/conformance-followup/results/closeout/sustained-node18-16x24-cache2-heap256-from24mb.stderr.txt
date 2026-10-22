@@ -1,0 +1,11 @@
+{"consecutive_failures":0,"event":"appport_services_bridge","kind":"child_ready","operation":"snapshot","pid":21484,"reason":"ready","recycles":0,"starts":1}
+{"consecutive_failures":1,"event":"appport_services_bridge","kind":"child_recycled","operation":"configuration.create_variable","pid":21484,"reason":"request_timeout","recycles":1,"starts":1}
+{"consecutive_failures":1,"event":"appport_services_bridge","kind":"child_ready","operation":"snapshot","pid":21503,"reason":"ready","recycles":1,"starts":2}
+{"consecutive_failures":2,"event":"appport_services_bridge","kind":"child_recycled","operation":"snapshot","pid":21503,"reason":"request_timeout","recycles":2,"starts":2}
+{"consecutive_failures":2,"event":"appport_services_bridge","kind":"child_ready","operation":"snapshot","pid":21517,"reason":"ready","recycles":2,"starts":3}
+{"consecutive_failures":1,"event":"appport_services_bridge","kind":"child_recycled","operation":"snapshot","pid":21517,"reason":"request_timeout","recycles":3,"starts":3}
+{"consecutive_failures":1,"event":"appport_services_bridge","kind":"child_ready","operation":"configuration.create_variable","pid":21530,"reason":"ready","recycles":3,"starts":4}
+{"consecutive_failures":1,"event":"appport_services_bridge","kind":"child_recycled","operation":"snapshot","pid":21530,"reason":"request_timeout","recycles":4,"starts":4}
+{"consecutive_failures":1,"event":"appport_services_bridge","kind":"child_ready","operation":"snapshot","pid":21565,"reason":"ready","recycles":4,"starts":5}
+{"consecutive_failures":2,"event":"appport_services_bridge","kind":"child_recycled","operation":"snapshot","pid":21565,"reason":"request_timeout","recycles":5,"starts":5}
+{"consecutive_failures":2,"event":"appport_services_bridge","kind":"child_ready","operation":"configuration.create_variable","pid":21578,"reason":"ready","recycles":5,"starts":6}

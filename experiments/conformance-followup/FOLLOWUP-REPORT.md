@@ -625,7 +625,7 @@ The gate also fails on stale or unknown narrowings and on a checksum change.
      In production that means an OOM kill. The client then recovers (503 outcome unknown, backoff,
      respawn), but repeatedly.
    - With 2, RSS stayed at or below 361 MB at 28 MB of state, at about the same throughput as 8.
-   - `BRIDGE-HARDENING-REPORT.md` §5 recommended "≤ 8 on the 512 MB VM". **That is superseded:** use 2
+   - (Superseded in turn by §9.3: no cache size is a fix.) `BRIDGE-HARDENING-REPORT.md` §5 recommended "≤ 8 on the 512 MB VM". **That is superseded:** use 2
      on a 512 MB VM. Size the VM by `MAX_APPLICATIONS` × state, or decide the evidence retention
      question (D-9).
 4. **Throughput is serial.** At about 2–4 calls/s, latency approaches the 15 s deadline after a few
@@ -772,3 +772,212 @@ deferred pending a decision, **5** out of scope.
 - **Not done here, by instruction:**
   - Push, release (D-1), dependency upgrade (D-6) and deployment.
   - Changes that alter authority, custody or retention (D-2, D-8, D-9).
+
+---
+
+## 9. Decision follow-up: D-1, D-6, D-9
+
+Scope: only these three decisions. D-2, D-3, D-4, D-5, D-7 and D-10 stay deferred as documented in §8.10.
+D-8 blocks webhook creation only if that capability is required. Everything here is a local commit;
+nothing was pushed, released or deployed.
+
+### 9.1 D-1: canonical capability references (approved in direction; release not done)
+
+| Check | Result |
+|---|---|
+| Canonical grammar documented | Added to spec §8.3 (`spec/appport-1.0.md`): canonical decimal `[1-9][0-9]*`, at most 2^53 − 1, one written form per version. appport `76544b0`. |
+| Release notes | Unpublished entry at the top of `RELEASE_NOTES.md`: what now fails, how it shows, migration, evidence. Version (minor or major) is left to the release owner per `PUBLISHING.md`. appport `76544b0`. |
+| Old and new behaviour in conformance | `capability-name-1` 1.1.0 has 8 `versioned` cases and `appport-ui-1` 1.1.0 has 2. Each carries `change.before` and `change.after`, plus a `history` entry in `expected.json`. |
+| Known consumers | See the table below |
+| Downstream upgrade | AppWorks and `@appport/services` suites unchanged against the patched build (below) |
+
+**Known consumers of `@appport/protocol`** [read: every `package.json` outside `node_modules`]:
+
+| Consumer | Pin | Uses the changed code? | Effect of a release |
+|---|---|---|---|
+| AppWorks (8 packages) | `1.2.0` exact | Yes: `claimsFor` and `evaluateFulfillment` (`packages/workspace/src/discovery.ts`) call `parseCapabilityRef` | Only when AppWorks re-pins |
+| `@appport/services` | `^1.0.3` | `validateUiContribution`, `filterUiContribution` (`src/runtime/ui.ts`) | **Picked up on the next lockfile refresh** |
+| Compute `packages/compute-appport` | `1.0.2` exact | Not found | Only when it re-pins. Its Rust UI validator is gated by the vendored corpus (§8.4). |
+| AppBoundry | Its own workspace copy, `@appport/protocol` 1.0.0 | Yes: `packages/cli` calls its own `parseCapabilityRef` | **None.** It does not consume the published package. Aligning it is AppBoundry's own change. |
+| AuthBoundry, flow_db | Do not depend on `@appport/protocol` | — | None |
+| AppPort's own packages | Exact pins, released together per `PUBLISHING.md` | `@appport/core` resolves claims through protocol | Re-released with it |
+
+Non-canonical spellings in available repositories, searched across all source and JSON: only test inputs.
+`feltdb.public.substrate@1.0` in flow_db is a FeltDB contract label and is never parsed as a capability
+reference.
+
+**Downstream suites against the patched build:**
+- **Method:** the build at `bd70edb` was substituted into each consumer's installed `@appport/protocol` in
+  throwaway copies. The consumers' checkouts and `node_modules` were not touched.
+  - Built `dist/` differs from published 1.2.0 only in `names.js`, `names.d.ts` and `ui.js`.
+  - Resolution was confirmed in each copy: `parseCapabilityRef("a.b@01")` gives `null`.
+- **Results:**
+
+| Consumer | Command | Published protocol | Patched |
+|---|---|---|---|
+| AppWorks `origin/main` `1300c33` | `pnpm install --frozen-lockfile && pnpm build && pnpm test` | 405 passed, 6 skipped; 49/49 | 405 passed, 6 skipped; 49/49 |
+| `@appport/services` `c442298` | `npm run build && npm test && npm run test:browser` | 293/293, 13/13 (with 1.0.3) | 293/293, 13/13 (with 1.2.1 + patch) |
+| appport `76544b0` | `pnpm test` | — | First run: 1 failure, 1675 passed, 3 skipped (below). Re-run: **1676 passed, 3 skipped** |
+
+The one failure is `spec/test/behavioral-replacement-e2e.test.ts` › "independent Python provider…". It
+failed with `TypeError: Cannot read properties of undefined (reading 'status')`.
+- The test spawns Python processes and does not touch the changed code.
+- It passed 3/3 in isolation and on the full re-run.
+- This commit changes only `RELEASE_NOTES.md` and the spec text.
+- Recorded as intermittent and unrelated. It was not investigated further.
+
+**Recommendation:**
+- The protocol change is ready for release review.
+- Before publishing, the release owner chooses the version. Item 1 can make previously accepted input
+  fail, so `PUBLISHING.md` asks for a deliberate minor/major call.
+- Separately, `@appport/services`'s caret range means its next lockfile refresh adopts the change. Its
+  suite passes with it.
+
+### 9.2 D-6: are the "no upgrade needed" assumptions true in deployment?
+
+**Assumption 1: every bridge call carries a per-application tenant string.** [read]
+- The bridge has three call sites: `control_routes.rs:792` (snapshot), `:851` (operations) and
+  `credential_broker.rs:803`.
+- All of them send `"tenant_id": format!("{authority_tenant_id}:{application.id}")`. No path sends a
+  caller-supplied tenant.
+- The bridge uses `request.tenant_id` for every service call and identifies the principal with the same
+  tenant and application.
+
+**Assumption 2: that string is unique per application.** [read]
+- Application ids are caller-chosen, can be any non-blank string (including `:`), and are globally
+  unique: `create_application` returns 409 `application_exists`.
+- Tenant ids are created only at bootstrap from operator configuration (`production.rs`
+  `bootstrap_tenant`, CLI `serve`). There is no request path that creates a tenant. The deployment
+  configures a single tenant (`fly.toml` `AUTHBOUNDRY_TENANTS = 'default'`).
+- With one tenant, `default:<appId>` is unique per application.
+- **Residual condition:** two applications could share a string only if an operator configured two
+  tenants where one is the other plus `:` and a prefix (for example `a` and `a:b`).
+- Recorded as an operating constraint, not changed: tenant ids must not contain `:` when more than one
+  is configured.
+
+**Assumption 3: what 0.4.12 fixes is not reachable through the bridge.** [read: `git diff f76a87e
+df0afbe -- src`, 0.4.5 → 0.4.12]
+- Unchanged between the versions: webhooks, jobs, schedules, notifications and files.
+- Changed:
+  - **API keys:**
+    - **Revoke:** 0.4.5 checks the key's tenant only; 0.4.12 also checks the application (`owns`).
+      Covered by assumption 2: the tenant string already encodes the application.
+    - **New in 0.4.12:** restrictions, rotation, revoke-all and audit. The bridge does not expose them.
+  - **Gateway (`enforceCredential`):** re-validates **API-key-authenticated** principals on every call.
+    Bridge principals are `principalType: 'authboundry_session'` (`appport-services.cjs:159`), and
+    nothing in AuthBoundry authenticates with services API keys (searched: no `authenticateApiKey`
+    caller). Not applicable.
+  - **Configuration:** ownership resolution was refactored into a shared function with the same checks.
+    No behaviour change.
+- The webhook signature corpus is identical on 0.4.5 and 0.4.12 (18/18, §8.4).
+
+**Conclusion:**
+- No security property that AuthBoundry relies on today differs between 0.4.5 and 0.4.12. The upgrade is
+  not required for safety.
+- Keep D-6 as a planned maintenance upgrade. It needs the downgrade check (Q-1) and must not be made just
+  to align versions.
+- The tenant-id constraint above is the one assumption that configuration could break.
+
+### 9.3 D-9: memory and state growth (decision data; decision not made)
+
+**New measurements:** Node 18.20.4, real bridge.
+- Results:
+  - `results/closeout/growth-node18.jsonl` and `growth-instances-node18.jsonl` (`bridge/growth-probe.mjs`);
+  - `sustained-node18-16x24-cache2-from24mb.*` and `…-cache2-heap256-from24mb.*`.
+
+**Bytes per call:**
+- A `snapshot` adds **14.5 KB** of durable state, because it records evidence for each of the 7 services
+  it reads.
+- A write adds 6.4 KB.
+- State grows with **page views**, not only with changes.
+
+**One caller, growing state** (cache 1; "state" is the `.appport-services` directory):
+
+| State | `state.json` | Snapshot (cached) | Snapshot (miss) | Write | Child RSS (peak) |
+|---|---|---|---|---|---|
+| 6 MB | 0 | 45 ms | 200 ms | 22 ms | 148 (153) MB |
+| 20 MB | 6.5 MB | 93 ms | 300 ms | 29 ms | 224 (287) MB |
+| 36 MB | 13.1 MB | 158 ms | 590 ms | 73 ms | 289 (381) MB |
+| 55 MB | 24 MB | 233 ms | 840 ms | 75 ms | 413 (473) MB |
+
+**Per cached application (fresh child):**
+
+| `state.json` | RSS with 1 cached | Added per extra cached application |
+|---|---|---|
+| ~0 | 89 MB | about 12 MB |
+| 12.7 MB | 114 MB | about 26 MB |
+| 24 MB | 163 MB | about 42 MB |
+
+**Under load from a 24 MB `state.json`** (16 callers, 24 applications, cache 2):
+
+| Child heap | Throughput | p50 latency | RSS | Timeouts and recycles |
+|---|---|---|---|---|
+| Default | 1.2–1.5 calls/s | 11–13 s | 348–635 MB | 0 |
+| `--max-old-space-size=256` | 1.1–1.4 calls/s, between backoff windows | 12–14 s | 279–324 MB | 5 in 4 min; 503 fast-fail during backoff |
+
+**What this changes in §8.5:**
+- The multi-second latencies there were mostly **queueing behind 16 callers**. One caller sees 45–233 ms
+  for a cached snapshot over this whole range.
+- The real limits are:
+  1. **Miss cost.** When more applications are active than are cached, throughput is about 1 / miss
+     cost, and the miss cost grows linearly with state (200 → 840 ms).
+  2. **Memory.** RSS grows with state even with one application cached, and passes 400 MB at about 55 MB
+     of state.
+  3. **Growth.** State only grows, about 14.5 KB per page view.
+- **No setting fixes this.** `MAX_APPLICATIONS=2` delays the memory limit, and a heap cap bounds memory
+  by trading it for timeouts.
+
+**Is the load test representative?** [read]
+- Production callers are human-driven, with no polling of this route:
+  - the Services page (one snapshot per view, plus one after each action);
+  - the Credentials page (one snapshot per selected application);
+  - configuration secrets (`credential_broker`).
+- Sixteen continuous callers is far above expected interactive load, so queueing will be much smaller.
+- State growth per page view is real at any load, and so is memory growth with state.
+
+**Runway, for illustration only:** at 14.5 KB per page view, 1,000 Services/Credentials page views a day
+add about 14.5 MB of state a day. The state would reach the measured trouble zone (about 50 MB: misses
+near 1 s, RSS 400+ MB) in about three to four days from empty.
+
+The current production state size is unknown here. **The first action is to measure it:**
+
+```sh
+du -sh /data/authboundry.appport-services
+```
+
+on the Fly volume, together with the child's RSS.
+
+**Options (the decision is yours):**
+
+| Option | Effect | Cost or risk |
+|---|---|---|
+| A. Pilot on 512 MB with guards: `MAX_APPLICATIONS=2`; alert when the state passes 30 MB, child RSS passes 350 MB, or there are `request_timeout` recycles | Delays the limit; makes it visible | Not safe indefinitely; someone must act on the alert |
+| B. Larger VM (e.g. 1–2 GB) | Extends runway roughly linearly in memory | Does not change miss cost or growth |
+| C. Evaluate remote FeltDB mode (`FELTDB_URL`, already supported by the bridge) | Unknown: **not measured**. Whether instances still materialize the whole state remotely must be tested before relying on it. | Needs a FeltDB deployment and credentials |
+| D. Decide evidence retention in `@appport/services`/FeltDB (compaction, archival, or not recording read evidence) | Addresses growth at the source | Product, audit and retention decision; a dependency change. **Evidence must not be pruned without that policy.** |
+
+**What I'd need from you:**
+1. the memory ceiling for the child (proposal: 350 MB on a 512 MB VM);
+2. the latency target (proposal: p95 under 2 s at expected concurrency);
+3. the current production state size;
+4. whether B, C or D is pursued.
+
+Until then, the honest status is: safe for a monitored pilot under option A, **not production-ready for
+sustained use on 512 MB local mode.**
+
+### 9.4 Status after this follow-up
+
+| Area | Status |
+|---|---|
+| Engineering investigation (architecture, conformance, bridge, runtimes) | **Closed** |
+| D-1 protocol release | Ready for release review. Not released. |
+| D-6 | Not required for safety. Maintenance upgrade later, with Q-1. |
+| D-9 | **Blocking production deployment on 512 MB local mode.** Decision inputs listed above. |
+| D-2, D-3, D-4, D-5, D-7, D-10 | Deferred as documented |
+| D-8 | Blocks webhook creation only if that capability is required |
+
+**Commits in this follow-up (local):**
+- appport `76544b0` (spec §8.3, release notes);
+- authboundry `3ab5ba2` (sizing documentation);
+- experiment: this commit (`bridge/growth-probe.mjs`, `results/closeout/growth-*`,
+  `results/closeout/sustained-*-from24mb.*`).
