@@ -1,0 +1,2 @@
+experimental Rust port (rust-interop/crates/ui-contract) via WASM vs appport-ui-1 @ exact: {"equal":126,"matchesIntended":0,"declared":1,"undeclared":0,"stale":0,"notRun":0}
+exit=0

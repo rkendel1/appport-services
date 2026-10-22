@@ -1,0 +1,13 @@
+## consumer-gate negative tests 2026-10-22T08:44:04Z
+### stale narrowing (declared on a case that agrees)
+experimental Rust port (rust-interop/crates/ui-contract) via WASM vs appport-ui-1 @ exact: {"equal":125,"matchesIntended":0,"declared":1,"undeclared":0,"stale":1,"notRun":0}
+  FAIL ui1.base-document: declared narrowing no longer diverges (remove it)
+exit=1
+### corpus changed under the consumer's pin
+experimental Rust port (rust-interop/crates/ui-contract) via WASM vs appport-ui-1 @ exact: {"equal":126,"matchesIntended":0,"declared":1,"undeclared":0,"stale":0,"notRun":0}
+  FAIL corpus checksum differs from the pinned one (consumer must re-pin deliberately)
+exit=1
+### narrowing for a nonexistent id
+experimental Rust port (rust-interop/crates/ui-contract) via WASM vs appport-ui-1 @ exact: {"equal":126,"matchesIntended":0,"declared":1,"undeclared":0,"stale":0,"notRun":0}
+  FAIL ui1.no-such-case: declared but not in corpus
+exit=1

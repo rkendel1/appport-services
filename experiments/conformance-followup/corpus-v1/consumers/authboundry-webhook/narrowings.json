@@ -1,0 +1,11 @@
+{
+ "consumer": "authboundry crates/services WebhookAuthority::receive (authboundry 02191c3)",
+ "corpus": {
+  "name": "webhook-signature-1",
+  "version": "1.0.0",
+  "casesSha256": "80d24e75c88cf2c2cbdfcec9dcc65af1b81696898e5a6efd052c72f664de770d",
+  "expectedSha256": "319f24882c6437f024de2b4a2ec022258bf0fdd2cfd29c779c56fe0c4d0d1fda"
+ },
+ "comparison": "verdict",
+ "narrowings": []
+}

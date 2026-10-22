@@ -1,0 +1,121 @@
+{"id":"ui1.compute-fixture-anonymous-v1-ui-services-0-4-10","verdict":"accept","detail":"available"}
+{"id":"ui1.compute-fixture-full-contribution-services-0-4-10","verdict":"accept","detail":"available"}
+{"id":"ui1.services-0-4-12-appport-ui-contributions-0","verdict":"accept","detail":"available"}
+{"id":"ui1.services-0-4-12-anonymous-discovery-document","verdict":"accept","detail":"available"}
+{"id":"ui1.base-document","verdict":"accept","detail":"available"}
+{"id":"ui1.empty-surfaces-and-navigation","verdict":"accept","detail":"empty"}
+{"id":"ui1.all-composition-requirements","verdict":"reject","detail":"unsupported: the contribution requires identity, tenant, application, environment from its host, which Compute does not supply"}
+{"id":"ui1.duplicate-composition-requirement-is-allowed","verdict":"reject","detail":"unsupported: the contribution requires tenant, tenant from its host, which Compute does not supply"}
+{"id":"ui1.unknown-keys-are-dropped","verdict":"accept","detail":"available"}
+{"id":"ui1.entities-and-actions-pass-through-untouched","verdict":"accept","detail":"available"}
+{"id":"ui1.entities-that-are-not-arrays-are-dropped","verdict":"accept","detail":"available"}
+{"id":"ui1.negative-and-zero-order","verdict":"accept","detail":"available"}
+{"id":"ui1.order-1e21-is-an-integer","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.order-2-53-is-an-integer","verdict":"accept","detail":"available"}
+{"id":"ui1.order-1-5-rejected","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.order-string-rejected","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.order-null-rejected","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.order-missing-rejected","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.order-boolean-rejected","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.raw-order-20-0-non-canonical-number","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.raw-order-2e1","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.raw-order-9007199254740993-beyond-2-53","verdict":"accept","detail":"available"}
+{"id":"ui1.raw-order-1e400-overflows-to-infinity","verdict":"reject","detail":"invalid: the answer was not JSON"}
+{"id":"ui1.raw-order-0","verdict":"reject","detail":"invalid: navigation n.jobs order must be an integer"}
+{"id":"ui1.raw-numbers-inside-entities","verdict":"reject","detail":"invalid: the answer was not JSON"}
+{"id":"ui1.title-512-ascii","verdict":"accept","detail":"available"}
+{"id":"ui1.title-513-ascii-rejected","verdict":"reject","detail":"invalid: `surface.title` must be a non-empty string"}
+{"id":"ui1.title-256-astral-chars-512-utf-16-units","verdict":"accept","detail":"available"}
+{"id":"ui1.title-257-astral-chars-514-utf-16-units-rejected","verdict":"accept","detail":"available"}
+{"id":"ui1.title-400-astral-chars-800-units-400-scalars-rejected","verdict":"accept","detail":"available"}
+{"id":"ui1.label-512-two-byte-chars","verdict":"accept","detail":"available"}
+{"id":"ui1.nfc-and-nfd-labels-are-kept-verbatim","verdict":"accept","detail":"available"}
+{"id":"ui1.nfc-nfd-surface-ids-are-distinct","verdict":"accept","detail":"available"}
+{"id":"ui1.whitespace-only-title-accepted","verdict":"accept","detail":"available"}
+{"id":"ui1.empty-title-rejected","verdict":"reject","detail":"invalid: `surface.title` must be a non-empty string"}
+{"id":"ui1.markup-in-text-is-data","verdict":"accept","detail":"available"}
+{"id":"ui1.control-characters-in-label","verdict":"accept","detail":"available"}
+{"id":"ui1.lone-surrogate-in-title","verdict":"reject","detail":"invalid: the answer was not JSON"}
+{"id":"ui1.escaped-astral-pair-in-title","verdict":"accept","detail":"available"}
+{"id":"ui1.capability-128-char-name","verdict":"accept","detail":"available"}
+{"id":"ui1.capability-129-char-name-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-uppercase-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-single-segment-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-trailing-dot-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-empty-segment-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-digit-first-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-digits-after-first-allowed","verdict":"accept","detail":"available"}
+{"id":"ui1.capability-hyphen-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-underscore-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-non-ascii-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-reserved-segment-http-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-reserved-segment-first-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-reserved-word-as-substring-allowed","verdict":"accept","detail":"available"}
+{"id":"ui1.capability-number-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capability-null-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capabilities-missing-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.capabilities-not-an-array-rejected","verdict":"reject","detail":"invalid: surface keys has invalid capability references"}
+{"id":"ui1.duplicate-capability-in-a-surface-kept","verdict":"accept","detail":"available"}
+{"id":"ui1.route-root","verdict":"accept","detail":"available"}
+{"id":"ui1.route-scheme-relative","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-embedded-scheme","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-absolute-url","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-relative","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-javascript-url","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-dot-segments","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-space","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-backslash","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-query","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-fragment","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-nul","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.route-non-ascii","verdict":"accept","detail":"available"}
+{"id":"ui1.top-level-null-rejected","verdict":"reject","detail":"invalid: the UI document must be an object"}
+{"id":"ui1.top-level-array-rejected","verdict":"reject","detail":"invalid: the UI document must be an object"}
+{"id":"ui1.top-level-string-rejected","verdict":"reject","detail":"invalid: the UI document must be an object"}
+{"id":"ui1.top-level-number-rejected","verdict":"reject","detail":"invalid: the UI document must be an object"}
+{"id":"ui1.top-level-true-rejected","verdict":"reject","detail":"invalid: the UI document must be an object"}
+{"id":"ui1.protocol-missing-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.protocol-null-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.protocol-number-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.protocol-1e21-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.protocol-boolean-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.protocol-appport-ui-2-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol AppPort/ui/2: expected AppPort/ui/1"}
+{"id":"ui1.protocol-lowercase-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol appport/ui/1: expected AppPort/ui/1"}
+{"id":"ui1.protocol-nested-array-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.protocol-object-rejected","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.protocol-object-with-own-tostring-js-typeerror","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.protocol-array-holding-such-an-object-js-typeerror","verdict":"reject","detail":"invalid: unsupported UI protocol (none): expected AppPort/ui/1"}
+{"id":"ui1.product-missing","verdict":"reject","detail":"invalid: `product` must be an object"}
+{"id":"ui1.product-array","verdict":"reject","detail":"invalid: `product` must be an object"}
+{"id":"ui1.product-id-missing","verdict":"reject","detail":"invalid: `product.id` must be a non-empty string"}
+{"id":"ui1.product-version-number","verdict":"reject","detail":"invalid: `product.version` must be a non-empty string"}
+{"id":"ui1.product-id-513-chars","verdict":"reject","detail":"invalid: `product.id` must be a non-empty string"}
+{"id":"ui1.surfaces-missing","verdict":"reject","detail":"invalid: `surfaces` and `navigation` must be arrays"}
+{"id":"ui1.navigation-object","verdict":"reject","detail":"invalid: `surfaces` and `navigation` must be arrays"}
+{"id":"ui1.surface-null","verdict":"reject","detail":"invalid: surface 1 must be an object"}
+{"id":"ui1.surface-array","verdict":"reject","detail":"invalid: surface 1 must be an object"}
+{"id":"ui1.surface-id-number","verdict":"reject","detail":"invalid: `surface.id` must be a non-empty string"}
+{"id":"ui1.navigation-entry-string","verdict":"reject","detail":"invalid: navigation 1 must be an object"}
+{"id":"ui1.navigation-surface-missing","verdict":"reject","detail":"invalid: `navigation.surface` must be a non-empty string"}
+{"id":"ui1.navigation-group-missing","verdict":"reject","detail":"invalid: `navigation.group` must be a non-empty string"}
+{"id":"ui1.duplicate-surface-id","verdict":"reject","detail":"invalid: duplicate surface id: keys"}
+{"id":"ui1.duplicate-navigation-id","verdict":"reject","detail":"invalid: duplicate navigation id: n.jobs"}
+{"id":"ui1.unknown-navigation-surface","verdict":"reject","detail":"invalid: navigation references an unknown surface"}
+{"id":"ui1.composition-missing","verdict":"reject","detail":"invalid: `composition.requires` must be an array"}
+{"id":"ui1.composition-null","verdict":"reject","detail":"invalid: `composition.requires` must be an array"}
+{"id":"ui1.composition-requires-missing","verdict":"reject","detail":"invalid: `composition.requires` must be an array"}
+{"id":"ui1.composition-requires-unknown","verdict":"reject","detail":"invalid: unsupported composition requirements"}
+{"id":"ui1.composition-requires-number","verdict":"reject","detail":"invalid: unsupported composition requirements"}
+{"id":"ui1.composition-requires-string","verdict":"reject","detail":"invalid: `composition.requires` must be an array"}
+{"id":"ui1.order-bad-product-and-bad-surfaces","verdict":"reject","detail":"invalid: `product.id` must be a non-empty string"}
+{"id":"ui1.order-bad-route-then-bad-capabilities","verdict":"reject","detail":"invalid: surface keys has a malformed route"}
+{"id":"ui1.order-duplicate-surface-and-bad-nav","verdict":"reject","detail":"invalid: duplicate surface id: keys"}
+{"id":"ui1.order-nav-order-before-label","verdict":"reject","detail":"invalid: `navigation.label` must be a non-empty string"}
+{"id":"ui1.order-unknown-surface-vs-bad-composition","verdict":"reject","detail":"invalid: navigation references an unknown surface"}
+{"id":"ui1.order-second-surface-invalid-and-duplicate-nav","verdict":"reject","detail":"invalid: `surface.title` must be a non-empty string"}
+{"id":"ui1.duplicate-key-last-protocol-wins","verdict":"accept","detail":"available"}
+{"id":"ui1.proto-key-is-plain-data","verdict":"accept","detail":"available"}
+{"id":"ui1.whitespace-and-escapes","verdict":"accept","detail":"available"}
+{"id":"ui1.64-surfaces-compute-max-links","verdict":"accept","detail":"available"}
+{"id":"ui1.65-surfaces-over-compute-max-links","verdict":"reject","detail":"invalid: more than 64 navigation entries"}
+{"id":"ui1.1000-surfaces","verdict":"reject","detail":"invalid: more than 64 navigation entries"}

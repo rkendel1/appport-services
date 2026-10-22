@@ -1,0 +1,7 @@
+Bridge experiment environments (all run the byte-identical authboundry/bridge/appport-services.cjs, sha256 29a3428a...):
+- bridge/env           : @appport/services 0.4.5 with npm's default resolution -> nested @feltdb/core 0.11.6.
+                         NOT what authboundry deploys. Files *.feltdb-0.11.6.* and bridge-faults.jsonl (kill/attrib rows) used it.
+- bridge/env-045-lock  : @appport/services 0.4.5 + override @feltdb/core 0.11.7 == authboundry/package.json "overrides" + package-lock. The production-equivalent tree.
+- bridge/env-0412      : @appport/services 0.4.12 with its own @feltdb/core 0.12.0 (what a clean upgrade installs).
+- bridge/env-0412-override : 0.4.12 forced to @feltdb/core 0.11.7 (what an upgrade would get if authboundry keeps its override).
+Fault results (stray stdout, hang, missing bridge, kill) concern the Rust client (appport_services.rs) and do not depend on the npm tree.

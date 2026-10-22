@@ -1,0 +1,11 @@
+1 snapshot       t= 1 n=96 err=0 thr=7.1/s p50=130 p95=239 max=344 ms rss=172MB
+1 configuration  t= 1 n=160 err=0 thr=7.3/s p50=138 p95=179 max=230 ms rss=173MB
+1 snapshot       t= 4 n=96 err=0 thr=1.7/s p50=2123 p95=4632 max=6604 ms rss=201MB
+1 configuration  t= 4 n=160 err=160 thr=5.5/s p50=181 p95=3370 max=13256 ms rss=218MB
+1 snapshot       t=16 n=96 err=0 thr=1.1/s p50=10682 p95=35867 max=53260 ms rss=199MB
+1 configuration  t=16 n=160 err=160 thr=3.8/s p50=262 p95=20661 max=36292 ms rss=203MB
+1 snapshot       t=32 n=96 err=0 thr=0.8/s p50=29051 p95=73463 max=102546 ms rss=250MB
+1 configuration  t=32 n=160 err=160 thr=2.8/s p50=366 p95=40748 max=55187 ms rss=256MB
+2 snapshot       t= 1 n=96 err=0 thr=0.6/s p50=1647 p95=1817 max=1947 ms rss=353MB
+
+[exited with code 144]

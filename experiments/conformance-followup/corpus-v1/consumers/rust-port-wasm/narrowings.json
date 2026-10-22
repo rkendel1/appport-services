@@ -1,0 +1,18 @@
+{
+ "consumer": "experimental Rust port (rust-interop/crates/ui-contract) via WASM",
+ "corpus": {
+  "name": "appport-ui-1",
+  "version": "1.0.0",
+  "casesSha256": "2ed1410678db9b09b263db58c420a9a8d40e7a3ea1eafd7cf69a96d6c77eba97",
+  "expectedSha256": "423f27f422b85622a2c5cf1c7b070870ed6d64b04cec3fc586e5a5d6f3db1fd8"
+ },
+ "comparison": "exact",
+ "narrowings": [
+  {
+   "id": "ui1.lone-surrogate-in-title",
+   "consumerVerdict": "internal",
+   "kind": "representation",
+   "rationale": "A UTF-8 JSON boundary cannot carry a lone UTF-16 surrogate."
+  }
+ ]
+}

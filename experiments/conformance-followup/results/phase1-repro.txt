@@ -1,0 +1,33 @@
+## 2026-10-22T08:12:06Z re-run of REPORT.md section D commands at 9f8e235
+### corpus regenerated vs committed
+127 cases (52 accepted, 75 rejected)
+(empty diff above = regeneration reproduces committed corpus)
+### native
+byte-equal: 126; known divergences: ["lone surrogate in title"]
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+### differential
+ok 1 - the recorded corpus still matches the live TypeScript oracle (regression lock on the TS contract)
+ok 2 - wasm: byte-identical to the oracle except documented limits
+ok 3 - napi: byte-identical to the oracle except documented limits
+ok 4 - wasm: malformed request bytes are an error envelope, not a trap
+ok 5 - wasm: repeated calls on one instance do not grow linear memory past the first call
+# pass 5
+# fail 0
+### compute observer
+compute observer output identical to committed results
+both_accept 31
+both_reject 72
+compute_stricter 16
+compute_more_lenient 2
+  compute_stricter: all composition requirements -> unsupported: the contribution requires identity, tenant, application, environment from its host, which Compute does not supply
+  compute_stricter: duplicate composition requirement is allowed -> unsupported: the contribution requires tenant, tenant from its host, which Compute does not supply
+### webhook
+1,17,33,64,65,66,101
+secret bytes          outbound (HMAC over body)        inbound (HMAC over ts.body)
+1                  InvalidCredential                  InvalidCredential
+17                  InvalidCredential                  InvalidCredential
+33                  InvalidCredential                  InvalidCredential
+64                  InvalidCredential                  InvalidCredential
+65                           accepted                           accepted
+66                           accepted                           accepted
+101                           accepted                           accepted

@@ -1,0 +1,1 @@
+{ "name": "bridge-env-0412-override", "private": true, "description": "EXPERIMENT: 0.4.12 with AuthBoundry's root override forcing @feltdb/core 0.11.7 (authboundry/package.json overrides)", "dependencies": { "@appport/services": "0.4.12", "@feltdb/core": "0.11.7" }, "overrides": { "@feltdb/core": "0.11.7" } }

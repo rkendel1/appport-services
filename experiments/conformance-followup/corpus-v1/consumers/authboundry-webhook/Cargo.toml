@@ -1,0 +1,14 @@
+# EXPERIMENT consumer: AuthBoundry's unmodified WebhookAuthority (crates/services)
+# run against webhook-signature-1. Emits v1 results (verdict accept/reject).
+[package]
+name = "authboundry-webhook-consumer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+appport-auth-mesh-services = { path = "../../../../../../authboundry/crates/services" }
+appport-auth-mesh-contract = { path = "../../../../../../authboundry/crates/contract" }
+serde_json = "1"
+
+[workspace]

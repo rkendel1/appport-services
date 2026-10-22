@@ -1,0 +1,1 @@
+INVALID: bridge state path <p>.appport-services was not removed between runs, so data accumulated across runs (create_variable names collided -> errors; snapshot slowed as data grew). Run was stopped mid-way. Kept as a failed experiment; superseded by bridge-load.jsonl.

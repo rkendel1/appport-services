@@ -1,0 +1,1 @@
+{ "name": "bridge-env-0412", "private": true, "description": "EXPERIMENT: the same unmodified bridge script against @appport/services 0.4.12 (what an upgrade would install)", "dependencies": { "@appport/services": "0.4.12" } }

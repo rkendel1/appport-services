@@ -1,0 +1,1 @@
+{ "name": "bridge-env-045-lock", "private": true, "description": "EXPERIMENT: exactly the tree authboundry/package-lock.json resolves: @appport/services 0.4.5 with the root override forcing @feltdb/core 0.11.7", "dependencies": { "@appport/services": "0.4.5", "@feltdb/core": "0.11.7" }, "overrides": { "@feltdb/core": "0.11.7" } }

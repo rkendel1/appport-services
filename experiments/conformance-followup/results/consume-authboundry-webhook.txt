@@ -1,0 +1,16 @@
+authboundry crates/services WebhookAuthority::receive (authboundry 02191c3) vs webhook-signature-1 @ verdict: {"equal":4,"matchesIntended":0,"declared":0,"undeclared":14,"stale":0,"notRun":0}
+  FAIL wh1.outbound.secret-len-1: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.outbound.secret-len-32: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.outbound.secret-len-63: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.outbound.secret-len-64: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.outbound.secret-utf8-multibyte-40b: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.outbound.empty-body: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.outbound.body-bytes-not-reserialized: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.inbound.secret-len-1: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.inbound.secret-len-32: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.inbound.secret-len-63: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.inbound.secret-len-64: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.inbound.secret-utf8-multibyte-40b: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.inbound.empty-body: reference accept, consumer reject (Some(InvalidCredential))
+  FAIL wh1.inbound.body-bytes-not-reserialized: reference accept, consumer reject (Some(InvalidCredential))
+exit=1

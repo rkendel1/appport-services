@@ -1,0 +1,200 @@
+{
+ "contract": "webhook-signature-1",
+ "reference": {
+  "package": "@appport/services",
+  "version": "0.4.12",
+  "module": "src/webhooks/secrets.ts"
+ },
+ "casesSha256": "80d24e75c88cf2c2cbdfcec9dcc65af1b81696898e5a6efd052c72f664de770d",
+ "results": {
+  "wh1.outbound.secret-len-1": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"e066c3bb5ff5d494b5258794ed86f7c1fe0ffeef3652fa43a8318d0439d8cc76\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.outbound.secret-len-32": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"7b1903786ed2cbd16dba49557fff9ef6d7b0173e11f9556cbdd5b4c629d79ca6\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.outbound.secret-len-63": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"ab5114626c6c98dd07d211428ea05f95b9d30acfd217685504f1538cded19b4e\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.outbound.secret-len-64": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"ec1db3003d99cb7a3764625be222ee1ce92932aa1f0fb5fbcf75148e293828fa\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.outbound.secret-len-65": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"23581b7dd54c5a27353feba92de3cdb3e93350a4829743237714dbc8a8b12926\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.outbound.secret-len-200": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"b05cc2239e290a98c9da82bc27e0b14af572b0f7a328f1f05393c1a0c02054f4\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.outbound.secret-utf8-multibyte-40b": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"e39df8743c0430e2375c402ed2d92027ac4a8171ab1b9bcd5f4eacf3f6f474b7\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.outbound.empty-body": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"a4ad8e340e32bf1d916005cb1dc92795148897965e36ae56c0adc357474b5372\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.outbound.body-bytes-not-reserialized": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"dde9fe480020ce290bdce65b04c5ab2b38e5fec57c665cf803a353b08e2cb5bf\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.secret-len-1": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"5ac7a5490d0931b202f5913e78a8fb86e4bcc4cccae67a72c484f96311771c75\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.secret-len-32": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"540dd37383c997db0bef5e3f0e84b008b5170d5e31c21ed377b6d4ed400a8b61\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.secret-len-63": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"9020cb7be7d8b8aa7fe3027777ea3a15240bc5e651b2483fb2d228ecf294e884\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.secret-len-64": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"b47b16e4cfbc779b1acee3fdf5985a3301f124a138cb2a97e3caaef0b768d42d\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.secret-len-65": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"f09237df1bf60e8e0d974a3b4943be1507e40705edd8e4df74dfe62370535a8b\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.secret-len-200": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"440c4bdfac4c4a69b8c0c27192dde4c0e72cf168f1b94dc37cddedc37309db00\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.secret-utf8-multibyte-40b": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"d2667c30a66d63bd10a1ef3643f4b657215946bfe2a754b7ef6e159444ea43da\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.empty-body": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"cbe42d0a67fc5038ddf8a19a85022de5d085c9584be0a79085b0669d33b2fc86\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "wh1.inbound.body-bytes-not-reserialized": {
+   "exact": "{\"ok\":true,\"value\":{\"signature\":\"cf803878a4e3b75c9fa1f2e95ccac9149660362c78fa19600eec92398216aa67\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  }
+ },
+ "history": [
+  {
+   "at": "2026-10-22T08:42:13.129Z",
+   "reference": {
+    "package": "@appport/services",
+    "version": "0.4.12",
+    "module": "src/webhooks/secrets.ts"
+   },
+   "reason": "initial corpus",
+   "changed": [
+    "wh1.security.outbound.secret-len-1",
+    "wh1.security.outbound.secret-len-32",
+    "wh1.security.outbound.secret-len-63",
+    "wh1.security.outbound.secret-len-64",
+    "wh1.valid.outbound.secret-len-65",
+    "wh1.valid.outbound.secret-len-200",
+    "wh1.security.outbound.secret-utf8-multibyte-40b",
+    "wh1.boundary.outbound.empty-body",
+    "wh1.boundary.outbound.body-bytes-not-reserialized",
+    "wh1.security.inbound.secret-len-1",
+    "wh1.security.inbound.secret-len-32",
+    "wh1.security.inbound.secret-len-63",
+    "wh1.security.inbound.secret-len-64",
+    "wh1.valid.inbound.secret-len-65",
+    "wh1.valid.inbound.secret-len-200",
+    "wh1.security.inbound.secret-utf8-multibyte-40b",
+    "wh1.boundary.inbound.empty-body",
+    "wh1.boundary.inbound.body-bytes-not-reserialized"
+   ],
+   "removed": []
+  },
+  {
+   "at": "2026-10-22T08:42:51.938Z",
+   "reference": {
+    "package": "@appport/services",
+    "version": "0.4.12",
+    "module": "src/webhooks/secrets.ts"
+   },
+   "reason": "Ids no longer encode the class (ids must survive reclassification); name corpus: non-canonical ref spellings reclassified as boundary with decisionRequired; added 5 ref spellings",
+   "changed": [
+    "wh1.outbound.secret-len-1",
+    "wh1.outbound.secret-len-32",
+    "wh1.outbound.secret-len-63",
+    "wh1.outbound.secret-len-64",
+    "wh1.outbound.secret-len-65",
+    "wh1.outbound.secret-len-200",
+    "wh1.outbound.secret-utf8-multibyte-40b",
+    "wh1.outbound.empty-body",
+    "wh1.outbound.body-bytes-not-reserialized",
+    "wh1.inbound.secret-len-1",
+    "wh1.inbound.secret-len-32",
+    "wh1.inbound.secret-len-63",
+    "wh1.inbound.secret-len-64",
+    "wh1.inbound.secret-len-65",
+    "wh1.inbound.secret-len-200",
+    "wh1.inbound.secret-utf8-multibyte-40b",
+    "wh1.inbound.empty-body",
+    "wh1.inbound.body-bytes-not-reserialized"
+   ],
+   "removed": [
+    "wh1.security.outbound.secret-len-1",
+    "wh1.security.outbound.secret-len-32",
+    "wh1.security.outbound.secret-len-63",
+    "wh1.security.outbound.secret-len-64",
+    "wh1.valid.outbound.secret-len-65",
+    "wh1.valid.outbound.secret-len-200",
+    "wh1.security.outbound.secret-utf8-multibyte-40b",
+    "wh1.boundary.outbound.empty-body",
+    "wh1.boundary.outbound.body-bytes-not-reserialized",
+    "wh1.security.inbound.secret-len-1",
+    "wh1.security.inbound.secret-len-32",
+    "wh1.security.inbound.secret-len-63",
+    "wh1.security.inbound.secret-len-64",
+    "wh1.valid.inbound.secret-len-65",
+    "wh1.valid.inbound.secret-len-200",
+    "wh1.security.inbound.secret-utf8-multibyte-40b",
+    "wh1.boundary.inbound.empty-body",
+    "wh1.boundary.inbound.body-bytes-not-reserialized"
+   ]
+  }
+ ]
+}

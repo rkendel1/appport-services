@@ -1,0 +1,16 @@
+{"calls_so_far":50,"child_rss_kb":142728,"distinct_apps":false,"errors":0,"round":0,"round_ms":4408,"scenario":"memory"}
+{"calls_so_far":100,"child_rss_kb":183276,"distinct_apps":false,"errors":0,"round":1,"round_ms":9779,"scenario":"memory"}
+{"calls_so_far":150,"child_rss_kb":188148,"distinct_apps":false,"errors":0,"round":2,"round_ms":15661,"scenario":"memory"}
+{"calls_so_far":200,"child_rss_kb":180812,"distinct_apps":false,"errors":0,"round":3,"round_ms":21255,"scenario":"memory"}
+{"calls_so_far":250,"child_rss_kb":192736,"distinct_apps":false,"errors":0,"round":4,"round_ms":27723,"scenario":"memory"}
+{"calls_so_far":300,"child_rss_kb":212604,"distinct_apps":false,"errors":0,"round":5,"round_ms":33926,"scenario":"memory"}
+{"calls_so_far":350,"child_rss_kb":225260,"distinct_apps":false,"errors":0,"round":6,"round_ms":40298,"scenario":"memory"}
+{"calls_so_far":400,"child_rss_kb":211352,"distinct_apps":false,"errors":0,"round":7,"round_ms":44334,"scenario":"memory"}
+{"calls_so_far":50,"child_rss_kb":162820,"distinct_apps":true,"errors":0,"round":0,"round_ms":6032,"scenario":"memory"}
+{"calls_so_far":100,"child_rss_kb":245948,"distinct_apps":true,"errors":0,"round":1,"round_ms":15919,"scenario":"memory"}
+{"calls_so_far":150,"child_rss_kb":359832,"distinct_apps":true,"errors":0,"round":2,"round_ms":26505,"scenario":"memory"}
+{"calls_so_far":200,"child_rss_kb":601988,"distinct_apps":true,"errors":0,"round":3,"round_ms":37675,"scenario":"memory"}
+{"calls_so_far":250,"child_rss_kb":1046784,"distinct_apps":true,"errors":0,"round":4,"round_ms":46858,"scenario":"memory"}
+{"calls_so_far":300,"child_rss_kb":1345972,"distinct_apps":true,"errors":0,"round":5,"round_ms":56167,"scenario":"memory"}
+{"calls_so_far":350,"child_rss_kb":1535284,"distinct_apps":true,"errors":0,"round":6,"round_ms":69252,"scenario":"memory"}
+{"calls_so_far":400,"child_rss_kb":1577768,"distinct_apps":true,"errors":0,"round":7,"round_ms":78614,"scenario":"memory"}
