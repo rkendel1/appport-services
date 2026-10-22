@@ -1,0 +1,1270 @@
+{
+ "contract": "@appport/services API-key restrictions",
+ "corpus": "api-key-restrictions-1",
+ "corpusVersion": "1.0.0",
+ "operations": {
+  "normalize": "normalizeRestrictions(input.restrictions)",
+  "permit": "restrictionsPermit(input.restrictions, input.capability, input.resource)",
+  "within": "restrictionsWithin(input.child, input.parent)"
+ },
+ "cases": [
+  {
+   "id": "akr1.normalize.capabilities-only",
+   "class": "valid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.deduplicated-and-sorted",
+   "class": "valid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "jobs.read",
+      "files.read",
+      "jobs.read"
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.empty-capabilities",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": []
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.resource-rule-type-id-attributes",
+   "class": "valid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "id": "f1",
+       "attributes": {
+        "owner": "u1",
+        "folder": "a"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.attributes-key-order-is-not-semantic",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "attributes": {
+        "b": "2",
+        "B": "1",
+        "a": "0",
+        "_": "3"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.unknown-capability",
+   "class": "security",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.admin"
+     ]
+    }
+   },
+   "security": {
+    "rationale": "An unknown name would match nothing and read as narrower than it is; it is refused."
+   }
+  },
+  {
+   "id": "akr1.normalize.non-invocable-capability",
+   "class": "security",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "webhooks.deliver"
+     ]
+    }
+   },
+   "security": {
+    "rationale": "Runtime-internal operations cannot be granted to a key."
+   }
+  },
+  {
+   "id": "akr1.normalize.legacy-admin-scope",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read:any"
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.unknown-member",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "scopes": [
+      "x"
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.not-an-object",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": [
+     "files.read"
+    ]
+   }
+  },
+  {
+   "id": "akr1.normalize.null",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": null
+   }
+  },
+  {
+   "id": "akr1.normalize.capabilities-missing",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {}
+   }
+  },
+  {
+   "id": "akr1.normalize.capability-not-a-string",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      1
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.64-capabilities",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read"
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.65-capabilities",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read",
+      "files.read"
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.resources-not-array",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": {}
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.empty-rule",
+   "class": "security",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {}
+     ]
+    }
+   },
+   "security": {
+    "rationale": "An empty rule would match every resource; omitting resources must be explicit."
+   }
+  },
+  {
+   "id": "akr1.normalize.unknown-resource-type",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "everything"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.rule-unknown-member",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "owner": "u"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.rule-id-256",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.rule-id-257",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.rule-id-whitespace",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "id": "  "
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.attribute-not-string",
+   "class": "invalid",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "attributes": {
+        "owner": 1
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.16-attributes",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "attributes": {
+        "k0": "v",
+        "k1": "v",
+        "k2": "v",
+        "k3": "v",
+        "k4": "v",
+        "k5": "v",
+        "k6": "v",
+        "k7": "v",
+        "k8": "v",
+        "k9": "v",
+        "k10": "v",
+        "k11": "v",
+        "k12": "v",
+        "k13": "v",
+        "k14": "v",
+        "k15": "v"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.17-attributes",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "attributes": {
+        "k0": "v",
+        "k1": "v",
+        "k2": "v",
+        "k3": "v",
+        "k4": "v",
+        "k5": "v",
+        "k6": "v",
+        "k7": "v",
+        "k8": "v",
+        "k9": "v",
+        "k10": "v",
+        "k11": "v",
+        "k12": "v",
+        "k13": "v",
+        "k14": "v",
+        "k15": "v",
+        "k16": "v"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.normalize.65-rules",
+   "class": "boundary",
+   "op": "normalize",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      },
+      {
+       "type": "file"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.permit.unrestricted",
+   "class": "valid",
+   "op": "permit",
+   "input": {
+    "capability": "files.delete",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   }
+  },
+  {
+   "id": "akr1.permit.listed-capability",
+   "class": "valid",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ]
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   }
+  },
+  {
+   "id": "akr1.permit.unlisted-capability",
+   "class": "security",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ]
+    },
+    "capability": "files.delete",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   },
+   "security": {
+    "rationale": "A key restricted this way must never authorize more than its restrictions say (default deny)."
+   }
+  },
+  {
+   "id": "akr1.permit.empty-capabilities-deny-all",
+   "class": "security",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": []
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   },
+   "security": {
+    "rationale": "A key restricted this way must never authorize more than its restrictions say (default deny)."
+   }
+  },
+  {
+   "id": "akr1.permit.matching-rule",
+   "class": "valid",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   }
+  },
+  {
+   "id": "akr1.permit.attribute-mismatch",
+   "class": "security",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u2"
+     }
+    }
+   },
+   "security": {
+    "rationale": "A key restricted this way must never authorize more than its restrictions say (default deny)."
+   }
+  },
+  {
+   "id": "akr1.permit.missing-attributes",
+   "class": "security",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1"
+    }
+   },
+   "security": {
+    "rationale": "A key restricted this way must never authorize more than its restrictions say (default deny)."
+   }
+  },
+  {
+   "id": "akr1.permit.type-mismatch",
+   "class": "security",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "job",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   },
+   "security": {
+    "rationale": "A key restricted this way must never authorize more than its restrictions say (default deny)."
+   }
+  },
+  {
+   "id": "akr1.permit.id-rule",
+   "class": "valid",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "id": "f1"
+      }
+     ]
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   }
+  },
+  {
+   "id": "akr1.permit.id-rule-other-id",
+   "class": "security",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "id": "f1"
+      }
+     ]
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f2",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   },
+   "security": {
+    "rationale": "A key restricted this way must never authorize more than its restrictions say (default deny)."
+   }
+  },
+  {
+   "id": "akr1.permit.any-of-several-rules",
+   "class": "valid",
+   "op": "permit",
+   "input": {
+    "restrictions": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "id": "zz"
+      },
+      {
+       "id": "f1"
+      }
+     ]
+    },
+    "capability": "files.read",
+    "resource": {
+     "type": "file",
+     "tenantId": "t",
+     "id": "f1",
+     "attributes": {
+      "owner": "u1"
+     }
+    }
+   }
+  },
+  {
+   "id": "akr1.within.unrestricted-parent",
+   "class": "valid",
+   "op": "within",
+   "input": {
+    "child": {
+     "capabilities": [
+      "files.delete"
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.within.unrestricted-child-under-restricted-parent",
+   "class": "security",
+   "op": "within",
+   "input": {
+    "parent": {
+     "capabilities": [
+      "files.read",
+      "files.write"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    }
+   },
+   "security": {
+    "rationale": "A key used to manage keys must not create, widen or rotate a key broader than itself."
+   }
+  },
+  {
+   "id": "akr1.within.subset",
+   "class": "valid",
+   "op": "within",
+   "input": {
+    "child": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    },
+    "parent": {
+     "capabilities": [
+      "files.read",
+      "files.write"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.within.extra-capability",
+   "class": "security",
+   "op": "within",
+   "input": {
+    "child": {
+     "capabilities": [
+      "files.read",
+      "files.delete"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    },
+    "parent": {
+     "capabilities": [
+      "files.read",
+      "files.write"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    }
+   },
+   "security": {
+    "rationale": "A key used to manage keys must not create, widen or rotate a key broader than itself."
+   }
+  },
+  {
+   "id": "akr1.within.child-drops-resources",
+   "class": "security",
+   "op": "within",
+   "input": {
+    "child": {
+     "capabilities": [
+      "files.read"
+     ]
+    },
+    "parent": {
+     "capabilities": [
+      "files.read",
+      "files.write"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    }
+   },
+   "security": {
+    "rationale": "A key used to manage keys must not create, widen or rotate a key broader than itself."
+   }
+  },
+  {
+   "id": "akr1.within.child-rule-narrower",
+   "class": "valid",
+   "op": "within",
+   "input": {
+    "child": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "id": "f1",
+       "attributes": {
+        "owner": "u1",
+        "folder": "a"
+       }
+      }
+     ]
+    },
+    "parent": {
+     "capabilities": [
+      "files.read",
+      "files.write"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "akr1.within.child-rule-broader",
+   "class": "security",
+   "op": "within",
+   "input": {
+    "child": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "type": "file"
+      }
+     ]
+    },
+    "parent": {
+     "capabilities": [
+      "files.read",
+      "files.write"
+     ],
+     "resources": [
+      {
+       "type": "file",
+       "attributes": {
+        "owner": "u1"
+       }
+      }
+     ]
+    }
+   },
+   "security": {
+    "rationale": "A key used to manage keys must not create, widen or rotate a key broader than itself."
+   }
+  },
+  {
+   "id": "akr1.within.parent-without-resources",
+   "class": "valid",
+   "op": "within",
+   "input": {
+    "child": {
+     "capabilities": [
+      "files.read"
+     ],
+     "resources": [
+      {
+       "id": "x"
+      }
+     ]
+    },
+    "parent": {
+     "capabilities": [
+      "files.read"
+     ]
+    }
+   }
+  }
+ ]
+}

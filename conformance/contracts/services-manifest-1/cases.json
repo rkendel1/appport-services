@@ -1,0 +1,34 @@
+{
+ "contract": "@appport/services capability manifest",
+ "corpus": "services-manifest-1",
+ "corpusVersion": "1.0.0",
+ "operations": {
+  "digest": "serviceCapabilityManifestDigest()",
+  "manifest": "SERVICE_CAPABILITY_MANIFEST",
+  "legacy-scopes": "LEGACY_SCOPE_MIGRATION"
+ },
+ "cases": [
+  {
+   "id": "svm1.digest",
+   "class": "valid",
+   "op": "digest",
+   "input": {},
+   "requirements": [
+    "sha256-hex-of-JSON.stringify-of-manifest",
+    "manifest-sorted-by-name"
+   ]
+  },
+  {
+   "id": "svm1.manifest",
+   "class": "valid",
+   "op": "manifest",
+   "input": {}
+  },
+  {
+   "id": "svm1.legacy-scopes",
+   "class": "valid",
+   "op": "legacy-scopes",
+   "input": {}
+  }
+ ]
+}
