@@ -1,0 +1,13 @@
+# EXPERIMENT: the same scenarios as ../harness, against the hardened client in
+# the authboundry worktree (branch bridge-hardening), through its public API.
+[package]
+name = "bridge-harness-after"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+appport-auth-mesh-server = { path = "../../../../../authboundry-bridge/crates/server" }
+serde_json = "1"
+
+[workspace]
