@@ -1,0 +1,1732 @@
+TAP version 13
+# Subtest: update changes name, restrictions, and expiry without changing the secret, and is audited by field name
+ok 1 - update changes name, restrictions, and expiry without changing the secret, and is audited by field name
+  ---
+  duration_ms: 241.306168
+  type: 'test'
+  ...
+# Subtest: list filters by status and creator and paginates with an id cursor; the no-option list is unchanged
+ok 2 - list filters by status and creator and paginates with an id cursor; the no-option list is unchanged
+  ---
+  duration_ms: 467.081054
+  type: 'test'
+  ...
+# Subtest: malformed, unknown, expired, and revoked keys are rejected; nothing they present is persisted
+ok 3 - malformed, unknown, expired, and revoked keys are rejected; nothing they present is persisted
+  ---
+  duration_ms: 323.633497
+  type: 'test'
+  ...
+# Subtest: restrictions are default-deny, resource-scoped, checked before AuthBoundry, and never grant
+ok 4 - restrictions are default-deny, resource-scoped, checked before AuthBoundry, and never grant
+  ---
+  duration_ms: 491.269678
+  type: 'test'
+  ...
+# Subtest: an api_key principal not bound to a live credential is refused
+ok 5 - an api_key principal not bound to a live credential is refused
+  ---
+  duration_ms: 4.257636
+  type: 'test'
+  ...
+# Subtest: a key cannot create, widen, extend, or rotate a key broader than itself
+ok 6 - a key cannot create, widen, extend, or rotate a key broader than itself
+  ---
+  duration_ms: 335.464269
+  type: 'test'
+  ...
+# Subtest: rotation without overlap revokes the old key in the same commit and discloses the new secret once
+ok 7 - rotation without overlap revokes the old key in the same commit and discloses the new secret once
+  ---
+  duration_ms: 216.010142
+  type: 'test'
+  ...
+# Subtest: rotation overlap keeps the old key valid only for the window, never beyond its existing expiry
+ok 8 - rotation overlap keeps the old key valid only for the window, never beyond its existing expiry
+  ---
+  duration_ms: 497.424932
+  type: 'test'
+  ...
+# Subtest: concurrent rotations of one key produce exactly one replacement
+ok 9 - concurrent rotations of one key produce exactly one replacement
+  ---
+  duration_ms: 168.450227
+  type: 'test'
+  ...
+# Subtest: revocation by an independent manager applies at once, including to principals already authenticated
+ok 10 - revocation by an independent manager applies at once, including to principals already authenticated
+  ---
+  duration_ms: 153.995448
+  type: 'test'
+  ...
+# Subtest: revoke racing authentication: once revoke resolves, no authentication succeeds
+ok 11 - revoke racing authentication: once revoke resolves, no authentication succeeds
+  ---
+  duration_ms: 692.964762
+  type: 'test'
+  ...
+# Subtest: tenant isolation: another tenant cannot read, update, rotate, revoke, revoke-all, or audit a key
+ok 12 - tenant isolation: another tenant cannot read, update, rotate, revoke, revoke-all, or audit a key
+  ---
+  duration_ms: 197.885256
+  type: 'test'
+  ...
+# Subtest: revoke-all is one authorized bulk operation, optionally limited to one creator
+ok 13 - revoke-all is one authorized bulk operation, optionally limited to one creator
+  ---
+  duration_ms: 189.207762
+  type: 'test'
+  ...
+# Subtest: fails closed when the authoritative store or AuthBoundry is unavailable
+ok 14 - fails closed when the authoritative store or AuthBoundry is unavailable
+  ---
+  duration_ms: 322.761334
+  type: 'test'
+  ...
+# Subtest: audit events are authorized, paginated, application-scoped, and free of secrets and verifiers
+ok 15 - audit events are authorized, paginated, application-scoped, and free of secrets and verifiers
+  ---
+  duration_ms: 229.315769
+  type: 'test'
+  ...
+# Subtest: a server-held verifier key keys new verifiers, stays off the service object, and fails closed without it
+ok 16 - a server-held verifier key keys new verifiers, stays off the service object, and fails closed without it
+  ---
+  duration_ms: 313.128921
+  type: 'test'
+  ...
+# Subtest: invoke exposes update, rotate, revoke-all, and audit through declared capabilities
+ok 17 - invoke exposes update, rotate, revoke-all, and audit through declared capabilities
+  ---
+  duration_ms: 144.467989
+  type: 'test'
+  ...
+# Subtest: management routes edit, rotate, revoke-all, and audit keys with AuthBoundry authorization
+ok 18 - management routes edit, rotate, revoke-all, and audit keys with AuthBoundry authorization
+  ---
+  duration_ms: 197.781408
+  type: 'test'
+  ...
+# Subtest: API key prefix parsing accepts base64url payloads beginning with underscore
+ok 19 - API key prefix parsing accepts base64url payloads beginning with underscore
+  ---
+  duration_ms: 1.258935
+  type: 'test'
+  ...
+# Subtest: creates key, returns secret once, persists hash and tenant, and carries no scopes
+ok 20 - creates key, returns secret once, persists hash and tenant, and carries no scopes
+  ---
+  duration_ms: 85.045704
+  type: 'test'
+  ...
+# Subtest: get and list never return raw secrets
+ok 21 - get and list never return raw secrets
+  ---
+  duration_ms: 68.444548
+  type: 'test'
+  ...
+# Subtest: valid secret authenticates a machine principal and updates last used
+ok 22 - valid secret authenticates a machine principal and updates last used
+  ---
+  duration_ms: 119.639745
+  type: 'test'
+  ...
+# Subtest: invalid, unknown, revoked, and expired keys fail
+ok 23 - invalid, unknown, revoked, and expired keys fail
+  ---
+  duration_ms: 142.842584
+  type: 'test'
+  ...
+# Subtest: tenant isolation prevents cross-tenant access and preserves owning tenant on auth
+ok 24 - tenant isolation prevents cross-tenant access and preserves owning tenant on auth
+  ---
+  duration_ms: 183.510132
+  type: 'test'
+  ...
+# Subtest: bearer adapter authenticates without tenant override input
+ok 25 - bearer adapter authenticates without tenant override input
+  ---
+  duration_ms: 124.54523
+  type: 'test'
+  ...
+# Subtest: raw secret is absent from FeltDB records and durable audit records
+ok 26 - raw secret is absent from FeltDB records and durable audit records
+  ---
+  duration_ms: 129.451679
+  type: 'test'
+  ...
+# Subtest: generated secrets have high entropy and wrong secrets fail
+ok 27 - generated secrets have high entropy and wrong secrets fail
+  ---
+  duration_ms: 113.269131
+  type: 'test'
+  ...
+# Subtest: restart preserves credentials with real FeltDB file persistence
+ok 28 - restart preserves credentials with real FeltDB file persistence
+  ---
+  duration_ms: 183.762723
+  type: 'test'
+  ...
+# Subtest: restart then revoke then restart fails authentication
+ok 29 - restart then revoke then restart fails authentication
+  ---
+  duration_ms: 113.487922
+  type: 'test'
+  ...
+# Subtest: appport contract initializes only declared capabilities
+ok 30 - appport contract initializes only declared capabilities
+  ---
+  duration_ms: 46.67984
+  type: 'test'
+  ...
+# Subtest: capability plan is deterministic regardless of declaration order
+ok 31 - capability plan is deterministic regardless of declaration order
+  ---
+  duration_ms: 2.979154
+  type: 'test'
+  ...
+# Subtest: use api block configures the API keys sub-capability
+ok 32 - use api block configures the API keys sub-capability
+  ---
+  duration_ms: 34.747742
+  type: 'test'
+  ...
+# Subtest: transaction helpers reject undeclared infrastructure
+ok 33 - transaction helpers reject undeclared infrastructure
+  ---
+  duration_ms: 28.591562
+  type: 'test'
+  ...
+# Subtest: appport requires the authoritative feltdb.flow beside appport.toml
+ok 34 - appport requires the authoritative feltdb.flow beside appport.toml
+  ---
+  duration_ms: 2.967679
+  type: 'test'
+  ...
+# Subtest: appport rejects disagreement between appport.toml and feltdb.flow
+ok 35 - appport rejects disagreement between appport.toml and feltdb.flow
+  ---
+  duration_ms: 3.998738
+  type: 'test'
+  ...
+# Subtest: generated contract materializes HTTP, state, events, identity, and lifecycle defaults
+ok 36 - generated contract materializes HTTP, state, events, identity, and lifecycle defaults
+  ---
+  duration_ms: 126.795291
+  type: 'test'
+  ...
+# Subtest: files capability and schedules facade are exposed through appport
+ok 37 - files capability and schedules facade are exposed through appport
+  ---
+  duration_ms: 45.780502
+  type: 'test'
+  ...
+# Subtest: unmanaged lifecycle exposes explicit idempotent start and close
+ok 38 - unmanaged lifecycle exposes explicit idempotent start and close
+  ---
+  duration_ms: 44.367563
+  type: 'test'
+  ...
+# Subtest: standalone HTTP runtime composes the supported API-key management contract
+ok 39 - standalone HTTP runtime composes the supported API-key management contract
+  ---
+  duration_ms: 550.606622
+  type: 'test'
+  ...
+# Subtest: Atomic composition: application state + webhook + job in one transaction
+ok 40 - Atomic composition: application state + webhook + job in one transaction
+  ---
+  duration_ms: 56.688529
+  type: 'test'
+  ...
+# Subtest: Atomic composition: transaction rollback on failure
+ok 41 - Atomic composition: transaction rollback on failure
+  ---
+  duration_ms: 16.841069
+  type: 'test'
+  ...
+# Subtest: Atomic composition: no independent FeltDB instances
+ok 42 - Atomic composition: no independent FeltDB instances
+  ---
+  duration_ms: 76.506167
+  type: 'test'
+  ...
+# Subtest: boundary audit documents actual legacy implementation exceptions
+ok 43 - boundary audit documents actual legacy implementation exceptions
+  ---
+  duration_ms: 3.054414
+  type: 'test'
+  ...
+# Subtest: AppPort has no implementation-specific package dependencies
+ok 44 - AppPort has no implementation-specific package dependencies
+  ---
+  duration_ms: 5.666429
+  type: 'test'
+  ...
+# Subtest: Secrets source remains protocol-only
+ok 45 - Secrets source remains protocol-only
+  ---
+  duration_ms: 1.684091
+  type: 'test'
+  ...
+# Subtest: a capability is bound to its declared resource type
+ok 46 - a capability is bound to its declared resource type
+  ---
+  duration_ms: 16.66863
+  type: 'test'
+  ...
+# Subtest: an execution context resolves only the credential it was authorized for
+ok 47 - an execution context resolves only the credential it was authorized for
+  ---
+  duration_ms: 57.74726
+  type: 'test'
+  ...
+# Subtest: attestation binds the delegation: a real decision cannot be reused with another delegation
+ok 48 - attestation binds the delegation: a real decision cannot be reused with another delegation
+  ---
+  duration_ms: 232.287698
+  type: 'test'
+  ...
+# Subtest: rotating a legacy secret row removes its stored raw value
+ok 49 - rotating a legacy secret row removes its stored raw value
+  ---
+  duration_ms: 103.996557
+  type: 'test'
+  ...
+# Subtest: file updates cannot overwrite owner, tenant, application, or lifecycle fields
+ok 50 - file updates cannot overwrite owner, tenant, application, or lifecycle fields
+  ---
+  duration_ms: 139.567332
+  type: 'test'
+  ...
+# Subtest: records are scoped by application when applications share a FeltDB namespace
+ok 51 - records are scoped by application when applications share a FeltDB namespace
+  ---
+  duration_ms: 831.342607
+  type: 'test'
+  ...
+# Subtest: transactions validate caller-supplied endpoint ids, event type, recipient, and delegation
+ok 52 - transactions validate caller-supplied endpoint ids, event type, recipient, and delegation
+  ---
+  duration_ms: 229.88747
+  type: 'test'
+  ...
+# Subtest: createServices exposes implementation-backed capability discovery
+ok 53 - createServices exposes implementation-backed capability discovery
+  ---
+  duration_ms: 8.69527
+  type: 'test'
+  ...
+# Subtest: docs/capabilities.json matches the exported discovery catalog
+ok 54 - docs/capabilities.json matches the exported discovery catalog
+  ---
+  duration_ms: 3.060268
+  type: 'test'
+  ...
+# Subtest: node_modules/.bin/appport-services runs the CLI instead of exiting 0 with no output
+ok 55 - node_modules/.bin/appport-services runs the CLI instead of exiting 0 with no output
+  ---
+  duration_ms: 6057.426164
+  type: 'test'
+  ...
+# Subtest: the executable runs through a symlinked installation prefix
+ok 56 - the executable runs through a symlinked installation prefix
+  ---
+  duration_ms: 543.469896
+  type: 'test'
+  ...
+# Subtest: serve --port binds the requested port and serves AppPort/ui/1
+ok 57 - serve --port binds the requested port and serves AppPort/ui/1
+  ---
+  duration_ms: 6931.870039
+  type: 'test'
+  ...
+# Subtest: serve --host --port applies both values
+ok 58 - serve --host --port applies both values
+  ---
+  duration_ms: 6365.05399
+  type: 'test'
+  ...
+# Subtest: a bare serve honours appport.toml, and an explicit --port overrides it
+ok 59 - a bare serve honours appport.toml, and an explicit --port overrides it
+  ---
+  duration_ms: 12510.133092
+  type: 'test'
+  ...
+# Subtest: the executable runs the host through start, discovery, and SIGTERM
+ok 60 - the executable runs the host through start, discovery, and SIGTERM
+  ---
+  duration_ms: 6519.573932
+  type: 'test'
+  ...
+# Subtest: init creates appport.toml with all capabilities by default
+ok 61 - init creates appport.toml with all capabilities by default
+  ---
+  duration_ms: 28.086292
+  type: 'test'
+  ...
+# Subtest: init --use creates only selected capabilities in canonical order
+ok 62 - init --use creates only selected capabilities in canonical order
+  ---
+  duration_ms: 11.045955
+  type: 'test'
+  ...
+# Subtest: interactive init configures capabilities without requiring flags
+ok 63 - interactive init configures capabilities without requiring flags
+  ---
+  duration_ms: 34.161917
+  type: 'test'
+  ...
+# Subtest: init --use includes files flow collections
+ok 64 - init --use includes files flow collections
+  ---
+  duration_ms: 6.976754
+  type: 'test'
+  ...
+# Subtest: init rejects unknown capabilities
+ok 65 - init rejects unknown capabilities
+  ---
+  duration_ms: 1.835621
+  type: 'test'
+  ...
+# Subtest: init does not overwrite an existing appport.toml
+ok 66 - init does not overwrite an existing appport.toml
+  ---
+  duration_ms: 2.159186
+  type: 'test'
+  ...
+# Subtest: init does not partially write when feltdb.flow already exists
+ok 67 - init does not partially write when feltdb.flow already exists
+  ---
+  duration_ms: 1.688217
+  type: 'test'
+  ...
+# Subtest: config migrate expands a legacy file and preserves a backup
+ok 68 - config migrate expands a legacy file and preserves a backup
+  ---
+  duration_ms: 11.042269
+  type: 'test'
+  ...
+# Subtest: operational CLI and runtime use the same contract-derived state
+ok 69 - operational CLI and runtime use the same contract-derived state
+  ---
+  duration_ms: 352.944759
+  type: 'test'
+  ...
+# Subtest: serve receives its own options rather than a sub-action
+ok 70 - serve receives its own options rather than a sub-action
+  ---
+  duration_ms: 8.163624
+  type: 'test'
+  ...
+# Subtest: FeltDB variable lifecycle ignores mutation fields in identity lookups
+ok 71 - FeltDB variable lifecycle ignores mutation fields in identity lookups
+  ---
+  duration_ms: 69.738319
+  type: 'test'
+  ...
+# Subtest: FeltDB credential bindings store only credential references and refuse raw values
+ok 72 - FeltDB credential bindings store only credential references and refuse raw values
+  ---
+  duration_ms: 61.726009
+  type: 'test'
+  ...
+# Subtest: FeltDB rejects duplicate names when mutation values differ
+ok 73 - FeltDB rejects duplicate names when mutation values differ
+  ---
+  duration_ms: 28.028245
+  type: 'test'
+  ...
+# Subtest: FeltDB preserves the shared variable and secret name namespace
+ok 74 - FeltDB preserves the shared variable and secret name namespace
+  ---
+  duration_ms: 14.435997
+  type: 'test'
+  ...
+# Subtest: configuration UI serves a page for every service, each with the shared design system and its navigation
+ok 75 - configuration UI serves a page for every service, each with the shared design system and its navigation
+  ---
+  duration_ms: 191.295547
+  type: 'test'
+  ...
+# Subtest: the navigation lists only the pages a host mounts, and unmounted pages are not served
+ok 76 - the navigation lists only the pages a host mounts, and unmounted pages are not served
+  ---
+  duration_ms: 29.561798
+  type: 'test'
+  ...
+# Subtest: the page description cannot end its script element
+ok 77 - the page description cannot end its script element
+  ---
+  duration_ms: 1.173979
+  type: 'test'
+  ...
+# Subtest: the page scripts never parse markup, evaluate code, or use blocking browser dialogs
+ok 78 - the page scripts never parse markup, evaluate code, or use blocking browser dialogs
+  ---
+  duration_ms: 5.144158
+  type: 'test'
+  ...
+# Subtest: the vendored design system matches its SHA256SUMS
+ok 79 - the vendored design system matches its SHA256SUMS
+  ---
+  duration_ms: 2.282683
+  type: 'test'
+  ...
+# Subtest: configuration variables and secrets have separate safe read models
+ok 80 - configuration variables and secrets have separate safe read models
+  ---
+  duration_ms: 16.96295
+  type: 'test'
+  ...
+# Subtest: configuration enforces names, duplicate scope, authorization, and tenant isolation
+ok 81 - configuration enforces names, duplicate scope, authorization, and tenant isolation
+  ---
+  duration_ms: 4.568063
+  type: 'test'
+  ...
+# Subtest: appport.flow exists and is valid
+ok 82 - appport.flow exists and is valid
+  ---
+  duration_ms: 6.164689
+  type: 'test'
+  ...
+# Subtest: appport.flow has correct app name
+ok 83 - appport.flow has correct app name
+  ---
+  duration_ms: 3.44192
+  type: 'test'
+  ...
+# Subtest: appport.flow defines API Key collections
+ok 84 - appport.flow defines API Key collections
+  ---
+  duration_ms: 1.802827
+  type: 'test'
+  ...
+# Subtest: appport.flow defines Webhook collections
+ok 85 - appport.flow defines Webhook collections
+  ---
+  duration_ms: 1.59844
+  type: 'test'
+  ...
+# Subtest: appport.flow defines Job collections
+ok 86 - appport.flow defines Job collections
+  ---
+  duration_ms: 2.68716
+  type: 'test'
+  ...
+# Subtest: appport.flow defines File collections
+ok 87 - appport.flow defines File collections
+  ---
+  duration_ms: 1.226227
+  type: 'test'
+  ...
+# Subtest: appport.flow defines no secret fields in durable state
+ok 88 - appport.flow defines no secret fields in durable state
+  ---
+  duration_ms: 1.377197
+  type: 'test'
+  ...
+# Subtest: all collections are tenant-scoped
+ok 89 - all collections are tenant-scoped
+  ---
+  duration_ms: 1.982399
+  type: 'test'
+  ...
+# Subtest: appport.flow has expected tenant indexes
+ok 90 - appport.flow has expected tenant indexes
+  ---
+  duration_ms: 1.4034
+  type: 'test'
+  ...
+# Subtest: DSL: parse minimal configuration
+ok 91 - DSL: parse minimal configuration
+  ---
+  duration_ms: 10.709971
+  type: 'test'
+  ...
+# Subtest: DSL: parse files capability
+ok 92 - DSL: parse files capability
+  ---
+  duration_ms: 4.977112
+  type: 'test'
+  ...
+# Subtest: DSL: parse with webhook events configuration
+ok 93 - DSL: parse with webhook events configuration
+  ---
+  duration_ms: 4.6933
+  type: 'test'
+  ...
+# Subtest: DSL: parse with jobs max_attempts configuration
+ok 94 - DSL: parse with jobs max_attempts configuration
+  ---
+  duration_ms: 1.829446
+  type: 'test'
+  ...
+# Subtest: DSL: selective capability enablement
+ok 95 - DSL: selective capability enablement
+  ---
+  duration_ms: 1.791418
+  type: 'test'
+  ...
+# Subtest: DSL: parses capability block configuration
+ok 96 - DSL: parses capability block configuration
+  ---
+  duration_ms: 1.816383
+  type: 'test'
+  ...
+# Subtest: DSL: section enables capability without use declaration
+ok 97 - DSL: section enables capability without use declaration
+  ---
+  duration_ms: 1.934589
+  type: 'test'
+  ...
+# Subtest: DSL: unknown capability fails
+ok 98 - DSL: unknown capability fails
+  ---
+  duration_ms: 2.515547
+  type: 'test'
+  ...
+# Subtest: DSL: invalid webhook events type fails
+ok 99 - DSL: invalid webhook events type fails
+  ---
+  duration_ms: 1.943709
+  type: 'test'
+  ...
+# Subtest: DSL: invalid jobs max_attempts type fails
+ok 100 - DSL: invalid jobs max_attempts type fails
+  ---
+  duration_ms: 2.051993
+  type: 'test'
+  ...
+# Subtest: DSL: invalid jobs max_attempts value fails
+ok 101 - DSL: invalid jobs max_attempts value fails
+  ---
+  duration_ms: 1.584932
+  type: 'test'
+  ...
+# Subtest: DSL: missing config file fails clearly
+ok 102 - DSL: missing config file fails clearly
+  ---
+  duration_ms: 0.393141
+  type: 'test'
+  ...
+# Subtest: DSL: createServices accepts config option
+ok 103 - DSL: createServices accepts config option
+  ---
+  duration_ms: 12.33344
+  type: 'test'
+  ...
+# Subtest: DSL: programmatic API unchanged
+ok 104 - DSL: programmatic API unchanged
+  ---
+  duration_ms: 3.645755
+  type: 'test'
+  ...
+# Subtest: DSL: atomic transaction works with DSL-configured services
+ok 105 - DSL: atomic transaction works with DSL-configured services
+  ---
+  duration_ms: 40.796205
+  type: 'test'
+  ...
+# Subtest: Express middleware: optional auth allows unauthenticated requests
+ok 106 - Express middleware: optional auth allows unauthenticated requests
+  ---
+  duration_ms: 333.219633
+  type: 'test'
+  ...
+# Subtest: Express middleware: required auth rejects unauthenticated requests
+ok 107 - Express middleware: required auth rejects unauthenticated requests
+  ---
+  duration_ms: 4.63788
+  type: 'test'
+  ...
+# Subtest: Express middleware: request.auth populated with valid credential
+ok 108 - Express middleware: request.auth populated with valid credential
+  ---
+  duration_ms: 206.52504
+  type: 'test'
+  ...
+# Subtest: Express middleware: request context is isolated per request
+ok 109 - Express middleware: request context is isolated per request
+  ---
+  duration_ms: 407.485206
+  type: 'test'
+  ...
+# Subtest: Express: assertTenant integration with principal
+ok 110 - Express: assertTenant integration with principal
+  ---
+  duration_ms: 212.528716
+  type: 'test'
+  ...
+# Subtest: files persist in FeltDB and update metadata durably
+ok 111 - files persist in FeltDB and update metadata durably
+  ---
+  duration_ms: 41.201947
+  type: 'test'
+  ...
+# Subtest: files enforce tenant and owner isolation through AuthBoundry
+ok 112 - files enforce tenant and owner isolation through AuthBoundry
+  ---
+  duration_ms: 26.613453
+  type: 'test'
+  ...
+# Subtest: authenticateRequest with valid Bearer token returns principal
+ok 113 - authenticateRequest with valid Bearer token returns principal
+  ---
+  duration_ms: 239.313056
+  type: 'test'
+  ...
+# Subtest: authenticateRequest with missing header returns null with reason
+ok 114 - authenticateRequest with missing header returns null with reason
+  ---
+  duration_ms: 1.626639
+  type: 'test'
+  ...
+# Subtest: authenticateRequest with malformed header returns null with reason
+ok 115 - authenticateRequest with malformed header returns null with reason
+  ---
+  duration_ms: 1.908232
+  type: 'test'
+  ...
+# Subtest: authenticateRequest with invalid secret returns null with reason
+ok 116 - authenticateRequest with invalid secret returns null with reason
+  ---
+  duration_ms: 1.709371
+  type: 'test'
+  ...
+# Subtest: require throws AuthenticationError for missing credential
+ok 117 - require throws AuthenticationError for missing credential
+  ---
+  duration_ms: 1.876355
+  type: 'test'
+  ...
+# Subtest: require throws AuthenticationError for invalid credential
+ok 118 - require throws AuthenticationError for invalid credential
+  ---
+  duration_ms: 1.604524
+  type: 'test'
+  ...
+# Subtest: authenticate returns null for missing credential without throwing
+ok 119 - authenticate returns null for missing credential without throwing
+  ---
+  duration_ms: 1.311906
+  type: 'test'
+  ...
+# Subtest: authenticate returns null for invalid credential without throwing
+ok 120 - authenticate returns null for invalid credential without throwing
+  ---
+  duration_ms: 9.348242
+  type: 'test'
+  ...
+# Subtest: tenant isolation: request A with tenant A and request B with tenant B run concurrently without leakage
+ok 121 - tenant isolation: request A with tenant A and request B with tenant B run concurrently without leakage
+  ---
+  duration_ms: 430.069999
+  type: 'test'
+  ...
+# Subtest: repeated concurrent authentication does not lose valid principals
+ok 122 - repeated concurrent authentication does not lose valid principals
+  ---
+  duration_ms: 1854.035755
+  type: 'test'
+  ...
+# Subtest: revoked credential fails authentication
+ok 123 - revoked credential fails authentication
+  ---
+  duration_ms: 178.197106
+  type: 'test'
+  ...
+# Subtest: expired credential fails authentication
+ok 124 - expired credential fails authentication
+  ---
+  duration_ms: 147.703318
+  type: 'test'
+  ...
+# Subtest: RequestContext maintains principal state without global mutation
+ok 125 - RequestContext maintains principal state without global mutation
+  ---
+  duration_ms: 2.698201
+  type: 'test'
+  ...
+# Subtest: assertTenant throws TenantMismatchError when tenants do not match
+ok 126 - assertTenant throws TenantMismatchError when tenants do not match
+  ---
+  duration_ms: 0.380165
+  type: 'test'
+  ...
+# Subtest: assertTenant does not throw when tenants match
+ok 127 - assertTenant does not throw when tenants match
+  ---
+  duration_ms: 0.172219
+  type: 'test'
+  ...
+# Subtest: no cross-request principal leakage through multiple concurrent requests
+ok 128 - no cross-request principal leakage through multiple concurrent requests
+  ---
+  duration_ms: 928.584926
+  type: 'test'
+  ...
+# Subtest: authorization header as array is handled correctly
+ok 129 - authorization header as array is handled correctly
+  ---
+  duration_ms: 227.766001
+  type: 'test'
+  ...
+# Subtest: API key scopes are rejected with a migration error and never reach the principal
+ok 130 - API key scopes are rejected with a migration error and never reach the principal
+  ---
+  duration_ms: 236.090798
+  type: 'test'
+  ...
+# Subtest: integration: valid key authenticates and returns principal data
+ok 131 - integration: valid key authenticates and returns principal data
+  ---
+  duration_ms: 178.356732
+  type: 'test'
+  ...
+# Subtest: integration: missing credential on optional endpoint returns 401
+ok 132 - integration: missing credential on optional endpoint returns 401
+  ---
+  duration_ms: 5.700092
+  type: 'test'
+  ...
+# Subtest: integration: invalid credential on optional endpoint returns 403
+ok 133 - integration: invalid credential on optional endpoint returns 403
+  ---
+  duration_ms: 4.77573
+  type: 'test'
+  ...
+# Subtest: integration: revoked key is rejected
+ok 134 - integration: revoked key is rejected
+  ---
+  duration_ms: 74.601014
+  type: 'test'
+  ...
+# Subtest: integration: expired key is rejected
+ok 135 - integration: expired key is rejected
+  ---
+  duration_ms: 66.130554
+  type: 'test'
+  ...
+# Subtest: integration: require() on protected endpoint rejects missing credential
+ok 136 - integration: require() on protected endpoint rejects missing credential
+  ---
+  duration_ms: 4.03462
+  type: 'test'
+  ...
+# Subtest: integration: require() on protected endpoint accepts valid credential
+ok 137 - integration: require() on protected endpoint accepts valid credential
+  ---
+  duration_ms: 113.155707
+  type: 'test'
+  ...
+# Subtest: catalog describes known providers and includes a custom OpenAI-compatible option
+ok 138 - catalog describes known providers and includes a custom OpenAI-compatible option
+  ---
+  duration_ms: 1.247328
+  type: 'test'
+  ...
+# Subtest: unconfigured intelligence is a normal state and resolves to nothing
+ok 139 - unconfigured intelligence is a normal state and resolves to nothing
+  ---
+  duration_ms: 40.41357
+  type: 'test'
+  ...
+# Subtest: known provider: default endpoint, catalog model, required credential
+ok 140 - known provider: default endpoint, catalog model, required credential
+  ---
+  duration_ms: 45.628281
+  type: 'test'
+  ...
+# Subtest: local OpenAI-compatible provider works without a credential and with a custom endpoint
+ok 141 - local OpenAI-compatible provider works without a credential and with a custom endpoint
+  ---
+  duration_ms: 46.633848
+  type: 'test'
+  ...
+# Subtest: credential replacement and removal never reveal the previous value; raw credentials are refused
+ok 142 - credential replacement and removal never reveal the previous value; raw credentials are refused
+  ---
+  duration_ms: 75.970174
+  type: 'test'
+  ...
+# Subtest: a credential is not carried to a different provider or endpoint
+ok 143 - a credential is not carried to a different provider or endpoint
+  ---
+  duration_ms: 59.836195
+  type: 'test'
+  ...
+# Subtest: resolve is runtime-internal and ownership comes from the principal
+ok 144 - resolve is runtime-internal and ownership comes from the principal
+  ---
+  duration_ms: 19.094772
+  type: 'test'
+  ...
+# Subtest: authorization is required for every intelligence capability
+ok 145 - authorization is required for every intelligence capability
+  ---
+  duration_ms: 15.996612
+  type: 'test'
+  ...
+# Subtest: durable configuration survives a process restart without exposing the credential; the sentinel appears nowhere
+ok 146 - durable configuration survives a process restart without exposing the credential; the sentinel appears nowhere
+  ---
+  duration_ms: 39.219156
+  type: 'test'
+  ...
+# Subtest: the Intelligence page is a discoverable surface and the management adapter returns no credential
+ok 147 - the Intelligence page is a discoverable surface and the management adapter returns no credential
+  ---
+  duration_ms: 168.817395
+  type: 'test'
+  ...
+# Subtest: two workers cannot claim the same job
+ok 148 - two workers cannot claim the same job
+  ---
+  duration_ms: 79.608361
+  type: 'test'
+  ...
+# Subtest: concurrent claim attempts only one succeeds
+ok 149 - concurrent claim attempts only one succeeds
+  ---
+  duration_ms: 38.03007
+  type: 'test'
+  ...
+# Subtest: lease expiration permits recovery
+ok 150 - lease expiration permits recovery
+  ---
+  duration_ms: 15.381444
+  type: 'test'
+  ...
+# Subtest: stale worker cannot overwrite newer worker
+ok 151 - stale worker cannot overwrite newer worker
+  ---
+  duration_ms: 36.668392
+  type: 'test'
+  ...
+# Subtest: exponential backoff increases retry delay
+ok 152 - exponential backoff increases retry delay
+  ---
+  duration_ms: 51.416611
+  type: 'test'
+  ...
+# Subtest: job durability: job survives process restart
+ok 153 - job durability: job survives process restart
+  ---
+  duration_ms: 16.985854
+  type: 'test'
+  ...
+# Subtest: handler errors with original payload available for debugging
+ok 154 - handler errors with original payload available for debugging
+  ---
+  duration_ms: 21.494793
+  type: 'test'
+  ...
+# Subtest: concurrent tenants remain isolated
+ok 155 - concurrent tenants remain isolated
+  ---
+  duration_ms: 37.522064
+  type: 'test'
+  ...
+# Subtest: enqueue creates pending job
+ok 156 - enqueue creates pending job
+  ---
+  duration_ms: 29.663602
+  type: 'test'
+  ...
+# Subtest: schedule creates scheduled job
+ok 157 - schedule creates scheduled job
+  ---
+  duration_ms: 17.507345
+  type: 'test'
+  ...
+# Subtest: tenant isolation prevents cross-tenant access
+ok 158 - tenant isolation prevents cross-tenant access
+  ---
+  duration_ms: 22.756647
+  type: 'test'
+  ...
+# Subtest: list jobs filtered by tenant
+ok 159 - list jobs filtered by tenant
+  ---
+  duration_ms: 29.004347
+  type: 'test'
+  ...
+# Subtest: register and execute handler
+ok 160 - register and execute handler
+  ---
+  duration_ms: 22.954546
+  type: 'test'
+  ...
+# Subtest: handler failure triggers retry
+ok 161 - handler failure triggers retry
+  ---
+  duration_ms: 22.672989
+  type: 'test'
+  ...
+# Subtest: max attempts marks job as failed
+ok 162 - max attempts marks job as failed
+  ---
+  duration_ms: 38.441975
+  type: 'test'
+  ...
+# Subtest: manual retry resets failed job
+ok 163 - manual retry resets failed job
+  ---
+  duration_ms: 32.002513
+  type: 'test'
+  ...
+# Subtest: schedule recurring creates execution jobs
+ok 164 - schedule recurring creates execution jobs
+  ---
+  duration_ms: 16.600812
+  type: 'test'
+  ...
+# Subtest: restart preserves jobs and schedules
+ok 165 - restart preserves jobs and schedules
+  ---
+  duration_ms: 68.659921
+  type: 'test'
+  ...
+# Subtest: disable schedule stops generating jobs
+ok 166 - disable schedule stops generating jobs
+  ---
+  duration_ms: 24.78923
+  type: 'test'
+  ...
+# Subtest: schedules service exposes recurring schedules as a first-class authorized surface
+ok 167 - schedules service exposes recurring schedules as a first-class authorized surface
+  ---
+  duration_ms: 45.90719
+  type: 'test'
+  ...
+# Subtest: the standalone host serves /v1/ui with a protocol-valid contribution, derived from the router
+ok 168 - the standalone host serves /v1/ui with a protocol-valid contribution, derived from the router
+  ---
+  duration_ms: 120.8539
+  type: 'test'
+  ...
+# Subtest: the standalone host enforces its own authentication boundary
+ok 169 - the standalone host enforces its own authentication boundary
+  ---
+  duration_ms: 357.706824
+  type: 'test'
+  ...
+# Subtest: the standalone host needs no external control-plane credential and never weakens the boundary
+ok 170 - the standalone host needs no external control-plane credential and never weakens the boundary
+  ---
+  duration_ms: 46.13373
+  type: 'test'
+  ...
+# Subtest: the standalone host owns durable state that survives a restart
+ok 171 - the standalone host owns durable state that survives a restart
+  ---
+  duration_ms: 161.641272
+  type: 'test'
+  ...
+# Subtest: a port collision fails with an actionable message rather than a raw EADDRINUSE
+ok 172 - a port collision fails with an actionable message rather than a raw EADDRINUSE
+  ---
+  duration_ms: 34.601722
+  type: 'test'
+  ...
+# Subtest: closing the host is idempotent and releases the port
+ok 173 - closing the host is idempotent and releases the port
+  ---
+  duration_ms: 39.95819
+  type: 'test'
+  ...
+# Subtest: the documented defaults are loopback and never the Compute control-plane port
+ok 174 - the documented defaults are loopback and never the Compute control-plane port
+  ---
+  duration_ms: 0.287298
+  type: 'test'
+  ...
+# Subtest: the serve command is discoverable and every existing command is still offered
+ok 175 - the serve command is discoverable and every existing command is still offered
+  ---
+  duration_ms: 0.297835
+  type: 'test'
+  ...
+# Subtest: exported management router composes an existing service instance with AuthBoundry authorization and tenant isolation
+ok 176 - exported management router composes an existing service instance with AuthBoundry authorization and tenant isolation
+  ---
+  duration_ms: 153.550511
+  type: 'test'
+  ...
+# Subtest: management API rejects missing principals and enforces each operation capability server-side
+ok 177 - management API rejects missing principals and enforces each operation capability server-side
+  ---
+  duration_ms: 111.300285
+  type: 'test'
+  ...
+# Subtest: API key UI contribution declares the exact capabilities used by the page
+ok 178 - API key UI contribution declares the exact capabilities used by the page
+  ---
+  duration_ms: 0.486263
+  type: 'test'
+  ...
+# Subtest: packaged API-key UI requires its complete capability set and unsupported surfaces are not mounted
+ok 179 - packaged API-key UI requires its complete capability set and unsupported surfaces are not mounted
+  ---
+  duration_ms: 21.226559
+  type: 'test'
+  ...
+# Subtest: composable runtime mounts existing webhook and job contracts against the supplied services
+ok 180 - composable runtime mounts existing webhook and job contracts against the supplied services
+  ---
+  duration_ms: 28.836548
+  type: 'test'
+  ...
+# Subtest: management API-key state remains durable across service recreation and revoke
+ok 181 - management API-key state remains durable across service recreation and revoke
+  ---
+  duration_ms: 147.13212
+  type: 'test'
+  ...
+# Subtest: appport runtime delivers browser notifications through the canonical primitive
+ok 182 - appport runtime delivers browser notifications through the canonical primitive
+  ---
+  duration_ms: 72.354912
+  type: 'test'
+  ...
+# Subtest: notify creates a durable notification with one delivery per channel
+ok 183 - notify creates a durable notification with one delivery per channel
+  ---
+  duration_ms: 50.043422
+  type: 'test'
+  ...
+# Subtest: recipients retrieve only their own notifications with query filters
+ok 184 - recipients retrieve only their own notifications with query filters
+  ---
+  duration_ms: 47.535907
+  type: 'test'
+  ...
+# Subtest: notifications and delivery state survive a service restart
+ok 185 - notifications and delivery state survive a service restart
+  ---
+  duration_ms: 27.002024
+  type: 'test'
+  ...
+# Subtest: tenant isolation holds for create, get, list, and acknowledge
+ok 186 - tenant isolation holds for create, get, list, and acknowledge
+  ---
+  duration_ms: 17.556843
+  type: 'test'
+  ...
+# Subtest: lifecycle: pending → delivered
+ok 187 - lifecycle: pending → delivered
+  ---
+  duration_ms: 25.060054
+  type: 'test'
+  ...
+# Subtest: lifecycle: pending → failed when every channel fails permanently
+ok 188 - lifecycle: pending → failed when every channel fails permanently
+  ---
+  duration_ms: 15.248998
+  type: 'test'
+  ...
+# Subtest: lifecycle: failed → retrying → delivered via an explicit retry
+ok 189 - lifecycle: failed → retrying → delivered via an explicit retry
+  ---
+  duration_ms: 45.120277
+  type: 'test'
+  ...
+# Subtest: lifecycle: delivered → read → acknowledged, and read does not imply acknowledged
+ok 190 - lifecycle: delivered → read → acknowledged, and read does not imply acknowledged
+  ---
+  duration_ms: 38.393565
+  type: 'test'
+  ...
+# Subtest: lifecycle: an expired notification is not newly delivered and remains as evidence
+ok 191 - lifecycle: an expired notification is not newly delivered and remains as evidence
+  ---
+  duration_ms: 98.90438
+  type: 'test'
+  ...
+# Subtest: browser channel receives the canonical notification and pushes only a pointer
+ok 192 - browser channel receives the canonical notification and pushes only a pointer
+  ---
+  duration_ms: 34.004057
+  type: 'test'
+  ...
+# Subtest: one channel failing does not invalidate another channel
+ok 193 - one channel failing does not invalidate another channel
+  ---
+  duration_ms: 38.673855
+  type: 'test'
+  ...
+# Subtest: unknown channels are rejected before anything is persisted
+ok 194 - unknown channels are rejected before anything is persisted
+  ---
+  duration_ms: 4.000491
+  type: 'test'
+  ...
+# Subtest: duplicate creation for the same source event produces one notification
+ok 195 - duplicate creation for the same source event produces one notification
+  ---
+  duration_ms: 39.440223
+  type: 'test'
+  ...
+# Subtest: concurrent duplicate creation yields one notification and one delivery per channel
+ok 196 - concurrent duplicate creation yields one notification and one delivery per channel
+  ---
+  duration_ms: 47.91777
+  type: 'test'
+  ...
+# Subtest: duplicate or early retry jobs do not produce duplicate deliveries
+ok 197 - duplicate or early retry jobs do not produce duplicate deliveries
+  ---
+  duration_ms: 39.956013
+  type: 'test'
+  ...
+# Subtest: a recent pending attempt is treated as leased and duplicate delivery jobs do not redeliver it
+ok 198 - a recent pending attempt is treated as leased and duplicate delivery jobs do not redeliver it
+  ---
+  duration_ms: 33.772691
+  type: 'test'
+  ...
+# Subtest: a producer retry after a failed delivery does not create a duplicate notification
+ok 199 - a producer retry after a failed delivery does not create a duplicate notification
+  ---
+  duration_ms: 17.059743
+  type: 'test'
+  ...
+# Subtest: a deleted notification can be recreated with the same idempotency key
+ok 200 - a deleted notification can be recreated with the same idempotency key
+  ---
+  duration_ms: 33.659386
+  type: 'test'
+  ...
+# Subtest: retryable failures are retried through the existing job infrastructure with backoff
+ok 201 - retryable failures are retried through the existing job infrastructure with backoff
+  ---
+  duration_ms: 50.488987
+  type: 'test'
+  ...
+# Subtest: delivery fails permanently once the attempt budget is exhausted
+ok 202 - delivery fails permanently once the attempt budget is exhausted
+  ---
+  duration_ms: 54.099059
+  type: 'test'
+  ...
+# Subtest: application code cannot enqueue or register AppPort system job types
+ok 203 - application code cannot enqueue or register AppPort system job types
+  ---
+  duration_ms: 6.123481
+  type: 'test'
+  ...
+# Subtest: authorization: unauthorized creation is rejected
+ok 204 - authorization: unauthorized creation is rejected
+  ---
+  duration_ms: 7.617611
+  type: 'test'
+  ...
+# Subtest: authorization: missing or malformed authority fails closed
+ok 205 - authorization: missing or malformed authority fails closed
+  ---
+  duration_ms: 23.85031
+  type: 'test'
+  ...
+# Subtest: authorization: unauthorized retrieval is rejected
+ok 206 - authorization: unauthorized retrieval is rejected
+  ---
+  duration_ms: 32.399006
+  type: 'test'
+  ...
+# Subtest: authorization: acknowledgement requires authority over the notification
+ok 207 - authorization: acknowledgement requires authority over the notification
+  ---
+  duration_ms: 30.627328
+  type: 'test'
+  ...
+# Subtest: credentials cannot enter notification payloads
+ok 208 - credentials cannot enter notification payloads
+  ---
+  duration_ms: 18.709733
+  type: 'test'
+  ...
+# Subtest: delivery failure reasons never persist credential material
+ok 209 - delivery failure reasons never persist credential material
+  ---
+  duration_ms: 17.490244
+  type: 'test'
+  ...
+# Subtest: delivery failure reasons with credential-like key names are scrubbed
+ok 210 - delivery failure reasons with credential-like key names are scrubbed
+  ---
+  duration_ms: 19.981158
+  type: 'test'
+  ...
+# Subtest: protected fields cannot be set by the producer
+ok 211 - protected fields cannot be set by the producer
+  ---
+  duration_ms: 5.683822
+  type: 'test'
+  ...
+# Subtest: a worker restart resumes delivery retries from durable state
+ok 212 - a worker restart resumes delivery retries from durable state
+  ---
+  duration_ms: 31.248088
+  type: 'test'
+  ...
+# Subtest: deliveries persisted before a crash are recovered exactly once
+ok 213 - deliveries persisted before a crash are recovered exactly once
+  ---
+  duration_ms: 23.333352
+  type: 'test'
+  ...
+# Subtest: closing a browser does not lose notifications: a new session reads durable state
+ok 214 - closing a browser does not lose notifications: a new session reads durable state
+  ---
+  duration_ms: 31.493957
+  type: 'test'
+  ...
+# Subtest: HTTP API follows AppPort conventions and fails closed without authentication
+ok 215 - HTTP API follows AppPort conventions and fails closed without authentication
+  ---
+  duration_ms: 132.721666
+  type: 'test'
+  ...
+# Subtest: notifications enforce tenant and recipient isolation through AuthBoundry
+ok 216 - notifications enforce tenant and recipient isolation through AuthBoundry
+  ---
+  duration_ms: 38.438414
+  type: 'test'
+  ...
+# Subtest: the packed npm artifact serves a valid AppPort/ui/1 document at GET /v1/ui
+ok 217 - the packed npm artifact serves a valid AppPort/ui/1 document at GET /v1/ui
+  ---
+  duration_ms: 3786.813724
+  type: 'test'
+  ...
+# Subtest: the standalone runtime serves the service API and no management pages or UI contribution
+ok 218 - the standalone runtime serves the service API and no management pages or UI contribution
+  ---
+  duration_ms: 83.855366
+  type: 'test'
+  ...
+# Subtest: a generated application states a port that is not the Compute control plane's
+ok 219 - a generated application states a port that is not the Compute control plane's
+  ---
+  duration_ms: 18.348893
+  type: 'test'
+  ...
+# Subtest: the parser default for an omitted port is the documented legacy value
+ok 220 - the parser default for an omitted port is the documented legacy value
+  ---
+  duration_ms: 0.607845
+  type: 'test'
+  ...
+# Subtest: the installed @appport/protocol satisfies the declared range and provides the UI contract
+ok 221 - the installed @appport/protocol satisfies the declared range and provides the UI contract
+  ---
+  duration_ms: 2.857593
+  type: 'test'
+  ...
+# Subtest: provider-neutral scoped protocol supports server integration without leaking into Work or Evidence
+ok 222 - provider-neutral scoped protocol supports server integration without leaking into Work or Evidence
+  ---
+  duration_ms: 1.675208
+  type: 'test'
+  ...
+# Subtest: test AppBoundry denies tenant and principal mismatches before provider material access
+ok 223 - test AppBoundry denies tenant and principal mismatches before provider material access
+  ---
+  duration_ms: 0.729749
+  type: 'test'
+  ...
+# Subtest: Secrets source remains protocol-only and has no material, provider, policy, or persistence implementation
+ok 224 - Secrets source remains protocol-only and has no material, provider, policy, or persistence implementation
+  ---
+  duration_ms: 0.56235
+  type: 'test'
+  ...
+# Subtest: Secrets protocol is exported without an execution implementation
+ok 225 - Secrets protocol is exported without an execution implementation
+  ---
+  duration_ms: 1.556555
+  type: 'test'
+  ...
+# Subtest: Secrets package has no provider, authorization, or storage implementation
+ok 226 - Secrets package has no provider, authorization, or storage implementation
+  ---
+  duration_ms: 0.505331
+  type: 'test'
+  ...
+# Subtest: Secrets durable contract excludes secret material and provider credentials
+ok 227 - Secrets durable contract excludes secret material and provider credentials
+  ---
+  duration_ms: 0.694196
+  type: 'test'
+  ...
+# Subtest: package dependencies remain implementation-neutral
+ok 228 - package dependencies remain implementation-neutral
+  ---
+  duration_ms: 0.650461
+  type: 'test'
+  ...
+# Subtest: capability manifest is deterministic, frozen, operation-level, and has no admin capabilities
+ok 229 - capability manifest is deterministic, frozen, operation-level, and has no admin capabilities
+  ---
+  duration_ms: 2.962668
+  type: 'test'
+  ...
+# Subtest: invoke rejects undeclared and runtime-internal capabilities
+ok 230 - invoke rejects undeclared and runtime-internal capabilities
+  ---
+  duration_ms: 20.109275
+  type: 'test'
+  ...
+# Subtest: allow: provider is called exactly once, signed with the custody credential, with evidence
+ok 231 - allow: provider is called exactly once, signed with the custody credential, with evidence
+  ---
+  duration_ms: 86.640486
+  type: 'test'
+  ...
+# Subtest: denied: no credential resolution and no provider call
+ok 232 - denied: no credential resolution and no provider call
+  ---
+  duration_ms: 30.481684
+  type: 'test'
+  ...
+# Subtest: authority unavailable: no provider call, reported distinctly, retried later
+ok 233 - authority unavailable: no provider call, reported distinctly, retried later
+  ---
+  duration_ms: 24.519425
+  type: 'test'
+  ...
+# Subtest: timeout: no provider call, and a late allow never triggers execution
+ok 234 - timeout: no provider call, and a late allow never triggers execution
+  ---
+  duration_ms: 382.882784
+  type: 'test'
+  ...
+# Subtest: provider failure is reported as PROVIDER_ERROR, never as an authorization failure
+ok 235 - provider failure is reported as PROVIDER_ERROR, never as an authorization failure
+  ---
+  duration_ms: 34.783869
+  type: 'test'
+  ...
+# Subtest: no authorizer configured: every effect fails closed
+ok 236 - no authorizer configured: every effect fails closed
+  ---
+  duration_ms: 6.689959
+  type: 'test'
+  ...
+# Subtest: a decision that does not match the request is not accepted as authority
+ok 237 - a decision that does not match the request is not accepted as authority
+  ---
+  duration_ms: 5.910597
+  type: 'test'
+  ...
+# Subtest: no local authorization cache: AuthBoundry is asked for every operation
+ok 238 - no local authorization cache: AuthBoundry is asked for every operation
+  ---
+  duration_ms: 24.832746
+  type: 'test'
+  ...
+# Subtest: API key scopes cannot grant authority anywhere
+ok 239 - API key scopes cannot grant authority anywhere
+  ---
+  duration_ms: 165.778534
+  type: 'test'
+  ...
+# Subtest: revoked API key cannot execute; a key from application A cannot execute application B effects
+ok 240 - revoked API key cannot execute; a key from application A cannot execute application B effects
+  ---
+  duration_ms: 242.208015
+  type: 'test'
+  ...
+# Subtest: arbitrary actor strings and forged principals are rejected; verified principals are accepted
+ok 241 - arbitrary actor strings and forged principals are rejected; verified principals are accepted
+  ---
+  duration_ms: 28.097619
+  type: 'test'
+  ...
+# Subtest: the principal cannot be replaced after authorization and a context authorizes one effect
+ok 242 - the principal cannot be replaced after authorization and a context authorizes one effect
+  ---
+  duration_ms: 8.840078
+  type: 'test'
+  ...
+# Subtest: raw provider credentials are never stored in service configuration
+ok 243 - raw provider credentials are never stored in service configuration
+  ---
+  duration_ms: 23.652989
+  type: 'test'
+  ...
+# Subtest: credential access is only possible under a live authorized context
+ok 244 - credential access is only possible under a live authorized context
+  ---
+  duration_ms: 2.439043
+  type: 'test'
+  ...
+# Subtest: revoked and cross-tenant credentials cannot execute provider effects
+ok 245 - revoked and cross-tenant credentials cannot execute provider effects
+  ---
+  duration_ms: 54.224332
+  type: 'test'
+  ...
+# Subtest: jobs run as a durable principal, and a revoked delegation stops future effects across restart
+ok 246 - jobs run as a durable principal, and a revoked delegation stops future effects across restart
+  ---
+  duration_ms: 84.664853
+  type: 'test'
+  ...
+# Subtest: anonymous job execution is denied without running the handler
+ok 247 - anonymous job execution is denied without running the handler
+  ---
+  duration_ms: 17.505019
+  type: 'test'
+  ...
+# Subtest: job metadata cannot become authority: forged durable principals and reserved collections are refused
+ok 248 - job metadata cannot become authority: forged durable principals and reserved collections are refused
+  ---
+  duration_ms: 45.932766
+  type: 'test'
+  ...
+# Subtest: tenant isolation holds for configuration, credentials, webhooks, and jobs, including after restart
+ok 249 - tenant isolation holds for configuration, credentials, webhooks, and jobs, including after restart
+  ---
+  duration_ms: 53.764605
+  type: 'test'
+  ...
+# Subtest: evidence exists for every consequential effect, contains no secrets, and survives restart
+ok 250 - evidence exists for every consequential effect, contains no secrets, and survives restart
+  ---
+  duration_ms: 103.727112
+  type: 'test'
+  ...
+# Subtest: GET /v1/ui is the protocol's caller-filtered view: with no asserted capabilities, only capability-free surfaces
+ok 251 - GET /v1/ui is the protocol's caller-filtered view: with no asserted capabilities, only capability-free surfaces
+  ---
+  duration_ms: 146.023468
+  type: 'test'
+  ...
+# Subtest: the caller-capability filter is the protocol's: a caller holding a surface's capabilities sees it
+ok 252 - the caller-capability filter is the protocol's: a caller holding a surface's capabilities sees it
+  ---
+  duration_ms: 1.739142
+  type: 'test'
+  ...
+# Subtest: the full contribution is what the AppPort protocol server serves per caller
+ok 253 - the full contribution is what the AppPort protocol server serves per caller
+  ---
+  duration_ms: 1.383801
+  type: 'test'
+  ...
+# Subtest: every capability a surface names is a real service capability
+ok 254 - every capability a surface names is a real service capability
+  ---
+  duration_ms: 0.380452
+  type: 'test'
+  ...
+# Subtest: the exported contribution is valid and an invalid one is rejected by the same validator
+ok 255 - the exported contribution is valid and an invalid one is rejected by the same validator
+  ---
+  duration_ms: 1.229961
+  type: 'test'
+  ...
+# Subtest: only mounted services are described, and nothing mounted means no contribution
+ok 256 - only mounted services are described, and nothing mounted means no contribution
+  ---
+  duration_ms: 1.67171
+  type: 'test'
+  ...
+# Subtest: a host that serves no UI advertises none: 404, as the protocol server does
+ok 257 - a host that serves no UI advertises none: 404, as the protocol server does
+  ---
+  duration_ms: 15.806408
+  type: 'test'
+  ...
+# Subtest: discovery carries no secrets or credentials
+ok 258 - discovery carries no secrets or credentials
+  ---
+  duration_ms: 20.790666
+  type: 'test'
+  ...
+# Subtest: valid inbound webhook runs as the integration principal and the payload cannot choose principal or credential
+ok 259 - valid inbound webhook runs as the integration principal and the payload cannot choose principal or credential
+  ---
+  duration_ms: 77.088495
+  type: 'test'
+  ...
+# Subtest: invalid signature, stale timestamp, and missing headers are denied before the handler runs
+ok 260 - invalid signature, stale timestamp, and missing headers are denied before the handler runs
+  ---
+  duration_ms: 46.015086
+  type: 'test'
+  ...
+# Subtest: inbound replay is rejected durably, including after a process restart
+ok 261 - inbound replay is rejected durably, including after a process restart
+  ---
+  duration_ms: 86.880062
+  type: 'test'
+  ...
+# Subtest: an integration without an AuthBoundry grant cannot receive or cause effects
+ok 262 - an integration without an AuthBoundry grant cannot receive or cause effects
+  ---
+  duration_ms: 18.422873
+  type: 'test'
+  ...
+# Subtest: destination policy rejects private, loopback, link-local, metadata, and unspecified destinations
+ok 263 - destination policy rejects private, loopback, link-local, metadata, and unspecified destinations
+  ---
+  duration_ms: 8.385948
+  type: 'test'
+  ...
+# Subtest: webhook registration applies the destination policy and emit cannot choose a destination
+ok 264 - webhook registration applies the destination policy and emit cannot choose a destination
+  ---
+  duration_ms: 50.916322
+  type: 'test'
+  ...
+# Subtest: redirects are never followed, so a delivery cannot escape to a forbidden destination
+ok 265 - redirects are never followed, so a delivery cannot escape to a forbidden destination
+  ---
+  duration_ms: 48.347966
+  type: 'test'
+  ...
+# Subtest: webhook delivery sends signed POST request
+ok 266 - webhook delivery sends signed POST request
+  ---
+  duration_ms: 112.707379
+  type: 'test'
+  ...
+# Subtest: 2xx status marks delivery as delivered
+ok 267 - 2xx status marks delivery as delivered
+  ---
+  duration_ms: 36.694311
+  type: 'test'
+  ...
+# Subtest: 5xx status marks delivery as retrying
+ok 268 - 5xx status marks delivery as retrying
+  ---
+  duration_ms: 37.254892
+  type: 'test'
+  ...
+# Subtest: terminal 4xx status marks delivery as failed
+ok 269 - terminal 4xx status marks delivery as failed
+  ---
+  duration_ms: 41.058704
+  type: 'test'
+  ...
+# Subtest: timeout status is retryable
+ok 270 - timeout status is retryable
+  ---
+  duration_ms: 30039.607059
+  type: 'test'
+  ...
+# Subtest: 429 status is retryable
+ok 271 - 429 status is retryable
+  ---
+  duration_ms: 30.292592
+  type: 'test'
+  ...
+# Subtest: multiple retries with exponential backoff
+ok 272 - multiple retries with exponential backoff
+  ---
+  duration_ms: 46.902577
+  type: 'test'
+  ...
+# Subtest: max retry attempts marks delivery as failed
+ok 273 - max retry attempts marks delivery as failed
+  ---
+  duration_ms: 46.638837
+  type: 'test'
+  ...
+# Subtest: delivery already delivered cannot be re-delivered
+ok 274 - delivery already delivered cannot be re-delivered
+  ---
+  duration_ms: 30.231094
+  type: 'test'
+  ...
+# Subtest: concurrent delivery attempts claim only once
+ok 275 - concurrent delivery attempts claim only once
+  ---
+  duration_ms: 29.988573
+  type: 'test'
+  ...
+# Subtest: creates webhook endpoint bound to a signing credential reference
+ok 276 - creates webhook endpoint bound to a signing credential reference
+  ---
+  duration_ms: 40.301066
+  type: 'test'
+  ...
+# Subtest: list webhook endpoints by tenant
+ok 277 - list webhook endpoints by tenant
+  ---
+  duration_ms: 31.35266
+  type: 'test'
+  ...
+# Subtest: tenant isolation prevents cross-tenant access
+ok 278 - tenant isolation prevents cross-tenant access
+  ---
+  duration_ms: 11.83129
+  type: 'test'
+  ...
+# Subtest: disable webhook endpoint prevents new deliveries
+ok 279 - disable webhook endpoint prevents new deliveries
+  ---
+  duration_ms: 23.381642
+  type: 'test'
+  ...
+# Subtest: emit event creates deliveries for matching endpoints
+ok 280 - emit event creates deliveries for matching endpoints
+  ---
+  duration_ms: 40.777108
+  type: 'test'
+  ...
+# Subtest: no deliveries created for non-matching events
+ok 281 - no deliveries created for non-matching events
+  ---
+  duration_ms: 14.51539
+  type: 'test'
+  ...
+# Subtest: event emission is tenant-scoped
+ok 282 - event emission is tenant-scoped
+  ---
+  duration_ms: 34.505656
+  type: 'test'
+  ...
+# Subtest: delivery status transitions through state machine
+ok 283 - delivery status transitions through state machine
+  ---
+  duration_ms: 20.615887
+  type: 'test'
+  ...
+# Subtest: replay resets delivery state for failed deliveries
+ok 284 - replay resets delivery state for failed deliveries
+  ---
+  duration_ms: 40.147431
+  type: 'test'
+  ...
+# Subtest: replay respects disabled endpoint
+ok 285 - replay respects disabled endpoint
+  ---
+  duration_ms: 73.561653
+  type: 'test'
+  ...
+# Subtest: list deliveries filtered by endpoint
+ok 286 - list deliveries filtered by endpoint
+  ---
+  duration_ms: 34.894621
+  type: 'test'
+  ...
+# Subtest: restart preserves endpoints and deliveries
+ok 287 - restart preserves endpoints and deliveries
+  ---
+  duration_ms: 16.886883
+  type: 'test'
+  ...
+1..287
+# tests 287
+# suites 0
+# pass 287
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 288165.358756

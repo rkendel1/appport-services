@@ -1,0 +1,10 @@
+caught    count chars, not UTF-16 units (Compute's choice)
+caught    integer means i64 (Compute's choice)
+caught    no reserved transport segments
+caught    allow '://' in routes
+caught    check label before order
+caught    unsorted filtered capabilities
+caught    no JS number respelling
+caught    String(object) without TypeError
+caught    drop details.field
+caught    max length 512 -> 511

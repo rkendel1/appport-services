@@ -1,0 +1,121 @@
+{"links":1,"message":null,"name":"compute fixture: anonymous /v1/ui (services 0.4.10)","status":"available"}
+{"links":9,"message":null,"name":"compute fixture: full contribution (services 0.4.10)","status":"available"}
+{"links":10,"message":null,"name":"services 0.4.12 APPPORT_UI_CONTRIBUTIONS[0]","status":"available"}
+{"links":1,"message":null,"name":"services 0.4.12 anonymous discovery document","status":"available"}
+{"links":2,"message":null,"name":"base document","status":"available"}
+{"links":0,"message":null,"name":"empty surfaces and navigation","status":"empty"}
+{"links":0,"message":"the contribution requires identity, tenant, application, environment from its host, which Compute does not supply","name":"all composition requirements","status":"unsupported"}
+{"links":0,"message":"the contribution requires tenant, tenant from its host, which Compute does not supply","name":"duplicate composition requirement is allowed","status":"unsupported"}
+{"links":2,"message":null,"name":"unknown keys are dropped","status":"available"}
+{"links":2,"message":null,"name":"entities and actions pass through untouched","status":"available"}
+{"links":2,"message":null,"name":"entities that are not arrays are dropped","status":"available"}
+{"links":2,"message":null,"name":"negative and zero order","status":"available"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"order 1e21 is an integer","status":"invalid"}
+{"links":2,"message":null,"name":"order 2^53 is an integer","status":"available"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"order 1.5 rejected","status":"invalid"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"order string rejected","status":"invalid"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"order null rejected","status":"invalid"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"order missing rejected","status":"invalid"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"order boolean rejected","status":"invalid"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"raw order 20.0 (non-canonical number)","status":"invalid"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"raw order 2e1","status":"invalid"}
+{"links":2,"message":null,"name":"raw order 9007199254740993 (beyond 2^53)","status":"available"}
+{"links":0,"message":"the answer was not JSON","name":"raw order 1e400 (overflows to Infinity)","status":"invalid"}
+{"links":0,"message":"navigation n.jobs order must be an integer","name":"raw order -0","status":"invalid"}
+{"links":0,"message":"the answer was not JSON","name":"raw numbers inside entities","status":"invalid"}
+{"links":2,"message":null,"name":"title 512 ASCII","status":"available"}
+{"links":0,"message":"`surface.title` must be a non-empty string","name":"title 513 ASCII rejected","status":"invalid"}
+{"links":2,"message":null,"name":"title 256 astral chars (512 UTF-16 units)","status":"available"}
+{"links":2,"message":null,"name":"title 257 astral chars (514 UTF-16 units) rejected","status":"available"}
+{"links":2,"message":null,"name":"title 400 astral chars (800 units, 400 scalars) rejected","status":"available"}
+{"links":2,"message":null,"name":"label 512 two-byte chars","status":"available"}
+{"links":2,"message":null,"name":"NFC and NFD labels are kept verbatim","status":"available"}
+{"links":2,"message":null,"name":"NFC/NFD surface ids are distinct","status":"available"}
+{"links":2,"message":null,"name":"whitespace-only title accepted","status":"available"}
+{"links":0,"message":"`surface.title` must be a non-empty string","name":"empty title rejected","status":"invalid"}
+{"links":2,"message":null,"name":"markup in text is data","status":"available"}
+{"links":2,"message":null,"name":"control characters in label","status":"available"}
+{"links":0,"message":"the answer was not JSON","name":"lone surrogate in title","status":"invalid"}
+{"links":2,"message":null,"name":"escaped astral pair in title","status":"available"}
+{"links":2,"message":null,"name":"capability: 128-char name","status":"available"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: 129-char name rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: uppercase rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: single segment rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: trailing dot rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: empty segment rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: digit first rejected","status":"invalid"}
+{"links":2,"message":null,"name":"capability: digits after first allowed","status":"available"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: hyphen rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: underscore rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: non-ASCII rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: reserved segment http rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: reserved segment first rejected","status":"invalid"}
+{"links":2,"message":null,"name":"capability: reserved word as substring allowed","status":"available"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: number rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capability: null rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capabilities missing rejected","status":"invalid"}
+{"links":0,"message":"surface keys has invalid capability references","name":"capabilities not an array rejected","status":"invalid"}
+{"links":2,"message":null,"name":"duplicate capability in a surface kept","status":"available"}
+{"links":2,"message":null,"name":"route \"/\"","status":"available"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"//evil.example/x\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"/a://b\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"https://evil.example/\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"relative\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"javascript:alert(1)\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"/ok/../../escape\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"/a b\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"/a\\\\b\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"/a?x=1\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"/a#frag\"","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"route \"/a\\u0000\"","status":"invalid"}
+{"links":2,"message":null,"name":"route \"/café\"","status":"available"}
+{"links":0,"message":"the UI document must be an object","name":"top-level null rejected","status":"invalid"}
+{"links":0,"message":"the UI document must be an object","name":"top-level array rejected","status":"invalid"}
+{"links":0,"message":"the UI document must be an object","name":"top-level string rejected","status":"invalid"}
+{"links":0,"message":"the UI document must be an object","name":"top-level number rejected","status":"invalid"}
+{"links":0,"message":"the UI document must be an object","name":"top-level true rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol missing rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol null rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol number rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol 1e21 rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol boolean rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol AppPort/ui/2: expected AppPort/ui/1","name":"protocol AppPort/ui/2 rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol appport/ui/1: expected AppPort/ui/1","name":"protocol lowercase rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol nested array rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol object rejected","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol object with own toString (JS TypeError)","status":"invalid"}
+{"links":0,"message":"unsupported UI protocol (none): expected AppPort/ui/1","name":"protocol array holding such an object (JS TypeError)","status":"invalid"}
+{"links":0,"message":"`product` must be an object","name":"product missing","status":"invalid"}
+{"links":0,"message":"`product` must be an object","name":"product array","status":"invalid"}
+{"links":0,"message":"`product.id` must be a non-empty string","name":"product.id missing","status":"invalid"}
+{"links":0,"message":"`product.version` must be a non-empty string","name":"product.version number","status":"invalid"}
+{"links":0,"message":"`product.id` must be a non-empty string","name":"product.id 513 chars","status":"invalid"}
+{"links":0,"message":"`surfaces` and `navigation` must be arrays","name":"surfaces missing","status":"invalid"}
+{"links":0,"message":"`surfaces` and `navigation` must be arrays","name":"navigation object","status":"invalid"}
+{"links":0,"message":"surface 1 must be an object","name":"surface null","status":"invalid"}
+{"links":0,"message":"surface 1 must be an object","name":"surface array","status":"invalid"}
+{"links":0,"message":"`surface.id` must be a non-empty string","name":"surface id number","status":"invalid"}
+{"links":0,"message":"navigation 1 must be an object","name":"navigation entry string","status":"invalid"}
+{"links":0,"message":"`navigation.surface` must be a non-empty string","name":"navigation surface missing","status":"invalid"}
+{"links":0,"message":"`navigation.group` must be a non-empty string","name":"navigation group missing","status":"invalid"}
+{"links":0,"message":"duplicate surface id: keys","name":"duplicate surface id","status":"invalid"}
+{"links":0,"message":"duplicate navigation id: n.jobs","name":"duplicate navigation id","status":"invalid"}
+{"links":0,"message":"navigation references an unknown surface","name":"unknown navigation surface","status":"invalid"}
+{"links":0,"message":"`composition.requires` must be an array","name":"composition missing","status":"invalid"}
+{"links":0,"message":"`composition.requires` must be an array","name":"composition null","status":"invalid"}
+{"links":0,"message":"`composition.requires` must be an array","name":"composition.requires missing","status":"invalid"}
+{"links":0,"message":"unsupported composition requirements","name":"composition.requires unknown","status":"invalid"}
+{"links":0,"message":"unsupported composition requirements","name":"composition.requires number","status":"invalid"}
+{"links":0,"message":"`composition.requires` must be an array","name":"composition.requires string","status":"invalid"}
+{"links":0,"message":"`product.id` must be a non-empty string","name":"order: bad product and bad surfaces","status":"invalid"}
+{"links":0,"message":"surface keys has a malformed route","name":"order: bad route then bad capabilities","status":"invalid"}
+{"links":0,"message":"duplicate surface id: keys","name":"order: duplicate surface and bad nav","status":"invalid"}
+{"links":0,"message":"`navigation.label` must be a non-empty string","name":"order: nav order before label","status":"invalid"}
+{"links":0,"message":"navigation references an unknown surface","name":"order: unknown surface vs bad composition","status":"invalid"}
+{"links":0,"message":"`surface.title` must be a non-empty string","name":"order: second surface invalid and duplicate nav","status":"invalid"}
+{"links":2,"message":null,"name":"duplicate key: last protocol wins","status":"available"}
+{"links":2,"message":null,"name":"__proto__ key is plain data","status":"available"}
+{"links":2,"message":null,"name":"whitespace and escapes","status":"available"}
+{"links":64,"message":null,"name":"64 surfaces (Compute MAX_LINKS)","status":"available"}
+{"links":0,"message":"more than 64 navigation entries","name":"65 surfaces (over Compute MAX_LINKS)","status":"invalid"}
+{"links":0,"message":"more than 64 navigation entries","name":"1000 surfaces","status":"invalid"}

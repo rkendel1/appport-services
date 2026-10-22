@@ -1,0 +1,8 @@
+secret bytes          outbound (HMAC over body)        inbound (HMAC over ts.body)
+1                  InvalidCredential                  InvalidCredential
+17                  InvalidCredential                  InvalidCredential
+33                  InvalidCredential                  InvalidCredential
+64                  InvalidCredential                  InvalidCredential
+65                           accepted                           accepted
+66                           accepted                           accepted
+101                           accepted                           accepted

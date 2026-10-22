@@ -1,0 +1,615 @@
+{
+ "both_accept": [
+  {
+   "name": "compute fixture: anonymous /v1/ui (services 0.4.10)",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "compute fixture: full contribution (services 0.4.10)",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "services 0.4.12 APPPORT_UI_CONTRIBUTIONS[0]",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "services 0.4.12 anonymous discovery document",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "base document",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "empty surfaces and navigation",
+   "compute": "empty",
+   "message": null
+  },
+  {
+   "name": "unknown keys are dropped",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "entities and actions pass through untouched",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "entities that are not arrays are dropped",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "negative and zero order",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "order 2^53 is an integer",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "raw order 9007199254740993 (beyond 2^53)",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "title 512 ASCII",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "title 256 astral chars (512 UTF-16 units)",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "label 512 two-byte chars",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "NFC and NFD labels are kept verbatim",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "NFC/NFD surface ids are distinct",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "whitespace-only title accepted",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "markup in text is data",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "control characters in label",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "escaped astral pair in title",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "capability: 128-char name",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "capability: digits after first allowed",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "capability: reserved word as substring allowed",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "duplicate capability in a surface kept",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "route \"/\"",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "route \"/café\"",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "duplicate key: last protocol wins",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "__proto__ key is plain data",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "whitespace and escapes",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "64 surfaces (Compute MAX_LINKS)",
+   "compute": "available",
+   "message": null
+  }
+ ],
+ "both_reject": [
+  {
+   "name": "order 1.5 rejected",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "order string rejected",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "order null rejected",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "order missing rejected",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "order boolean rejected",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "raw order 1e400 (overflows to Infinity)",
+   "compute": "invalid",
+   "message": "the answer was not JSON"
+  },
+  {
+   "name": "title 513 ASCII rejected",
+   "compute": "invalid",
+   "message": "`surface.title` must be a non-empty string"
+  },
+  {
+   "name": "empty title rejected",
+   "compute": "invalid",
+   "message": "`surface.title` must be a non-empty string"
+  },
+  {
+   "name": "capability: 129-char name rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: uppercase rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: single segment rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: trailing dot rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: empty segment rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: digit first rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: hyphen rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: underscore rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: non-ASCII rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: reserved segment http rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: reserved segment first rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: number rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capability: null rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capabilities missing rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "capabilities not an array rejected",
+   "compute": "invalid",
+   "message": "surface keys has invalid capability references"
+  },
+  {
+   "name": "route \"//evil.example/x\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"/a://b\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"https://evil.example/\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"relative\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"javascript:alert(1)\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "top-level null rejected",
+   "compute": "invalid",
+   "message": "the UI document must be an object"
+  },
+  {
+   "name": "top-level array rejected",
+   "compute": "invalid",
+   "message": "the UI document must be an object"
+  },
+  {
+   "name": "top-level string rejected",
+   "compute": "invalid",
+   "message": "the UI document must be an object"
+  },
+  {
+   "name": "top-level number rejected",
+   "compute": "invalid",
+   "message": "the UI document must be an object"
+  },
+  {
+   "name": "top-level true rejected",
+   "compute": "invalid",
+   "message": "the UI document must be an object"
+  },
+  {
+   "name": "protocol missing rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol null rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol number rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol 1e21 rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol boolean rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol AppPort/ui/2 rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol AppPort/ui/2: expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol lowercase rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol appport/ui/1: expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol nested array rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol object rejected",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol object with own toString (JS TypeError)",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "protocol array holding such an object (JS TypeError)",
+   "compute": "invalid",
+   "message": "unsupported UI protocol (none): expected AppPort/ui/1"
+  },
+  {
+   "name": "product missing",
+   "compute": "invalid",
+   "message": "`product` must be an object"
+  },
+  {
+   "name": "product array",
+   "compute": "invalid",
+   "message": "`product` must be an object"
+  },
+  {
+   "name": "product.id missing",
+   "compute": "invalid",
+   "message": "`product.id` must be a non-empty string"
+  },
+  {
+   "name": "product.version number",
+   "compute": "invalid",
+   "message": "`product.version` must be a non-empty string"
+  },
+  {
+   "name": "product.id 513 chars",
+   "compute": "invalid",
+   "message": "`product.id` must be a non-empty string"
+  },
+  {
+   "name": "surfaces missing",
+   "compute": "invalid",
+   "message": "`surfaces` and `navigation` must be arrays"
+  },
+  {
+   "name": "navigation object",
+   "compute": "invalid",
+   "message": "`surfaces` and `navigation` must be arrays"
+  },
+  {
+   "name": "surface null",
+   "compute": "invalid",
+   "message": "surface 1 must be an object"
+  },
+  {
+   "name": "surface array",
+   "compute": "invalid",
+   "message": "surface 1 must be an object"
+  },
+  {
+   "name": "surface id number",
+   "compute": "invalid",
+   "message": "`surface.id` must be a non-empty string"
+  },
+  {
+   "name": "navigation entry string",
+   "compute": "invalid",
+   "message": "navigation 1 must be an object"
+  },
+  {
+   "name": "navigation surface missing",
+   "compute": "invalid",
+   "message": "`navigation.surface` must be a non-empty string"
+  },
+  {
+   "name": "navigation group missing",
+   "compute": "invalid",
+   "message": "`navigation.group` must be a non-empty string"
+  },
+  {
+   "name": "duplicate surface id",
+   "compute": "invalid",
+   "message": "duplicate surface id: keys"
+  },
+  {
+   "name": "duplicate navigation id",
+   "compute": "invalid",
+   "message": "duplicate navigation id: n.jobs"
+  },
+  {
+   "name": "unknown navigation surface",
+   "compute": "invalid",
+   "message": "navigation references an unknown surface"
+  },
+  {
+   "name": "composition missing",
+   "compute": "invalid",
+   "message": "`composition.requires` must be an array"
+  },
+  {
+   "name": "composition null",
+   "compute": "invalid",
+   "message": "`composition.requires` must be an array"
+  },
+  {
+   "name": "composition.requires missing",
+   "compute": "invalid",
+   "message": "`composition.requires` must be an array"
+  },
+  {
+   "name": "composition.requires unknown",
+   "compute": "invalid",
+   "message": "unsupported composition requirements"
+  },
+  {
+   "name": "composition.requires number",
+   "compute": "invalid",
+   "message": "unsupported composition requirements"
+  },
+  {
+   "name": "composition.requires string",
+   "compute": "invalid",
+   "message": "`composition.requires` must be an array"
+  },
+  {
+   "name": "order: bad product and bad surfaces",
+   "compute": "invalid",
+   "message": "`product.id` must be a non-empty string"
+  },
+  {
+   "name": "order: bad route then bad capabilities",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "order: duplicate surface and bad nav",
+   "compute": "invalid",
+   "message": "duplicate surface id: keys"
+  },
+  {
+   "name": "order: nav order before label",
+   "compute": "invalid",
+   "message": "`navigation.label` must be a non-empty string"
+  },
+  {
+   "name": "order: unknown surface vs bad composition",
+   "compute": "invalid",
+   "message": "navigation references an unknown surface"
+  },
+  {
+   "name": "order: second surface invalid and duplicate nav",
+   "compute": "invalid",
+   "message": "`surface.title` must be a non-empty string"
+  }
+ ],
+ "compute_stricter": [
+  {
+   "name": "all composition requirements",
+   "compute": "unsupported",
+   "message": "the contribution requires identity, tenant, application, environment from its host, which Compute does not supply"
+  },
+  {
+   "name": "duplicate composition requirement is allowed",
+   "compute": "unsupported",
+   "message": "the contribution requires tenant, tenant from its host, which Compute does not supply"
+  },
+  {
+   "name": "order 1e21 is an integer",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "raw order 20.0 (non-canonical number)",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "raw order 2e1",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "raw order -0",
+   "compute": "invalid",
+   "message": "navigation n.jobs order must be an integer"
+  },
+  {
+   "name": "raw numbers inside entities",
+   "compute": "invalid",
+   "message": "the answer was not JSON"
+  },
+  {
+   "name": "lone surrogate in title",
+   "compute": "invalid",
+   "message": "the answer was not JSON"
+  },
+  {
+   "name": "route \"/ok/../../escape\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"/a b\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"/a\\\\b\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"/a?x=1\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"/a#frag\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "route \"/a\\u0000\"",
+   "compute": "invalid",
+   "message": "surface keys has a malformed route"
+  },
+  {
+   "name": "65 surfaces (over Compute MAX_LINKS)",
+   "compute": "invalid",
+   "message": "more than 64 navigation entries"
+  },
+  {
+   "name": "1000 surfaces",
+   "compute": "invalid",
+   "message": "more than 64 navigation entries"
+  }
+ ],
+ "compute_more_lenient": [
+  {
+   "name": "title 257 astral chars (514 UTF-16 units) rejected",
+   "compute": "available",
+   "message": null
+  },
+  {
+   "name": "title 400 astral chars (800 units, 400 scalars) rejected",
+   "compute": "available",
+   "message": null
+  }
+ ]
+}

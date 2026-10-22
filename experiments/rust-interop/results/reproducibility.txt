@@ -1,0 +1,5 @@
+a6951b30d0bc3739d50cafceb5592e960d7a054829cfcc98b308ae47fb12fdab  build/ui-contract.wasm
+6cc20265cf62edefd25d426c820b15e10d849bf84c9349a51df757a945e4b1e1  build/ui-contract.linux-x64-gnu.node
+rebuild (deps cached in registry, clean target): wasm 6.249455037s napi 19.947291126s
+a6951b30d0bc3739d50cafceb5592e960d7a054829cfcc98b308ae47fb12fdab  target/wasm32-unknown-unknown/release/appport_ui_contract_wasm.wasm
+6cc20265cf62edefd25d426c820b15e10d849bf84c9349a51df757a945e4b1e1  target/release/libappport_ui_contract_napi.so
