@@ -1,0 +1,331 @@
+{
+ "corpus": "api-key-restrictions-1",
+ "reference": "@appport/services",
+ "casesSha256": "8ceb0d6dd39b24ed03f2174e8bae172c48078c2ba58f088a50b4b2a8e7611b1f",
+ "results": {
+  "akr1.normalize.capabilities-only": {
+   "exact": "{\"ok\":true,\"value\":{\"capabilities\":[\"files.read\"]}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.normalize.deduplicated-and-sorted": {
+   "exact": "{\"ok\":true,\"value\":{\"capabilities\":[\"files.read\",\"jobs.read\"]}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.normalize.empty-capabilities": {
+   "exact": "{\"ok\":true,\"value\":{\"capabilities\":[]}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.normalize.resource-rule-type-id-attributes": {
+   "exact": "{\"ok\":true,\"value\":{\"capabilities\":[\"files.read\"],\"resources\":[{\"attributes\":{\"folder\":\"a\",\"owner\":\"u1\"},\"id\":\"f1\",\"type\":\"file\"}]}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.normalize.attributes-key-order-is-not-semantic": {
+   "exact": "{\"ok\":true,\"value\":{\"capabilities\":[\"files.read\"],\"resources\":[{\"attributes\":{\"B\":\"1\",\"_\":\"3\",\"a\":\"0\",\"b\":\"2\"}}]}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.normalize.unknown-capability": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.capabilities: \\\"files.admin\\\" is not an invocable capability in the service manifest\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.non-invocable-capability": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.capabilities: \\\"webhooks.deliver\\\" is not an invocable capability in the service manifest\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.legacy-admin-scope": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.capabilities: \\\"files.read:any\\\" is not an invocable capability in the service manifest\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.unknown-member": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.scopes is not supported\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.not-an-object": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions must be an object\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.null": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions must be an object\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.capabilities-missing": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.capabilities must be an array of capability names\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.capability-not-a-string": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.capabilities: \\\"1\\\" is not an invocable capability in the service manifest\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.64-capabilities": {
+   "exact": "{\"ok\":true,\"value\":{\"capabilities\":[\"files.read\"]}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.normalize.65-capabilities": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.capabilities allows at most 64 entries\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.resources-not-array": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources must be an array of resource rules\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.empty-rule": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources[0] must set at least one of type, id, or attributes\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.unknown-resource-type": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources[0].type: \\\"everything\\\" is not a resource type in the service manifest\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.rule-unknown-member": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources[0].owner is not supported\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.rule-id-256": {
+   "exact": "{\"ok\":true,\"value\":{\"capabilities\":[\"files.read\"],\"resources\":[{\"id\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.normalize.rule-id-257": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources[0].id must be a non-empty string of at most 256 characters\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.rule-id-whitespace": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources[0].id must be a non-empty string of at most 256 characters\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.attribute-not-string": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources[0].attributes.owner must be a non-empty string of at most 256 characters\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.16-attributes": {
+   "exact": "{\"ok\":true,\"value\":{\"capabilities\":[\"files.read\"],\"resources\":[{\"attributes\":{\"k0\":\"v\",\"k1\":\"v\",\"k10\":\"v\",\"k11\":\"v\",\"k12\":\"v\",\"k13\":\"v\",\"k14\":\"v\",\"k15\":\"v\",\"k2\":\"v\",\"k3\":\"v\",\"k4\":\"v\",\"k5\":\"v\",\"k6\":\"v\",\"k7\":\"v\",\"k8\":\"v\",\"k9\":\"v\"}}]}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.normalize.17-attributes": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources[0].attributes allows at most 16 entries\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.normalize.65-rules": {
+   "exact": "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"restrictions.resources allows at most 64 rules\"},\"ok\":false}",
+   "verdict": "reject",
+   "code": "INVALID_REQUEST",
+   "field": null
+  },
+  "akr1.permit.unrestricted": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.listed-capability": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.unlisted-capability": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.empty-capabilities-deny-all": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.matching-rule": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.attribute-mismatch": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.missing-attributes": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.type-mismatch": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.id-rule": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.id-rule-other-id": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.permit.any-of-several-rules": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.within.unrestricted-parent": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.within.unrestricted-child-under-restricted-parent": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.within.subset": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.within.extra-capability": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.within.child-drops-resources": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.within.child-rule-narrower": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.within.child-rule-broader": {
+   "exact": "{\"ok\":true,\"value\":false}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "akr1.within.parent-without-resources": {
+   "exact": "{\"ok\":true,\"value\":true}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  }
+ },
+ "history": [
+  {
+   "reference": "@appport/services@0.4.12 (source)",
+   "reason": "initial corpus, every case reviewed",
+   "changed": [
+    "akr1.normalize.capabilities-only",
+    "akr1.normalize.deduplicated-and-sorted",
+    "akr1.normalize.empty-capabilities",
+    "akr1.normalize.resource-rule-type-id-attributes",
+    "akr1.normalize.attributes-key-order-is-not-semantic",
+    "akr1.normalize.unknown-capability",
+    "akr1.normalize.non-invocable-capability",
+    "akr1.normalize.legacy-admin-scope",
+    "akr1.normalize.unknown-member",
+    "akr1.normalize.not-an-object",
+    "akr1.normalize.null",
+    "akr1.normalize.capabilities-missing",
+    "akr1.normalize.capability-not-a-string",
+    "akr1.normalize.64-capabilities",
+    "akr1.normalize.65-capabilities",
+    "akr1.normalize.resources-not-array",
+    "akr1.normalize.empty-rule",
+    "akr1.normalize.unknown-resource-type",
+    "akr1.normalize.rule-unknown-member",
+    "akr1.normalize.rule-id-256",
+    "akr1.normalize.rule-id-257",
+    "akr1.normalize.rule-id-whitespace",
+    "akr1.normalize.attribute-not-string",
+    "akr1.normalize.16-attributes",
+    "akr1.normalize.17-attributes",
+    "akr1.normalize.65-rules",
+    "akr1.permit.unrestricted",
+    "akr1.permit.listed-capability",
+    "akr1.permit.unlisted-capability",
+    "akr1.permit.empty-capabilities-deny-all",
+    "akr1.permit.matching-rule",
+    "akr1.permit.attribute-mismatch",
+    "akr1.permit.missing-attributes",
+    "akr1.permit.type-mismatch",
+    "akr1.permit.id-rule",
+    "akr1.permit.id-rule-other-id",
+    "akr1.permit.any-of-several-rules",
+    "akr1.within.unrestricted-parent",
+    "akr1.within.unrestricted-child-under-restricted-parent",
+    "akr1.within.subset",
+    "akr1.within.extra-capability",
+    "akr1.within.child-drops-resources",
+    "akr1.within.child-rule-narrower",
+    "akr1.within.child-rule-broader",
+    "akr1.within.parent-without-resources"
+   ],
+   "removed": []
+  }
+ ]
+}

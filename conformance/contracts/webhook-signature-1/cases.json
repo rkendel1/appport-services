@@ -1,0 +1,321 @@
+{
+ "contract": "@appport/services webhook signatures",
+ "corpus": "webhook-signature-1",
+ "corpusVersion": "1.0.0",
+ "operations": {
+  "outbound": "signWebhookPayload(secret, body)",
+  "inbound": "signWebhookPayload(secret, `${timestamp}.${body}`)"
+ },
+ "cases": [
+  {
+   "id": "wh1.outbound.secret-len-1",
+   "class": "security",
+   "scheme": "outbound",
+   "title": "outbound, secret 1 bytes",
+   "input": {
+    "secret": "k",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.outbound.secret-len-32",
+   "class": "security",
+   "scheme": "outbound",
+   "title": "outbound, secret 32 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.outbound.secret-len-63",
+   "class": "security",
+   "scheme": "outbound",
+   "title": "outbound, secret 63 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.outbound.secret-len-64",
+   "class": "security",
+   "scheme": "outbound",
+   "title": "outbound, secret 64 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.outbound.secret-len-65",
+   "class": "valid",
+   "scheme": "outbound",
+   "title": "outbound, secret 65 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ]
+  },
+  {
+   "id": "wh1.outbound.secret-len-200",
+   "class": "valid",
+   "scheme": "outbound",
+   "title": "outbound, secret 200 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ]
+  },
+  {
+   "id": "wh1.outbound.secret-utf8-multibyte-40b",
+   "class": "security",
+   "scheme": "outbound",
+   "title": "outbound, secret 40 bytes",
+   "input": {
+    "secret": "éééééééééééééééééééé",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.outbound.empty-body",
+   "class": "boundary",
+   "scheme": "outbound",
+   "title": "outbound, empty body",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104"
+   ]
+  },
+  {
+   "id": "wh1.outbound.body-bytes-not-reserialized",
+   "class": "boundary",
+   "scheme": "outbound",
+   "title": "outbound, whitespace-significant body",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{ \"a\" : 1 }\n",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "sign-raw-body-bytes"
+   ]
+  },
+  {
+   "id": "wh1.inbound.secret-len-1",
+   "class": "security",
+   "scheme": "inbound",
+   "title": "inbound, secret 1 bytes",
+   "input": {
+    "secret": "k",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.inbound.secret-len-32",
+   "class": "security",
+   "scheme": "inbound",
+   "title": "inbound, secret 32 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.inbound.secret-len-63",
+   "class": "security",
+   "scheme": "inbound",
+   "title": "inbound, secret 63 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.inbound.secret-len-64",
+   "class": "security",
+   "scheme": "inbound",
+   "title": "inbound, secret 64 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.inbound.secret-len-65",
+   "class": "valid",
+   "scheme": "inbound",
+   "title": "inbound, secret 65 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ]
+  },
+  {
+   "id": "wh1.inbound.secret-len-200",
+   "class": "valid",
+   "scheme": "inbound",
+   "title": "inbound, secret 200 bytes",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ]
+  },
+  {
+   "id": "wh1.inbound.secret-utf8-multibyte-40b",
+   "class": "security",
+   "scheme": "inbound",
+   "title": "inbound, secret 40 bytes",
+   "input": {
+    "secret": "éééééééééééééééééééé",
+    "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"}}",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104",
+    "hex-lowercase",
+    "secret-is-utf8-bytes-unhashed"
+   ],
+   "security": {
+    "rationale": "Secrets of 64 bytes or less are used as the HMAC key directly (RFC 2104). An implementation that pre-hashes the key (sha256(secret)) disagrees here and rejects every genuine signature (assessment F-01)."
+   }
+  },
+  {
+   "id": "wh1.inbound.empty-body",
+   "class": "boundary",
+   "scheme": "inbound",
+   "title": "inbound, empty body",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "hmac-sha256-rfc2104"
+   ]
+  },
+  {
+   "id": "wh1.inbound.body-bytes-not-reserialized",
+   "class": "boundary",
+   "scheme": "inbound",
+   "title": "inbound, whitespace-significant body",
+   "input": {
+    "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "body": "{ \"a\" : 1 }\n",
+    "timestamp": "2026-09-10T22:30:00.000Z"
+   },
+   "requirements": [
+    "sign-raw-body-bytes"
+   ]
+  }
+ ]
+}
