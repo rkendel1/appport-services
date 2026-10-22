@@ -1,0 +1,12 @@
+not ok 1 - protocol 2: a ready line, every answer echoes its request id, and failures carry a category
+  error: 'test timed out after 30000ms'
+not ok 2 - revocation and the other "no such item" operations report NOT_FOUND instead of a null success
+  error: 'test timed out after 30000ms'
+not ok 3 - output a dependency prints never reaches the response stream
+not ok 4 - the bridge exits when its owner closes stdin, even if a dependency holds a handle open
+  error: 'test timed out after 30000ms'
+not ok 5 - per-application state is bounded under sustained application churn
+  error: 'test timed out after 600000ms'
+# tests 5
+# pass 0
+# fail 1

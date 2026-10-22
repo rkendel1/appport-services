@@ -1,0 +1,421 @@
+{
+ "contract": "capability-name-1",
+ "reference": {
+  "package": "@appport/protocol",
+  "version": "1.0.3"
+ },
+ "casesSha256": "31658d1d3f4724540c7268bc97db05e0c683986330d5f84d9cca608c8d4a4a59",
+ "results": {
+  "name1.name.documents-save-d21471": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":true}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.crm-contacts-read-4446de": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":true}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.a1-b2c3-9553b1": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":true}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.a-https2-d46a08": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":true}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-581665": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":true}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-422f5f": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be at most 128 characters\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.documents-9b16b4": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.uc-documents-save-7a3d59": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.documents-uc-save-1ce7f0": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.crm-us-x-read-06fef3": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.crm-read-all-1d4354": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.1crm-read-d0d53d": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.a-dotdot-b-f62b42": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.lead-dot-a-b-1df05b": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.a-b-trail-dot-3c97b3": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.empty-e3b0c4": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be a non-empty string\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.sp-a-b-06b133": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.http-get-842398": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must not contain the transport segment \\\"http\\\"\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.a-grpc-6eac73": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must not contain the transport segment \\\"grpc\\\"\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.inprocess-call-6485a3": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must not contain the transport segment \\\"inprocess\\\"\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.caf-read-638e12": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.a-bnul-b3dcef": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.documents-save-1-e2e103": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.jobs-9-enqueue-2f5ea8": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.appport-jobs-0-4-5-enqueue-c8982a": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.api-us-keys-create-45bb88": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.name.webhooks-create-uc-webhook-uc--b05bdc": {
+   "exact": "{\"ok\":true,\"value\":{\"valid\":false,\"reason\":\"name must be lowercase <namespace>.<operation> using ASCII letters and digits\"}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-1-e2e103": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":1}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-12-a7eb6d": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":12}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-d21471": {
+   "exact": "{\"ok\":true,\"value\":null}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-0-ce84c1": {
+   "exact": "{\"ok\":true,\"value\":null}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-1-4be853": {
+   "exact": "{\"ok\":true,\"value\":null}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-1-0-3c4ae1": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":1}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-01-605698": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":1}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-0x1-19ce4d": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":1}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-1e0-58e835": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":1}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-1-c5f8f2": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":1}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-sp-1-e3dbdb": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":1}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-1-sp-2bf46a": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":1}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-v1-270c79": {
+   "exact": "{\"ok\":true,\"value\":null}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-1c8e89": {
+   "exact": "{\"ok\":true,\"value\":null}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.a-b-c-1-dd819b": {
+   "exact": "{\"ok\":true,\"value\":null}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.jobs-9-enqueue-2f5ea8": {
+   "exact": "{\"ok\":true,\"value\":null}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  },
+  "name1.ref.documents-save-900719925474099-68447c": {
+   "exact": "{\"ok\":true,\"value\":{\"name\":\"documents.save\",\"version\":9007199254740992}}",
+   "verdict": "accept",
+   "code": null,
+   "field": null
+  }
+ },
+ "history": [
+  {
+   "at": "2026-10-22T08:42:13.249Z",
+   "reference": {
+    "package": "@appport/protocol",
+    "version": "1.0.3"
+   },
+   "reason": "initial corpus",
+   "changed": [
+    "name1.valid.name.documents-save-d21471",
+    "name1.valid.name.crm-contacts-read-4446de",
+    "name1.valid.name.a1-b2c3-9553b1",
+    "name1.valid.name.a-https2-d46a08",
+    "name1.boundary.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-581665",
+    "name1.boundary.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-422f5f",
+    "name1.invalid.name.documents-9b16b4",
+    "name1.invalid.name.uc-documents-save-7a3d59",
+    "name1.invalid.name.documents-uc-save-1ce7f0",
+    "name1.invalid.name.crm-us-x-read-06fef3",
+    "name1.invalid.name.crm-read-all-1d4354",
+    "name1.invalid.name.1crm-read-d0d53d",
+    "name1.invalid.name.a-dotdot-b-f62b42",
+    "name1.invalid.name.lead-dot-a-b-1df05b",
+    "name1.invalid.name.a-b-trail-dot-3c97b3",
+    "name1.invalid.name.empty-e3b0c4",
+    "name1.invalid.name.sp-a-b-06b133",
+    "name1.security.name.http-get-842398",
+    "name1.security.name.a-grpc-6eac73",
+    "name1.security.name.inprocess-call-6485a3",
+    "name1.boundary.name.caf-read-638e12",
+    "name1.boundary.name.a-bnul-b3dcef",
+    "name1.invalid.name.documents-save-1-e2e103",
+    "name1.invalid.name.jobs-9-enqueue-2f5ea8",
+    "name1.invalid.name.appport-jobs-0-4-5-enqueue-c8982a",
+    "name1.invalid.name.api-us-keys-create-45bb88",
+    "name1.invalid.name.webhooks-create-uc-webhook-uc--b05bdc",
+    "name1.valid.ref.documents-save-1-e2e103",
+    "name1.valid.ref.documents-save-12-a7eb6d",
+    "name1.invalid.ref.documents-save-d21471",
+    "name1.invalid.ref.documents-save-0-ce84c1",
+    "name1.invalid.ref.documents-save-1-4be853",
+    "name1.invalid.ref.documents-save-1-0-3c4ae1",
+    "name1.invalid.ref.documents-save-01-605698",
+    "name1.invalid.ref.documents-save-v1-270c79",
+    "name1.invalid.ref.documents-save-1c8e89",
+    "name1.boundary.ref.a-b-c-1-dd819b",
+    "name1.invalid.ref.jobs-9-enqueue-2f5ea8",
+    "name1.boundary.ref.documents-save-900719925474099-68447c"
+   ],
+   "removed": []
+  },
+  {
+   "at": "2026-10-22T08:42:52.062Z",
+   "reference": {
+    "package": "@appport/protocol",
+    "version": "1.0.3"
+   },
+   "reason": "Ids no longer encode the class (ids must survive reclassification); name corpus: non-canonical ref spellings reclassified as boundary with decisionRequired; added 5 ref spellings",
+   "changed": [
+    "name1.name.documents-save-d21471",
+    "name1.name.crm-contacts-read-4446de",
+    "name1.name.a1-b2c3-9553b1",
+    "name1.name.a-https2-d46a08",
+    "name1.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-581665",
+    "name1.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-422f5f",
+    "name1.name.documents-9b16b4",
+    "name1.name.uc-documents-save-7a3d59",
+    "name1.name.documents-uc-save-1ce7f0",
+    "name1.name.crm-us-x-read-06fef3",
+    "name1.name.crm-read-all-1d4354",
+    "name1.name.1crm-read-d0d53d",
+    "name1.name.a-dotdot-b-f62b42",
+    "name1.name.lead-dot-a-b-1df05b",
+    "name1.name.a-b-trail-dot-3c97b3",
+    "name1.name.empty-e3b0c4",
+    "name1.name.sp-a-b-06b133",
+    "name1.name.http-get-842398",
+    "name1.name.a-grpc-6eac73",
+    "name1.name.inprocess-call-6485a3",
+    "name1.name.caf-read-638e12",
+    "name1.name.a-bnul-b3dcef",
+    "name1.name.documents-save-1-e2e103",
+    "name1.name.jobs-9-enqueue-2f5ea8",
+    "name1.name.appport-jobs-0-4-5-enqueue-c8982a",
+    "name1.name.api-us-keys-create-45bb88",
+    "name1.name.webhooks-create-uc-webhook-uc--b05bdc",
+    "name1.ref.documents-save-1-e2e103",
+    "name1.ref.documents-save-12-a7eb6d",
+    "name1.ref.documents-save-d21471",
+    "name1.ref.documents-save-0-ce84c1",
+    "name1.ref.documents-save-1-4be853",
+    "name1.ref.documents-save-1-0-3c4ae1",
+    "name1.ref.documents-save-01-605698",
+    "name1.ref.documents-save-0x1-19ce4d",
+    "name1.ref.documents-save-1e0-58e835",
+    "name1.ref.documents-save-1-c5f8f2",
+    "name1.ref.documents-save-sp-1-e3dbdb",
+    "name1.ref.documents-save-1-sp-2bf46a",
+    "name1.ref.documents-save-v1-270c79",
+    "name1.ref.documents-save-1c8e89",
+    "name1.ref.a-b-c-1-dd819b",
+    "name1.ref.jobs-9-enqueue-2f5ea8",
+    "name1.ref.documents-save-900719925474099-68447c"
+   ],
+   "removed": [
+    "name1.valid.name.documents-save-d21471",
+    "name1.valid.name.crm-contacts-read-4446de",
+    "name1.valid.name.a1-b2c3-9553b1",
+    "name1.valid.name.a-https2-d46a08",
+    "name1.boundary.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-581665",
+    "name1.boundary.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-422f5f",
+    "name1.invalid.name.documents-9b16b4",
+    "name1.invalid.name.uc-documents-save-7a3d59",
+    "name1.invalid.name.documents-uc-save-1ce7f0",
+    "name1.invalid.name.crm-us-x-read-06fef3",
+    "name1.invalid.name.crm-read-all-1d4354",
+    "name1.invalid.name.1crm-read-d0d53d",
+    "name1.invalid.name.a-dotdot-b-f62b42",
+    "name1.invalid.name.lead-dot-a-b-1df05b",
+    "name1.invalid.name.a-b-trail-dot-3c97b3",
+    "name1.invalid.name.empty-e3b0c4",
+    "name1.invalid.name.sp-a-b-06b133",
+    "name1.security.name.http-get-842398",
+    "name1.security.name.a-grpc-6eac73",
+    "name1.security.name.inprocess-call-6485a3",
+    "name1.boundary.name.caf-read-638e12",
+    "name1.boundary.name.a-bnul-b3dcef",
+    "name1.invalid.name.documents-save-1-e2e103",
+    "name1.invalid.name.jobs-9-enqueue-2f5ea8",
+    "name1.invalid.name.appport-jobs-0-4-5-enqueue-c8982a",
+    "name1.invalid.name.api-us-keys-create-45bb88",
+    "name1.invalid.name.webhooks-create-uc-webhook-uc--b05bdc",
+    "name1.valid.ref.documents-save-1-e2e103",
+    "name1.valid.ref.documents-save-12-a7eb6d",
+    "name1.invalid.ref.documents-save-d21471",
+    "name1.invalid.ref.documents-save-0-ce84c1",
+    "name1.invalid.ref.documents-save-1-4be853",
+    "name1.invalid.ref.documents-save-1-0-3c4ae1",
+    "name1.invalid.ref.documents-save-01-605698",
+    "name1.invalid.ref.documents-save-v1-270c79",
+    "name1.invalid.ref.documents-save-1c8e89",
+    "name1.boundary.ref.a-b-c-1-dd819b",
+    "name1.invalid.ref.jobs-9-enqueue-2f5ea8",
+    "name1.boundary.ref.documents-save-900719925474099-68447c"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{"services":"0.4.12","calls_so_far":50,"child_rss_kb":99296,"distinct_apps":false,"errors":0,"round":0,"round_ms":821,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":100,"child_rss_kb":100248,"distinct_apps":false,"errors":0,"round":1,"round_ms":831,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":150,"child_rss_kb":105944,"distinct_apps":false,"errors":0,"round":2,"round_ms":850,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":200,"child_rss_kb":115264,"distinct_apps":false,"errors":0,"round":3,"round_ms":861,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":50,"child_rss_kb":150644,"distinct_apps":true,"errors":0,"round":0,"round_ms":1174,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":100,"child_rss_kb":202528,"distinct_apps":true,"errors":0,"round":1,"round_ms":1444,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":150,"child_rss_kb":285912,"distinct_apps":true,"errors":0,"round":2,"round_ms":1960,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":200,"child_rss_kb":406328,"distinct_apps":true,"errors":0,"round":3,"round_ms":2509,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":250,"child_rss_kb":556036,"distinct_apps":true,"errors":0,"round":4,"round_ms":2973,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":300,"child_rss_kb":738624,"distinct_apps":true,"errors":0,"round":5,"round_ms":4061,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":350,"child_rss_kb":954872,"distinct_apps":true,"errors":0,"round":6,"round_ms":5120,"scenario":"memory"}
+{"services":"0.4.12","calls_so_far":400,"child_rss_kb":1212192,"distinct_apps":true,"errors":0,"round":7,"round_ms":6116,"scenario":"memory"}
+{"services":"0.4.12+feltdb-0.11.7-override","calls_so_far":50,"child_rss_kb":92104,"distinct_apps":false,"errors":0,"round":0,"round_ms":897,"scenario":"memory"}
+{"services":"0.4.12+feltdb-0.11.7-override","calls_so_far":100,"child_rss_kb":92152,"distinct_apps":false,"errors":0,"round":1,"round_ms":810,"scenario":"memory"}
+{"services":"0.4.12+feltdb-0.11.7-override","calls_so_far":150,"child_rss_kb":94012,"distinct_apps":false,"errors":0,"round":2,"round_ms":795,"scenario":"memory"}
+{"services":"0.4.12+feltdb-0.11.7-override","calls_so_far":200,"child_rss_kb":108888,"distinct_apps":false,"errors":0,"round":3,"round_ms":924,"scenario":"memory"}

@@ -1,0 +1,12 @@
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":50,"child_rss_kb":94812,"distinct_apps":false,"errors":0,"round":0,"round_ms":890,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":100,"child_rss_kb":95744,"distinct_apps":false,"errors":0,"round":1,"round_ms":890,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":150,"child_rss_kb":97400,"distinct_apps":false,"errors":0,"round":2,"round_ms":816,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":200,"child_rss_kb":110824,"distinct_apps":false,"errors":0,"round":3,"round_ms":823,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":50,"child_rss_kb":141100,"distinct_apps":true,"errors":0,"round":0,"round_ms":1132,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":100,"child_rss_kb":199512,"distinct_apps":true,"errors":0,"round":1,"round_ms":1600,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":150,"child_rss_kb":283224,"distinct_apps":true,"errors":0,"round":2,"round_ms":1965,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":200,"child_rss_kb":402988,"distinct_apps":true,"errors":0,"round":3,"round_ms":2438,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":250,"child_rss_kb":552908,"distinct_apps":true,"errors":0,"round":4,"round_ms":2887,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":300,"child_rss_kb":735588,"distinct_apps":true,"errors":0,"round":5,"round_ms":3709,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":350,"child_rss_kb":950836,"distinct_apps":true,"errors":0,"round":6,"round_ms":4564,"scenario":"memory"}
+{"services":"0.4.5+feltdb-0.11.7 (authboundry lock)","calls_so_far":400,"child_rss_kb":1203560,"distinct_apps":true,"errors":0,"round":7,"round_ms":6009,"scenario":"memory"}

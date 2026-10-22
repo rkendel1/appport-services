@@ -1,0 +1,12 @@
+[package]
+name = "appport-ui-contract-wasm"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "EXPERIMENT: appport-ui-contract for wasm32-unknown-unknown with a raw byte ABI (no wasm-bindgen), the pattern FeltDB's *-contract-wasm crates use"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+appport-ui-contract = { path = "../ui-contract" }

@@ -1,0 +1,20 @@
+{"node":"v22.22.0","cpu":"Intel(R) Xeon(R) Processor @ 2.80GHz","cores":4,"memGB":16,"platform":"linux-x64","runs":5,"iterations":20000,"when":"2026-10-22T07:37:15.362Z"}
+cold process (ms, median): { ts: '43.9', wasm: '57.0', napi: '47.4', 'bare-node': '27.7' }
+ts load 10.90 ms; first call 1.113 ms; rss 97.7 MB
+wasm load 12.46 ms; first call 5.188 ms; rss 117.2 MB
+napi load 11.87 ms; first call 0.488 ms; rss 104.8 MB
+
+workload                                                     ts p50/p95 µs       wasm p50/p95 µs       napi p50/p95 µs
+validate: anonymous /v1/ui (1 surface)                           1.28/2.36           16.77/34.63           13.26/20.62
+validate+filter: anonymous /v1/ui (1 surface)                    1.63/2.55           36.46/75.86           29.80/58.09
+validate: services full (10 surfaces)                          12.57/24.29          93.99/198.49         102.13/204.92
+validate+filter: services full (10 surfaces)                   13.36/27.59         194.56/385.76         229.98/436.55
+validate: 64 surfaces                                         48.28/103.91        532.44/1011.76        550.88/1060.27
+validate+filter: 64 surfaces                                   48.84/95.90       1034.35/1930.02       1133.92/2064.08
+validate: 1000 surfaces                                     854.05/1522.70     10517.65/18105.24     11122.79/18606.21
+validate+filter: 1000 surfaces                              877.22/1340.96     19229.70/31812.26     21533.60/34304.96
+validate: rejected: bad capability                              7.07/10.10           20.51/40.38           18.01/31.78
+marshalling only: anonymous /v1/ui (1 surface)                   3.04/4.35             3.11/6.48             3.06/5.59
+marshalling only: services full (10 surfaces)                  15.72/25.80           15.76/31.20           15.94/32.29
+marshalling only: 64 surfaces                                 83.18/169.04          83.68/166.25          83.83/158.28
+marshalling only: 1000 surfaces                            1578.10/2903.28       1600.79/3175.70       1549.77/2748.92

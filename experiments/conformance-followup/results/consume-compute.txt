@@ -1,0 +1,4 @@
+compute-environment service_ui::discover (compute b0900fe) vs appport-ui-1 @ verdict: {"equal":101,"matchesIntended":2,"declared":16,"undeclared":2,"stale":0,"notRun":6}
+  FAIL ui1.title-257-astral-chars-514-utf-16-units-rejected: reference reject/INVALID_REQUEST, consumer accept (available)
+  FAIL ui1.title-400-astral-chars-800-units-400-scalars-rejected: reference reject/INVALID_REQUEST, consumer accept (available)
+exit=1

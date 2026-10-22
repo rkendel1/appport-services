@@ -1,0 +1,61 @@
+{
+ "source": "@appport/services 0.4.12 src/webhooks/secrets.ts",
+ "vectors": [
+  {
+   "secretLength": 1,
+   "secret": "k",
+   "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"},\"timestamp\":\"2026-09-10T22:30:00Z\"}",
+   "timestamp": "2026-09-10T22:30:00.000Z",
+   "outbound": "3ce5c02204379ef28dc74b1b23f97bcb612766921aa6cd7a4260a94584c9a6f6",
+   "inbound": "ed932484a17678c6fa1ad95b975a04a1f201662adf29fb4e576d09427102912f"
+  },
+  {
+   "secretLength": 17,
+   "secret": "kkkkkkkkkkkkkkké",
+   "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"},\"timestamp\":\"2026-09-10T22:30:00Z\"}",
+   "timestamp": "2026-09-10T22:30:00.000Z",
+   "outbound": "d923d7b473bb5029af2edac6fcb75fd7c7a10cd0b2bdfd5174f506c1d20fc7bb",
+   "inbound": "05f11ecc67def26820b206bdd56b16f149725de0c42dc11974f2c27bd61b4879"
+  },
+  {
+   "secretLength": 33,
+   "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkké",
+   "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"},\"timestamp\":\"2026-09-10T22:30:00Z\"}",
+   "timestamp": "2026-09-10T22:30:00.000Z",
+   "outbound": "ba8b3621b883875dead8ace115723d755e9eb0e4e432070e28a80ba3698a7040",
+   "inbound": "ec67ce1210f09bef2b17431062d2ef1b6ddb453981ec6ac8a81e7f173c44e5fd"
+  },
+  {
+   "secretLength": 64,
+   "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkké",
+   "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"},\"timestamp\":\"2026-09-10T22:30:00Z\"}",
+   "timestamp": "2026-09-10T22:30:00.000Z",
+   "outbound": "844d828577d12b258a9c344b77458ebc9a9b33824d3efc038d178ca84b13d66f",
+   "inbound": "11538d7c1ae4d7874c174bb7811f6dfb8660bfb3975931eac0710541e7e6d2ac"
+  },
+  {
+   "secretLength": 65,
+   "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkké",
+   "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"},\"timestamp\":\"2026-09-10T22:30:00Z\"}",
+   "timestamp": "2026-09-10T22:30:00.000Z",
+   "outbound": "eb0045289be86ff4a66c44d06200d70ccd0cbb294541676c9756b5c192e971a5",
+   "inbound": "b8fca44845116f67c88fb9dcae597602a6a6a157220bbfcaeeb7eb2f86697e68"
+  },
+  {
+   "secretLength": 66,
+   "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkké",
+   "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"},\"timestamp\":\"2026-09-10T22:30:00Z\"}",
+   "timestamp": "2026-09-10T22:30:00.000Z",
+   "outbound": "63182e0ac3539f492af10a23183c9963eb7d991203f14c2fd7045b8e01537c39",
+   "inbound": "5b15ef2d5cb50787e976f119b4a449c5626532a6ac4a5c728ec62056068b9178"
+  },
+  {
+   "secretLength": 101,
+   "secret": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkké",
+   "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\",\"data\":{\"amount\":4200,\"note\":\"café ☕\"},\"timestamp\":\"2026-09-10T22:30:00Z\"}",
+   "timestamp": "2026-09-10T22:30:00.000Z",
+   "outbound": "70fc49ab91405c9308391e5ecc6f9e5426a2d27c633910305d00f378627bc633",
+   "inbound": "1c07c20618bc53c017c7d1a9f4cf614d56fc8a84b647efe2c91207c8e357b228"
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+# Experimental only: not part of @appport/services, not built by its scripts,
+# never published. See ../../experiments/rust-interop/REPORT.md.
+[workspace]
+members = ["crates/ui-contract", "crates/ui-contract-wasm", "crates/ui-contract-napi"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

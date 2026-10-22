@@ -1,0 +1,116 @@
+{
+ "consumer": "compute-environment service_ui::discover (compute b0900fe)",
+ "corpus": {
+  "name": "appport-ui-1",
+  "version": "1.0.0",
+  "casesSha256": "2ed1410678db9b09b263db58c420a9a8d40e7a3ea1eafd7cf69a96d6c77eba97",
+  "expectedSha256": "423f27f422b85622a2c5cf1c7b070870ed6d64b04cec3fc586e5a5d6f3db1fd8"
+ },
+ "comparison": "verdict",
+ "notApplicable": [
+  "ui1.filter-no-capabilities",
+  "ui1.filter-api-keys-only",
+  "ui1.filter-partial-api-keys-hides-the-surface",
+  "ui1.filter-everything",
+  "ui1.filter-unknown-extra-names",
+  "ui1.filter-invalid-document-is-rejected-before-filtering"
+ ],
+ "narrowings": [
+  {
+   "id": "ui1.all-composition-requirements",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Compute supplies no identity/tenant/application/environment context, so a conforming host skips the contribution (protocol composeUi does the same)."
+  },
+  {
+   "id": "ui1.duplicate-composition-requirement-is-allowed",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Same: requires tenant."
+  },
+  {
+   "id": "ui1.65-surfaces-over-compute-max-links",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Compute caps links at 64 (host resource policy)."
+  },
+  {
+   "id": "ui1.1000-surfaces",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Compute caps links at 64."
+  },
+  {
+   "id": "ui1.route-dot-segments",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Host link safety: Compute refuses dot segments."
+  },
+  {
+   "id": "ui1.route-space",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Host link safety."
+  },
+  {
+   "id": "ui1.route-backslash",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Host link safety."
+  },
+  {
+   "id": "ui1.route-query",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Host link safety."
+  },
+  {
+   "id": "ui1.route-fragment",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Host link safety."
+  },
+  {
+   "id": "ui1.route-nul",
+   "consumerVerdict": "reject",
+   "kind": "host-policy",
+   "rationale": "Host link safety."
+  },
+  {
+   "id": "ui1.order-1e21-is-an-integer",
+   "consumerVerdict": "reject",
+   "kind": "over-rejection",
+   "rationale": "PROVISIONAL: as_i64 rejects; decision pending (fix or keep)."
+  },
+  {
+   "id": "ui1.raw-order-20-0-non-canonical-number",
+   "consumerVerdict": "reject",
+   "kind": "over-rejection",
+   "rationale": "PROVISIONAL: as_i64 rejects 20.0."
+  },
+  {
+   "id": "ui1.raw-order-2e1",
+   "consumerVerdict": "reject",
+   "kind": "over-rejection",
+   "rationale": "PROVISIONAL: as_i64 rejects 2e1."
+  },
+  {
+   "id": "ui1.raw-order-0",
+   "consumerVerdict": "reject",
+   "kind": "over-rejection",
+   "rationale": "PROVISIONAL: serde parses -0 as float."
+  },
+  {
+   "id": "ui1.raw-numbers-inside-entities",
+   "consumerVerdict": "reject",
+   "kind": "over-rejection",
+   "rationale": "PROVISIONAL: serde_json refuses 1e400 (number out of range)."
+  },
+  {
+   "id": "ui1.lone-surrogate-in-title",
+   "consumerVerdict": "reject",
+   "kind": "over-rejection",
+   "rationale": "Permanent: a UTF-8 JSON parser cannot represent a lone surrogate."
+  }
+ ]
+}

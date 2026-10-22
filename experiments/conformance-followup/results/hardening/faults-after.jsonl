@@ -1,0 +1,4 @@
+{"hung_caller":"Some(Timeout(Running))","hung_caller_secs":2.005241584,"scenario":"hang","second_caller":"Ok(Number(1))","second_caller_secs":1.841396107}
+{"after":["Ok(Number(0))","Ok(Number(1))","Ok(Number(2))","Ok(Number(3))","Ok(Number(4))"],"killed_pid":4471,"scenario":"kill"}
+{"rows":["sent 0 got Ok(Number(0))","sent 1 got Ok(Number(1))","sent 2 got Ok(Number(2))","sent 3 got Ok(Number(3))","sent 4 got Ok(Number(4))","sent 5 got Ok(Number(5))"],"scenario":"noise"}
+{"after_bridge_appears":"Ok(Number(1))","first":"Some(Unavailable(StartFailed))","scenario":"missing"}

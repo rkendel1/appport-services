@@ -1,0 +1,17 @@
+[package]
+name = "appport-ui-contract-napi"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "EXPERIMENT: appport-ui-contract as a Node-API addon (napi-rs)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+appport-ui-contract = { path = "../ui-contract" }
+napi = { version = "2", default-features = false, features = ["napi4"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"

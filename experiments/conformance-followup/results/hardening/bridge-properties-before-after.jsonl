@@ -1,0 +1,2 @@
+{"bridge":"baseline-bridge/appport-services.cjs","revoke_unknown":"{\"ok\":true,\"value\":null}","noise_lines_before_response":6,"exits_on_eof_with_open_handle":"still running after 5 s"}
+{"bridge":"bridge/appport-services.cjs","revoke_unknown":"{\"ok\":false,\"code\":\"NOT_FOUND\",\"error\":\"api_keys.revoke: no matching item for this application\"}","noise_lines_before_response":0,"exits_on_eof_with_open_handle":"exited 0"}

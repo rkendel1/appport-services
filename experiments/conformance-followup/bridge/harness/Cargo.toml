@@ -1,0 +1,13 @@
+# EXPERIMENT: drive AuthBoundry's unmodified bridge client
+# (authboundry/crates/server/src/appport_services.rs, compiled in via #[path])
+# under concurrency and faults. Not part of any product.
+[package]
+name = "bridge-harness"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = "1"
+
+[workspace]

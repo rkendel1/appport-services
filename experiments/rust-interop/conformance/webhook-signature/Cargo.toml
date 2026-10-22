@@ -1,0 +1,15 @@
+# EXPERIMENT: does AuthBoundry's Rust "implementation of the @appport/services
+# contracts" (crates/services, appport-auth-mesh-services) accept signatures
+# produced by @appport/services itself? Uses the AuthBoundry crate unmodified.
+[package]
+name = "webhook-signature-conformance"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+appport-auth-mesh-services = { path = "../../../../../authboundry/crates/services" }
+appport-auth-mesh-contract = { path = "../../../../../authboundry/crates/contract" }
+serde_json = "1"
+
+[workspace]

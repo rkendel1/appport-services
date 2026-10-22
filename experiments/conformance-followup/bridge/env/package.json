@@ -1,0 +1,1 @@
+{ "name": "bridge-env", "private": true, "description": "EXPERIMENT: the npm dependencies AuthBoundry's bridge resolves, pinned as authboundry/package-lock.json pins them", "dependencies": { "@appport/services": "0.4.5", "@feltdb/core": "0.11.7" } }

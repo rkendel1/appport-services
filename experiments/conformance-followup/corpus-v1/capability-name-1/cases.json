@@ -1,0 +1,448 @@
+{
+ "contract": "AppPort capability names and references (spec §8)",
+ "corpus": "capability-name-1",
+ "corpusVersion": "1.0.0",
+ "operations": {
+  "name": "validateName(text)",
+  "ref": "parseCapabilityRef(text)"
+ },
+ "cases": [
+  {
+   "id": "name1.name.documents-save-d21471",
+   "class": "valid",
+   "op": "name",
+   "title": "\"documents.save\"",
+   "input": {
+    "text": "documents.save"
+   }
+  },
+  {
+   "id": "name1.name.crm-contacts-read-4446de",
+   "class": "valid",
+   "op": "name",
+   "title": "\"crm.contacts.read\"",
+   "input": {
+    "text": "crm.contacts.read"
+   }
+  },
+  {
+   "id": "name1.name.a1-b2c3-9553b1",
+   "class": "valid",
+   "op": "name",
+   "title": "\"a1.b2c3\"",
+   "input": {
+    "text": "a1.b2c3"
+   }
+  },
+  {
+   "id": "name1.name.a-https2-d46a08",
+   "class": "valid",
+   "op": "name",
+   "title": "\"a.https2\"",
+   "input": {
+    "text": "a.https2"
+   }
+  },
+  {
+   "id": "name1.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-581665",
+   "class": "boundary",
+   "op": "name",
+   "title": "\"a.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"",
+   "input": {
+    "text": "a.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+   }
+  },
+  {
+   "id": "name1.name.a-bbbbbbbbbbbbbbbbbbbbbbbbbbbb-422f5f",
+   "class": "boundary",
+   "op": "name",
+   "title": "\"a.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"",
+   "input": {
+    "text": "a.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+   }
+  },
+  {
+   "id": "name1.name.documents-9b16b4",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"documents\"",
+   "input": {
+    "text": "documents"
+   }
+  },
+  {
+   "id": "name1.name.uc-documents-save-7a3d59",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"Documents.save\"",
+   "input": {
+    "text": "Documents.save"
+   }
+  },
+  {
+   "id": "name1.name.documents-uc-save-1ce7f0",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"documents.Save\"",
+   "input": {
+    "text": "documents.Save"
+   }
+  },
+  {
+   "id": "name1.name.crm-us-x-read-06fef3",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"crm_x.read\"",
+   "input": {
+    "text": "crm_x.read"
+   }
+  },
+  {
+   "id": "name1.name.crm-read-all-1d4354",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"crm.read-all\"",
+   "input": {
+    "text": "crm.read-all"
+   }
+  },
+  {
+   "id": "name1.name.1crm-read-d0d53d",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"1crm.read\"",
+   "input": {
+    "text": "1crm.read"
+   }
+  },
+  {
+   "id": "name1.name.a-dotdot-b-f62b42",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"a..b\"",
+   "input": {
+    "text": "a..b"
+   }
+  },
+  {
+   "id": "name1.name.lead-dot-a-b-1df05b",
+   "class": "invalid",
+   "op": "name",
+   "title": "\".a.b\"",
+   "input": {
+    "text": ".a.b"
+   }
+  },
+  {
+   "id": "name1.name.a-b-trail-dot-3c97b3",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"a.b.\"",
+   "input": {
+    "text": "a.b."
+   }
+  },
+  {
+   "id": "name1.name.empty-e3b0c4",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"\"",
+   "input": {
+    "text": ""
+   }
+  },
+  {
+   "id": "name1.name.sp-a-b-06b133",
+   "class": "invalid",
+   "op": "name",
+   "title": "\" a.b\"",
+   "input": {
+    "text": " a.b"
+   }
+  },
+  {
+   "id": "name1.name.http-get-842398",
+   "class": "security",
+   "op": "name",
+   "title": "\"http.get\"",
+   "input": {
+    "text": "http.get"
+   },
+   "security": {
+    "rationale": "Names must not encode a transport (spec §8); an implementation that accepts these can bind authorization to transport-specific names."
+   }
+  },
+  {
+   "id": "name1.name.a-grpc-6eac73",
+   "class": "security",
+   "op": "name",
+   "title": "\"a.grpc\"",
+   "input": {
+    "text": "a.grpc"
+   },
+   "security": {
+    "rationale": "Names must not encode a transport (spec §8); an implementation that accepts these can bind authorization to transport-specific names."
+   }
+  },
+  {
+   "id": "name1.name.inprocess-call-6485a3",
+   "class": "security",
+   "op": "name",
+   "title": "\"inprocess.call\"",
+   "input": {
+    "text": "inprocess.call"
+   },
+   "security": {
+    "rationale": "Names must not encode a transport (spec §8); an implementation that accepts these can bind authorization to transport-specific names."
+   }
+  },
+  {
+   "id": "name1.name.caf-read-638e12",
+   "class": "boundary",
+   "op": "name",
+   "title": "\"café.read\"",
+   "input": {
+    "text": "café.read"
+   }
+  },
+  {
+   "id": "name1.name.a-bnul-b3dcef",
+   "class": "boundary",
+   "op": "name",
+   "title": "\"a.b\\u0000\"",
+   "input": {
+    "text": "a.b\u0000"
+   }
+  },
+  {
+   "id": "name1.name.documents-save-1-e2e103",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"documents.save@1\"",
+   "input": {
+    "text": "documents.save@1"
+   }
+  },
+  {
+   "id": "name1.name.jobs-9-enqueue-2f5ea8",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"jobs@9.enqueue\"",
+   "input": {
+    "text": "jobs@9.enqueue"
+   }
+  },
+  {
+   "id": "name1.name.appport-jobs-0-4-5-enqueue-c8982a",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"appport.jobs@0.4.5.enqueue\"",
+   "input": {
+    "text": "appport.jobs@0.4.5.enqueue"
+   }
+  },
+  {
+   "id": "name1.name.api-us-keys-create-45bb88",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"api_keys.create\"",
+   "input": {
+    "text": "api_keys.create"
+   }
+  },
+  {
+   "id": "name1.name.webhooks-create-uc-webhook-uc--b05bdc",
+   "class": "invalid",
+   "op": "name",
+   "title": "\"webhooks.createWebhookEndpoint\"",
+   "input": {
+    "text": "webhooks.createWebhookEndpoint"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-1-e2e103",
+   "class": "valid",
+   "op": "ref",
+   "title": "\"documents.save@1\"",
+   "input": {
+    "text": "documents.save@1"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-12-a7eb6d",
+   "class": "valid",
+   "op": "ref",
+   "title": "\"documents.save@12\"",
+   "input": {
+    "text": "documents.save@12"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-d21471",
+   "class": "invalid",
+   "op": "ref",
+   "title": "\"documents.save\"",
+   "input": {
+    "text": "documents.save"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-0-ce84c1",
+   "class": "invalid",
+   "op": "ref",
+   "title": "\"documents.save@0\"",
+   "input": {
+    "text": "documents.save@0"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-1-4be853",
+   "class": "invalid",
+   "op": "ref",
+   "title": "\"documents.save@-1\"",
+   "input": {
+    "text": "documents.save@-1"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-1-0-3c4ae1",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"documents.save@1.0\"",
+   "input": {
+    "text": "documents.save@1.0"
+   },
+   "decisionRequired": {
+    "finding": "F-04b",
+    "question": "parseCapabilityRef parses the version with Number(): non-canonical spellings (and integers above 2^53, rounded) yield a valid ref. Should a reference be canonical (^[1-9][0-9]*$, safe integer)?"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-01-605698",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"documents.save@01\"",
+   "input": {
+    "text": "documents.save@01"
+   },
+   "decisionRequired": {
+    "finding": "F-04b",
+    "question": "parseCapabilityRef parses the version with Number(): non-canonical spellings (and integers above 2^53, rounded) yield a valid ref. Should a reference be canonical (^[1-9][0-9]*$, safe integer)?"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-0x1-19ce4d",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"documents.save@0x1\"",
+   "input": {
+    "text": "documents.save@0x1"
+   },
+   "decisionRequired": {
+    "finding": "F-04b",
+    "question": "parseCapabilityRef parses the version with Number(): non-canonical spellings (and integers above 2^53, rounded) yield a valid ref. Should a reference be canonical (^[1-9][0-9]*$, safe integer)?"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-1e0-58e835",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"documents.save@1e0\"",
+   "input": {
+    "text": "documents.save@1e0"
+   },
+   "decisionRequired": {
+    "finding": "F-04b",
+    "question": "parseCapabilityRef parses the version with Number(): non-canonical spellings (and integers above 2^53, rounded) yield a valid ref. Should a reference be canonical (^[1-9][0-9]*$, safe integer)?"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-1-c5f8f2",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"documents.save@+1\"",
+   "input": {
+    "text": "documents.save@+1"
+   },
+   "decisionRequired": {
+    "finding": "F-04b",
+    "question": "parseCapabilityRef parses the version with Number(): non-canonical spellings (and integers above 2^53, rounded) yield a valid ref. Should a reference be canonical (^[1-9][0-9]*$, safe integer)?"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-sp-1-e3dbdb",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"documents.save@ 1\"",
+   "input": {
+    "text": "documents.save@ 1"
+   },
+   "decisionRequired": {
+    "finding": "F-04b",
+    "question": "parseCapabilityRef parses the version with Number(): non-canonical spellings (and integers above 2^53, rounded) yield a valid ref. Should a reference be canonical (^[1-9][0-9]*$, safe integer)?"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-1-sp-2bf46a",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"documents.save@1 \"",
+   "input": {
+    "text": "documents.save@1 "
+   },
+   "decisionRequired": {
+    "finding": "F-04b",
+    "question": "parseCapabilityRef parses the version with Number(): non-canonical spellings (and integers above 2^53, rounded) yield a valid ref. Should a reference be canonical (^[1-9][0-9]*$, safe integer)?"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-v1-270c79",
+   "class": "invalid",
+   "op": "ref",
+   "title": "\"documents.save@v1\"",
+   "input": {
+    "text": "documents.save@v1"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-1c8e89",
+   "class": "invalid",
+   "op": "ref",
+   "title": "\"documents.save@\"",
+   "input": {
+    "text": "documents.save@"
+   }
+  },
+  {
+   "id": "name1.ref.a-b-c-1-dd819b",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"a@b.c@1\"",
+   "input": {
+    "text": "a@b.c@1"
+   }
+  },
+  {
+   "id": "name1.ref.jobs-9-enqueue-2f5ea8",
+   "class": "invalid",
+   "op": "ref",
+   "title": "\"jobs@9.enqueue\"",
+   "input": {
+    "text": "jobs@9.enqueue"
+   }
+  },
+  {
+   "id": "name1.ref.documents-save-900719925474099-68447c",
+   "class": "boundary",
+   "op": "ref",
+   "title": "\"documents.save@9007199254740993\"",
+   "input": {
+    "text": "documents.save@9007199254740993"
+   },
+   "decisionRequired": {
+    "finding": "F-04b",
+    "question": "parseCapabilityRef parses the version with Number(): non-canonical spellings (and integers above 2^53, rounded) yield a valid ref. Should a reference be canonical (^[1-9][0-9]*$, safe integer)?"
+   }
+  }
+ ]
+}

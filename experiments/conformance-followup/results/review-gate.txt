@@ -1,0 +1,19 @@
+## review-gate demonstration 2026-10-22T08:28:13Z
+### 1. check against protocol source HEAD 268c9b4 build
+appport-ui-1: 127 cases match @appport/protocol@source@268c9b4
+exit=0
+### 2. check against a mutated reference (max 511)
+appport-ui-1: expectations out of date. changed=ui1.boundary.title-512-ascii,ui1.boundary.title-256-astral-chars-512-utf-16-units,ui1.boundary.label-512-two-byte-chars removed=- casesChanged=false
+exit=0
+### 3. write without --accept
+refusing: 3 changed case(s) not listed in --accept: ui1.boundary.title-512-ascii, ui1.boundary.title-256-astral-chars-512-utf-16-units, ui1.boundary.label-512-two-byte-chars
+  ui1.boundary.title-512-ascii
+    was: {"ok":true,"value":{"protocol":"AppPort/ui/1","product":{"id":"demo","version":"1.0.0"},"surfaces":[{"id":"keys","title":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+exit=2
+### 4. write accepting only one of the changed ids
+refusing: 2 changed case(s) not listed in --accept: ui1.boundary.title-256-astral-chars-512-utf-16-units, ui1.boundary.label-512-two-byte-chars
+exit=2
+### 5. committed expectations untouched
+appport-ui-1: 127 cases match @appport/protocol@1.0.3
+exit=0
+### 2b. (step 2 exit above was masked by a pipe) re-run without pipe: exit=1

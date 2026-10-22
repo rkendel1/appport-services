@@ -1,0 +1,3 @@
+{"probe":"instances","state_json_mb":0,"rows":[{"cached":1,"rss_mb":89,"hwm_mb":89},{"cached":2,"rss_mb":109,"hwm_mb":114},{"cached":3,"rss_mb":117,"hwm_mb":122},{"cached":4,"rss_mb":124,"hwm_mb":129}]}
+{"probe":"instances","state_json_mb":12.7,"rows":[{"cached":1,"rss_mb":114,"hwm_mb":114},{"cached":2,"rss_mb":143,"hwm_mb":144},{"cached":3,"rss_mb":173,"hwm_mb":176},{"cached":4,"rss_mb":192,"hwm_mb":192}]}
+{"probe":"instances","state_json_mb":24,"rows":[{"cached":1,"rss_mb":163,"hwm_mb":163},{"cached":2,"rss_mb":244,"hwm_mb":247},{"cached":3,"rss_mb":227,"hwm_mb":285},{"cached":4,"rss_mb":290,"hwm_mb":290}]}
