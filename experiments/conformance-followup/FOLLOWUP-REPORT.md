@@ -886,8 +886,8 @@ df0afbe -- src`, 0.4.5 → 0.4.12]
   - `sustained-node18-16x24-cache2-from24mb.*` and `…-cache2-heap256-from24mb.*`.
 
 **Bytes per call:**
-- A `snapshot` adds **14.5 KB** of durable state, because it records evidence for each of the 7 services
-  it reads.
+- A `snapshot` adds **14.5 KB** of durable state. It makes 7 service reads; that each read records
+  evidence is inferred, not traced.
 - A write adds 6.4 KB.
 - State grows with **page views**, not only with changes.
 
