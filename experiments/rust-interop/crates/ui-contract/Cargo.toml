@@ -1,0 +1,14 @@
+[package]
+name = "appport-ui-contract"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "EXPERIMENT: Rust port of @appport/protocol 1.0.3 validateUiContribution/filterUiContribution (AppPort/ui/1)"
+
+[dependencies]
+# preserve_order: output key order must equal the TS object-literal order.
+# arbitrary_precision: numbers are echoed as the caller wrote them, so a
+# document that came from JSON.stringify comes back byte-identical.
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
+# ECMAScript Number::toString, for messages built with String(value).
+ryu-js = "1"
