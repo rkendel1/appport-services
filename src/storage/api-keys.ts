@@ -68,8 +68,14 @@ export interface CreateFeltDbRuntimeOptions extends FeltDBOptions {
 export function createFeltDbRuntime(options: CreateFeltDbRuntimeOptions = {}): FeltDbServiceRuntime {
   const { db: existing, ...feltdbOptions } = options;
   if (existing) {
-    // The instance knows its own deployment mode; the options only describe it.
-    const deployment = resolveFeltDBDeployment({ ...(feltdbOptions as FeltDBDeploymentConfig), mode: existing.capabilities().deployment });
+    // The instance knows its own deployment mode. It is not re-resolved from options:
+    // the host already connected it (a remote instance carries its URL and token
+    // internally, and resolving "remote" without them would throw).
+    const deployment: FeltDBDeploymentResolution = {
+      mode: existing.capabilities().deployment,
+      namespace: feltdbOptions.namespace ?? 'default',
+      source: 'explicit',
+    };
     return { db: existing, deployment, owned: false };
   }
   const deployment = resolveRuntimeDeployment(feltdbOptions);

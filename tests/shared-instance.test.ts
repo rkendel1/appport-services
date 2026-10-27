@@ -45,3 +45,13 @@ test('createServices() without db still opens and owns its own instance', async 
   assert.ok(services._getDb);
   await services.apiKeys.close();
 });
+
+test('createServices({ db }) accepts every deployment mode of a host instance, including remote', async () => {
+  const memory = createFeltDB({ memory: true, namespace: 'host-memory' });
+  assert.equal(createServices({ db: memory, application: 'm', ...options })._getDb, memory);
+  // A remote instance connects lazily, so constructing services needs no server.
+  const remote = createFeltDB({ namespace: 'host-remote', server: { url: 'http://127.0.0.1:9', token: 'test-token' } });
+  const services = createServices({ db: remote, application: 'r', ...options });
+  assert.equal(services._getDb, remote);
+  await memory.close();
+});
