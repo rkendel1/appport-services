@@ -504,6 +504,8 @@ export class ApiKeyService {
   }
 
   async close(): Promise<void> {
+    // A host-supplied instance belongs to the host.
+    if (this.runtime && this.runtime.owned === false) return;
     await Promise.resolve(this.runtime?.db.close());
   }
 

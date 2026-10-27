@@ -49,14 +49,38 @@ export interface AuditSink {
 export interface FeltDbServiceRuntime {
   readonly db: StateFirstDB;
   readonly deployment: FeltDBDeploymentResolution;
+  /**
+   * False when the host supplied the instance. AppPort Services never closes an
+   * instance it does not own; the host that opened it closes it.
+   */
+  readonly owned: boolean;
 }
 
-export interface CreateFeltDbRuntimeOptions extends FeltDBOptions {}
+export interface CreateFeltDbRuntimeOptions extends FeltDBOptions {
+  /**
+   * An existing FeltDB instance to use instead of opening one. Hosts that already
+   * own their application's instance pass it here so services share it, rather
+   * than opening a second instance over the same (or different) state.
+   */
+  readonly db?: StateFirstDB;
+}
 
 export function createFeltDbRuntime(options: CreateFeltDbRuntimeOptions = {}): FeltDbServiceRuntime {
-  const deployment = resolveRuntimeDeployment(options);
-  const db = createFeltDB(options);
-  return { db, deployment };
+  const { db: existing, ...feltdbOptions } = options;
+  if (existing) {
+    // The instance knows its own deployment mode. It is not re-resolved from options:
+    // the host already connected it (a remote instance carries its URL and token
+    // internally, and resolving "remote" without them would throw).
+    const deployment: FeltDBDeploymentResolution = {
+      mode: existing.capabilities().deployment,
+      namespace: feltdbOptions.namespace ?? 'default',
+      source: 'explicit',
+    };
+    return { db: existing, deployment, owned: false };
+  }
+  const deployment = resolveRuntimeDeployment(feltdbOptions);
+  const db = createFeltDB(feltdbOptions);
+  return { db, deployment, owned: true };
 }
 
 export class FeltDbApiKeyStore implements ApiKeyStore {
