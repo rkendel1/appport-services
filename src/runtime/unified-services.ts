@@ -1,4 +1,4 @@
-import type { FeltDBOptions } from '@feltdb/core';
+import type { FeltDBOptions, StateFirstDB } from '@feltdb/core';
 import { createFeltDbRuntime, FeltDbApiKeyStore, FeltDbAuditSink } from '../storage/api-keys.js';
 import { ApiKeyService } from '../api-keys/service.js';
 import { WebhookService } from '../webhooks/service.js';
@@ -77,6 +77,13 @@ export interface AppPortServices {
  * Options for creating AppPort Services.
  */
 export interface CreateServicesOptions extends FeltDBOptions {
+  /**
+   * Use this FeltDB instance instead of opening one. Every service's stores, the
+   * effect evidence, and `transaction()` then run on the host's instance, so the
+   * application and its services share one source of truth. The host keeps
+   * ownership: AppPort Services never closes an instance it was given.
+   */
+  db?: StateFirstDB;
   /**
    * Optional path to appport.toml DSL configuration.
    * If provided, configuration values override defaults.

@@ -135,6 +135,25 @@ identity/authz        API Keys, Webhooks, Jobs, Secrets
 
 ## Consumer API
 
+### Sharing the host application's FeltDB instance
+
+A host that already owns its application's FeltDB instance can run every service on it,
+instead of letting AppPort Services open a second instance:
+
+```javascript
+import { createFeltDB } from '@feltdb/core';
+import { createServices } from '@appport/services';
+
+const db = createFeltDB({ mode: 'local', namespace: 'invoices', path: './state' });
+const services = createServices({ db, application: 'invoices', authorizer: authBoundry });
+// Service stores, effect evidence, and services.transaction() all use `db`.
+```
+
+The host keeps ownership: AppPort Services never closes an instance it was given. The
+instance's own deployment mode (`db.capabilities().deployment`) is used for
+mode-dependent behavior. Use one copy of `@feltdb/core` for the host and this package.
+
+
 Existing authenticated Express applications can mount the supported management runtime against their existing service instance:
 
 ```javascript
