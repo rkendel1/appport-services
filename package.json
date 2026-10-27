@@ -11,7 +11,8 @@
     "./cli": {
       "types": "./dist/src/cli.d.ts",
       "import": "./dist/src/cli.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "bin": {
     "appport-services": "dist/src/cli.js"
@@ -30,6 +31,7 @@
     "docs/capability-authority.md",
     "docs/management.md",
     "docs/notifications.md",
+    "docs/health.md",
     "README.md",
     "docs/AUTHORITY.md",
     "docs/WEBHOOK-SECURITY.md",

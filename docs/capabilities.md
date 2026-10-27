@@ -7,7 +7,7 @@
 | Capability | Operations | Durable | Async | Runtime mounted in `createServices()` | Notes |
 | --- | --- | --- | --- | --- | --- |
 | API Keys | create, read, update, rotate, revoke, revokeAll, audit, authenticate | yes | no | yes | Plaintext key material is returned only on create and rotate. |
-| Webhooks | register, read, disable, deliver, retry, replay, receive, registerIntegration | yes | yes | yes | Signing secrets resolve through `ScopedSecretsResolver`. |
+| Webhooks | register, read, readDeliveries, disable, deliver, retry, replay, receive, registerIntegration | yes | yes | yes | Signing secrets resolve through `ScopedSecretsResolver`. |
 | Jobs | create, read, execute, retry | yes | yes | yes | Durable lease/retry state lives in FeltDB. |
 | Schedules | create, read, cancel, materialize | yes | yes | yes | Built on the job store and durable principal model. |
 | Notifications | create, read, deliver, retry, acknowledge, dismiss, delete | yes | yes | yes | Delivery retries use durable state and the job service. |

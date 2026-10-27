@@ -92,6 +92,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'apikeys.audit': (s, input, p) => need(s.apiKeys, 'api').listApiKeyAuditEvents(input as never, p),
 
   'webhooks.read': (s, input, p) => { const hooks = need(s.webhooks, 'webhooks'); return observe(s, 'webhooks.read', 'webhook_endpoint', input, p, (t) => typeof input.id === 'string' ? hooks.getWebhookEndpoint(t, input.id) : hooks.listWebhookEndpoints(t)); },
+  'webhooks.deliveries.read': (s, input, p) => { const hooks = need(s.webhooks, 'webhooks'); return typeof input.id === 'string' ? hooks.readWebhookDelivery({ ...input, id: input.id } as never, p) : hooks.readWebhookDeliveries(input as never, p); },
   'webhooks.register': (s, input, p) => need(s.webhooks, 'webhooks').createWebhookEndpoint(input as never, p),
   'webhooks.remove': (s, input, p) => need(s.webhooks, 'webhooks').disableWebhookEndpoint({ ...input, id: id(input) } as never, p),
   'webhooks.emit': (s, input, p) => need(s.webhooks, 'webhooks').emitWebhookEvent(input as never, p),

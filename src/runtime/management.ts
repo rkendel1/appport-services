@@ -6,7 +6,7 @@ import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import { createConfigurationRouter } from '../configuration/http.js';
 import { createIntelligenceRouter } from '../intelligence/http.js';
 import type { IntelligenceService } from '../intelligence/service.js';
-import { createConfigurationUiRouter } from '../configuration/ui.js';
+import { createConfigurationUiRouter, normalizeBasePath } from '../configuration/ui.js';
 import { UI_DISCOVERY_PATH, createUiContribution, createUiDiscoveryDocument, createUiPages } from './ui.js';
 import { ConfigurationAuthorizationError, ConfigurationService, ConfigurationValidationError } from '../configuration/service.js';
 import { FileAuthorizationError, type FileService } from '../files/service.js';
@@ -54,7 +54,8 @@ export interface ManagementServices {
   readonly apiKeys?: Pick<ApiKeyService, 'createApiKey' | 'listApiKeys' | 'revokeApiKey'> & Partial<Pick<ApiKeyService, 'updateApiKey' | 'rotateApiKey' | 'revokeAllApiKeys' | 'listApiKeyAuditEvents'>>;
   readonly configuration?: ConfigurationService;
   readonly intelligence?: IntelligenceService;
-  readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'>;
+  /** Delivery read routes (`webhooks.deliveries.read`) are mounted only when the service provides them. */
+  readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'> & Partial<Pick<WebhookService, 'readWebhookDeliveries' | 'readWebhookDelivery'>>;
   readonly jobs?: Pick<JobService, 'enqueue' | 'listJobs' | 'retry'>;
   readonly notifications?: Pick<NotificationService, 'notify' | 'get' | 'list' | 'deliveries' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete' | 'retryDelivery'>;
   readonly files?: Pick<FileService, 'create' | 'list' | 'update' | 'delete'>;
@@ -73,6 +74,15 @@ export interface CreateManagementRouterOptions {
   /** Serve the packaged management UI and configuration routes. Defaults to true. */
   readonly includeConfiguration?: boolean;
   readonly includeUi?: boolean;
+  /**
+   * Prefix the packaged pages put in front of every request and navigation
+   * link (`/_appport/...`, `/v1/...`, page routes). Default `''`: unchanged,
+   * root-relative. Use the path this router is mounted at (`/services-admin`),
+   * or the origin that serves it (`https://services.example.com`) when the
+   * pages are shown on another origin; such a host must allow that origin
+   * (CORS and its credentials) itself. Routes served by the router do not move.
+   */
+  readonly basePath?: string;
 }
 
 export class ManagementAuthenticationError extends Error {
@@ -98,6 +108,7 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   }
   if (!options.authority) throw new Error('createManagementRouter requires the services\' authority (ServiceGateway)');
   const gateway = options.authority;
+  const basePath = normalizeBasePath(options.basePath);
   const router = Router();
 
   router.use(jsonBody());
@@ -143,7 +154,7 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   });
   if (options.includeUi !== false) {
     // The navigation lists exactly the pages this host mounts.
-    const ui = createConfigurationUiRouter({ pages: createUiPages(options.services, { includeConfiguration: options.includeConfiguration !== false }) });
+    const ui = createConfigurationUiRouter({ pages: createUiPages(options.services, { includeConfiguration: options.includeConfiguration !== false }), basePath });
     // The pages served are exactly the surfaces the contribution describes.
     const supportedUiPaths = new Set(
       createUiContribution(options.services, { includeConfiguration: options.includeConfiguration !== false })?.surfaces.map((surface) => surface.route) ?? [],
@@ -228,6 +239,18 @@ function mountExistingServiceRoutes(router: Router, services: ManagementServices
     router.get('/_appport/webhooks', handler(async (_req, principal) => ({ body: await read('webhooks.read', 'webhook_endpoint', principal, () => hooks.listWebhookEndpoints(principal.tenantId)) })));
     router.post('/_appport/webhooks', handler(async (req, principal) => ({ status: 201, body: await hooks.createWebhookEndpoint({ url: requiredText(req.body?.url, 'url'), events: stringList(req.body?.events, 'events'), signingCredentialRef: requiredText(req.body?.signingCredentialRef, 'signingCredentialRef') }, principal) })));
     router.delete('/_appport/webhooks/:id', handler(async (req, principal) => { await hooks.disableWebhookEndpoint({ id: req.params.id }, principal); return { status: 204 }; }));
+    if (hooks.readWebhookDeliveries) {
+      const deliveries = hooks.readWebhookDeliveries.bind(hooks);
+      router.get('/_appport/webhooks/deliveries', handler(async (req, principal) => ({ body: await deliveries({
+        ...(typeof req.query.endpointId === 'string' ? { endpointId: req.query.endpointId } : {}),
+        ...(typeof req.query.status === 'string' ? { status: req.query.status as never } : {}),
+        ...(typeof req.query.limit === 'string' ? { limit: Number(req.query.limit) } : {}),
+      }, principal) })));
+    }
+    if (hooks.readWebhookDelivery) {
+      const delivery = hooks.readWebhookDelivery.bind(hooks);
+      router.get('/_appport/webhooks/deliveries/:id', handler(async (req, principal) => ({ body: foundDelivery(await delivery({ id: req.params.id }, principal)) })));
+    }
   }
   if (services.jobs) {
     const jobs = services.jobs;
@@ -300,6 +323,11 @@ function dateValue(value: unknown, property: string): Date {
 
 function found<T>(value: T | null): T {
   if (value === null) throw Object.assign(new Error('API key not found'), { status: 404, code: 'NOT_FOUND' });
+  return value;
+}
+
+function foundDelivery<T>(value: T | null): T {
+  if (value === null) throw Object.assign(new Error('Webhook delivery not found'), { status: 404, code: 'NOT_FOUND' });
   return value;
 }
 

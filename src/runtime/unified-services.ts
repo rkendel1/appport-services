@@ -6,7 +6,7 @@ import { FeltDbWebhookEndpointStore, FeltDbWebhookDeliveryStore, FeltDbWebhookAu
 import type { ServiceAuthorizer } from '../authority/authorizer.js';
 import type { ServiceExecutionContext, ServiceResource } from '../authority/context.js';
 import type { WebhookDestinationPolicy } from '../authority/destination.js';
-import { FeltDbEffectEvidenceStore } from '../authority/evidence.js';
+import { FeltDbEffectEvidenceStore, createEvidenceReader, type EffectEvidenceReader } from '../authority/evidence.js';
 import { ServiceGateway } from '../authority/gateway.js';
 import { SERVICE_CAPABILITY_MANIFEST, type ServiceCapability } from '../authority/manifest.js';
 import { requireVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
@@ -26,6 +26,9 @@ import { FileService } from '../files/service.js';
 import { FeltDbFileAuditSink, FeltDbFileStore } from '../storage/files.js';
 import { ScheduleService } from '../schedules/service.js';
 import { describeCapabilities, type RuntimeCapabilityDescriptor } from './discovery.js';
+import { collectHealth, type AppPortServicesHealth, type ServiceHealthOptions } from './health.js';
+import type { ConfigurationDeclaration } from '../configuration/models.js';
+import { VERSION } from '../version.js';
 
 /**
  * Unified AppPort Services instance.
@@ -49,6 +52,29 @@ export interface AppPortServices {
   /** Capability discovery derived from the mounted implementation. */
   readonly discovery: readonly RuntimeCapabilityDescriptor[];
 
+  /**
+   * The FeltDB instance every service runs on: the one passed as
+   * `createServices({ db })` (local, memory, or remote), else the one
+   * `createServices()` opened and owns. Read-only; it is the same object for
+   * the life of this services instance.
+   */
+  readonly db: StateFirstDB;
+  /** True only for the very instance the services run on (identity, not configuration equality). */
+  usesInstance(db: unknown): boolean;
+  /** True when `createServices()` opened the instance itself (and `apiKeys.close()` closes it); false for a host-supplied `db`. */
+  readonly ownsDb: boolean;
+
+  /** Read side of the effect evidence the gateway records. See docs/AUTHORITY.md#evidence. */
+  readonly evidence: EffectEvidenceReader;
+
+  /**
+   * Per-service state and the counts needing attention, from bounded queries
+   * over durable state. A trusted, in-process host API (like the services'
+   * observation methods): it is not authorized per caller and returns counts
+   * only, never records. See docs/health.md.
+   */
+  health(options?: ServiceHealthOptions): Promise<AppPortServicesHealth>;
+
   /** The safe service API: AuthBoundry authorizes, then the effect runs. */
   invoke(capability: string, input: Record<string, unknown>, options: { readonly principal: VerifiedPrincipal }): Promise<unknown>;
   /** Pre-authorize one transactional effect; the context is single-use. */
@@ -68,7 +94,7 @@ export interface AppPortServices {
   transaction<T>(callback: (tx: TransactionContextImpl) => Promise<T>): Promise<T>;
 
   /**
-   * @internal Test-only: Access to underlying FeltDB instance for verification
+   * @internal Test-only. @deprecated Use `db` / `usesInstance(db)`.
    */
   readonly ['_getDb']?: unknown;
 }
@@ -100,6 +126,8 @@ export interface CreateServicesOptions extends FeltDBOptions {
   webhookDestinationPolicy?: WebhookDestinationPolicy;
   /** Server-held API-key verifier key (>= 32 bytes) from the host's secret manager. Never persisted. */
   apiKeyVerifierKey?: string | Uint8Array;
+  /** Configuration the application declares; `required` ones without a binding are reported by `health()`. */
+  configurationDeclarations?: readonly ConfigurationDeclaration[];
 }
 
 /**
@@ -121,14 +149,15 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
 
   // Create one FeltDB runtime shared by all services
   // Extract FeltDB options (exclude config)
-  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, ...feltdbOptions } = options;
+  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, configurationDeclarations, ...feltdbOptions } = options;
   const runtime = createFeltDbRuntime(feltdbOptions);
   const { db } = runtime;
+  const evidenceStore = new FeltDbEffectEvidenceStore(db);
   const gateway = new ServiceGateway({
     application: application ?? dslConfig?.application.name ?? feltdbOptions.namespace ?? 'default',
     authorizer,
     credentials,
-    evidence: new FeltDbEffectEvidenceStore(db),
+    evidence: evidenceStore,
     authorizationTimeoutMs,
   });
   const authority = authorizer || credentials ? gateway : undefined;
@@ -158,8 +187,14 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     auditSink: new FeltDbJobAuditSink(db),
     ...(authority ? { authority } : {}),
   });
+  const scheduleService = new ScheduleService({ jobs: jobService, ...(authority ? { authority } : {}) });
   const configurationStore = new FeltDbConfigurationStore(db);
-  const configurationService = new ConfigurationService({ store: configurationStore, ...(authority ? { authority } : {}) });
+  const configurationService = new ConfigurationService({
+    store: configurationStore,
+    ...(configurationDeclarations ? { declarations: configurationDeclarations } : {}),
+    transfer: { webhooks: webhookService, schedules: scheduleService },
+    ...(authority ? { authority } : {}),
+  });
   const intelligenceService = new IntelligenceService({ store: configurationStore, ...(authority ? { authority } : {}) });
   const notificationService = new NotificationService({
     store: new FeltDbNotificationStore(db),
@@ -173,7 +208,6 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     auditSink: new FeltDbFileAuditSink(db),
     ...(authority ? { authority } : {}),
   });
-  const scheduleService = new ScheduleService({ jobs: jobService, ...(authority ? { authority } : {}) });
   const invokable = {
     gateway,
     apiKeys: apiKeyService,
@@ -186,7 +220,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     schedules: scheduleService,
   };
 
-  return {
+  const services: AppPortServices = {
     ...invokable,
     capabilities: SERVICE_CAPABILITY_MANIFEST,
     discovery: describeCapabilities({
@@ -202,6 +236,18 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
       secrets: false,
       'runtime-events': false,
     }),
+    db,
+    ownsDb: runtime.owned,
+    usesInstance: (candidate) => candidate === db,
+    evidence: createEvidenceReader(evidenceStore, gateway.application),
+    health: (healthOptions) => collectHealth({
+      db,
+      application: gateway.application,
+      version: VERSION,
+      authorizer: Boolean(authorizer),
+      credentials: Boolean(credentials),
+      declarations: configurationService.declarations,
+    }, healthOptions),
     invoke: (capability, input, invokeOptions) => invokeService(invokable, capability, input, invokeOptions),
     authorize: (capability, principal, resource) => {
       const verified = requireVerifiedPrincipal(principal);
@@ -231,4 +277,8 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
      */
     ['_getDb']: db,
   };
+  // The instance in use never changes: assigning `db` or `ownsDb` throws in strict mode.
+  Object.defineProperty(services, 'db', { value: db, writable: false, configurable: false, enumerable: true });
+  Object.defineProperty(services, 'ownsDb', { value: runtime.owned, writable: false, configurable: false, enumerable: true });
+  return services;
 }

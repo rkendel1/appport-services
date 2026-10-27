@@ -13,7 +13,7 @@
     "id": "webhooks",
     "name": "Webhooks",
     "contractVersion": 1,
-    "operations": ["register", "read", "disable", "deliver", "retry", "replay", "receive", "registerIntegration"],
+    "operations": ["register", "read", "readDeliveries", "disable", "deliver", "retry", "replay", "receive", "registerIntegration"],
     "durable": true,
     "async": true,
     "dependencies": ["ServiceGateway", "FeltDB", "ScopedSecretsResolver"],

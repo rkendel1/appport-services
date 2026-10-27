@@ -2,6 +2,9 @@
 // CONSUMER-FACING PUBLIC API
 // ============================================================================
 
+// The installed package version, read from its own package.json (also exported as `@appport/services/package.json`).
+export { VERSION } from './version.js';
+
 // Primary factory for creating unified AppPort Services
 export { appport, capabilityRegistry, createCapabilityPlan, CapabilityNotDeclaredError } from './runtime/appport.js';
 export type { AppPortApplication, AppPortJobHandler, CapabilityFactoryContext, AppPortApiCapability, AppPortApiKeys, AppPortCapabilityName, AppPortJobs, AppPortNotifications, AppPortOptions, AppPortRouteContext, AppPortRouteHandler, AppPortState, AppPortStateCollection, AppPortTenantServices, AppPortWebhooks, CapabilityPlan } from './runtime/appport.js';
@@ -9,12 +12,18 @@ export { createServices } from './runtime/unified-services.js';
 export type { AppPortServices, CreateServicesOptions } from './runtime/unified-services.js';
 export { CAPABILITY_CATALOG, describeCapabilities } from './runtime/discovery.js';
 export type { CapabilityCatalogId, RuntimeCapabilityDescriptor } from './runtime/discovery.js';
+export { DEFAULT_HEALTH_COUNT_LIMIT, MAX_HEALTH_COUNT_LIMIT } from './runtime/health.js';
+export type {
+  AppPortServicesHealth, ServiceHealthState, ServiceHealthOptions, HealthAttention, AuthorityHealth,
+  ApiKeysHealth, WebhooksHealth, JobsHealth, SchedulesHealth, NotificationsHealth, FilesHealth, ConfigurationHealth, IntelligenceHealth,
+} from './runtime/health.js';
 
 // Authority boundary: AppPort Services is a Policy Enforcement Point, not an authority.
 export {
   SERVICE_CAPABILITY_MANIFEST, LEGACY_SCOPE_MIGRATION, getServiceCapability, serviceCapabilityManifestDigest,
   ServiceAuthorityError, ServiceMigrationError, isServiceAuthorityError,
-  ServiceGateway, FeltDbEffectEvidenceStore, assertEvidenceHasNoSecrets,
+  ServiceGateway, FeltDbEffectEvidenceStore, assertEvidenceHasNoSecrets, evidenceState,
+  DEFAULT_EVIDENCE_LOOKUP_LIMIT, MAX_EVIDENCE_LOOKUP_LIMIT,
   isVerifiedPrincipal, requireVerifiedPrincipal, isExecutionContext, assertExecutionContext,
   isCredentialRef, formatCredentialRef, validateDestination, isForbiddenAddress,
 } from './authority/index.js';
@@ -22,7 +31,8 @@ export type {
   ServiceCapability, ServiceCapabilityName, ServiceEffect, ServiceFailureCode,
   ServiceAuthorizer, ServiceAuthorizationRequest, ServiceAuthorizationDecision, AuthorizationSubject, AuthorizationResource,
   VerifiedPrincipal, PrincipalClaims, PrincipalVerification, ServiceExecutionContext, ServiceResource, AuthorizationEvidence,
-  CredentialRef, EffectEvidence, EffectEvidenceStore, EffectOutcome, ServiceGatewayOptions, ExecuteOptions, EffectTools,
+  CredentialRef, EffectEvidence, EffectEvidenceStore, EffectOutcome, ServiceGatewayOptions,
+  EffectEvidenceState, EffectEvidenceRecord, EffectEvidenceLookup, EffectEvidenceLookupOptions, EffectEvidenceReader, ExecuteOptions, EffectTools,
   WebhookDestinationPolicy, ValidatedDestination, ResolvedAddress,
 } from './authority/index.js';
 export { invokeService } from './runtime/invoke.js';
@@ -70,6 +80,7 @@ export type {
 // Service classes (consumers construct services via createServices)
 export { ApiKeyService } from './api-keys/service.js';
 export { WebhookService } from './webhooks/service.js';
+export { DEFAULT_WEBHOOK_DELIVERY_PAGE, MAX_WEBHOOK_DELIVERY_PAGE, WEBHOOK_DELIVERY_STATUSES } from './webhooks/models.js';
 export { JobService, JobWorker } from './jobs/index.js';
 export { NotificationService, NotificationAuthorizationError, NotificationValidationError, NotificationNotFoundError, NotificationSensitiveDataError, NOTIFICATION_DELIVERY_JOB } from './notifications/index.js';
 export { NotificationChannelRegistry, InAppNotificationChannel, BrowserNotificationChannel, BROWSER_NOTIFICATION_EVENT, assertNoCredentials } from './notifications/index.js';
@@ -80,11 +91,15 @@ export { FeltDbFileStore, FeltDbFileAuditSink } from './files/index.js';
 export { ScheduleService, ScheduleAuthorizationError, ScheduleValidationError } from './schedules/index.js';
 export {
   ConfigurationService, ConfigurationAuthorizationError, ConfigurationValidationError,
+  CONFIGURATION_EXPORT_FORMAT, CONFIGURATION_EXPORT_FORMAT_VERSION, parseExportDocument as parseConfigurationExport,
   createConfigurationRouter, createConfigurationManagementRouter, createConfigurationUiRouter, configurationErrorHandler,
 } from './configuration/index.js';
 export type {
   ConfigurationEnvironment, ConfigurationKind, ConfigurationScope, ConfigurationVariableView,
   ConfigurationSecretView, ConfigurationDeclaration, ConfigurationList, ConfigurationAuditEvent,
+  ConfigurationExportDocument, ConfigurationExportVariable, ConfigurationExportSecret, ConfigurationExportWebhookEndpoint, ConfigurationExportSchedule,
+  ConfigurationExportOptions, ConfigurationImportOptions, ConfigurationImportReport, ConfigurationImportItem, ConfigurationImportAction,
+  ConfigurationImportKind, ConfigurationMissingSecret,
 } from './configuration/index.js';
 export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, RegisterSecretInput, RotateSecretInput, SecretOperationInput, ResolveSecretInput, SecretReference, SecretResolutionContext, ScopedResolveSecretInput, ResolvedSecret, SecretResolutionFailureCode, SecretsProtocol, ScopedSecretsResolver } from './secrets/index.js';
 export {
@@ -121,6 +136,7 @@ export type {
   WebhookDelivery,
   WebhookDeliveryView,
   WebhookDeliveryStatus,
+  WebhookDeliveryQuery,
   WebhookEvent,
   EmitWebhookEventInput,
   WebhookAuditEvent,
