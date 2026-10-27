@@ -10,7 +10,16 @@ The package contains everything needed for application developers to use AppPort
 
 ### Exports (Consumer-facing)
 
+The package's `exports` are `.` (the API below), `./cli`, and `./package.json`.
+The main entry exports `VERSION`, read from the package's own `package.json`
+at load (so it cannot drift; `tests/version.test.ts` asserts equality), and
+`tests/package-artifact.test.ts` proves both resolve from a packed, installed
+tarball.
+
 ```typescript
+// The installed version
+export { VERSION } from './version.js';
+
 // Primary factory
 export { createServices } from './runtime/unified-services.js';
 export type { AppPortServices, CreateServicesOptions } from './runtime/unified-services.js';

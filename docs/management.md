@@ -92,9 +92,26 @@ The API-key page uses these stable endpoints:
 - `POST /_appport/api/keys/revoke-all` requires `apikeys.revoke` on the collection with attribute `createdBy` (`{ createdBy? }`, `*` when omitted).
 - `GET /_appport/api/keys/:id/audit` requires `apikeys.audit`.
 
+Webhook deliveries are read under their own capability, `webhooks.deliveries.read` (endpoint routes keep `webhooks.read`):
+
+- `GET /_appport/webhooks/deliveries?endpointId=&status=&limit=` returns at most `limit` deliveries (default 50, at most 200; `400` outside that), filtered by endpoint and/or status (`pending`, `delivering`, `delivered`, `retrying`, `failed`).
+- `GET /_appport/webhooks/deliveries/:id` returns one delivery, or `404`.
+
 The update, rotate, revoke-all, and audit routes are mounted when the supplied `apiKeys` service provides those methods. The page edits, rotates, audits, and bulk-revokes keys through them; see [api-keys.md](api-keys.md).
 
 The authenticated principal's tenant and principal ID are authoritative. A different `tenantId` in a request body is denied (`403`), a different `createdBy` is rejected (`400`), and `scopes` are rejected (`400`): API keys carry no scopes. Creation and rotation return the plaintext credential once. Lists contain metadata only, revoked keys are omitted, and revoke responses contain no credential material.
+
+### Pages on a sub-path or another origin (`basePath`)
+
+By default the packaged pages request root-relative paths (`/_appport/...`, `/v1/...`) and link to root-relative page routes. When the router is mounted under a path, or the pages are shown by a console on another origin, pass `basePath`:
+
+```ts
+app.use('/services-admin', createManagementRouter({ services, authority: services.gateway, authenticate, basePath: '/services-admin' }));
+// or, for a console on another origin that calls this host:
+createManagementRouter({ services, authority: services.gateway, authenticate, basePath: 'https://services.example.com' });
+```
+
+`basePath` is a path (`/services-admin`) or an `http(s)` origin with an optional path; a trailing slash is removed, and credentials, a query or a fragment are refused. Every request and navigation link the pages make is prefixed with it. It changes nothing on the server: the routes stay where the router is mounted, and `GET /v1/ui` still describes host-relative routes. A cross-origin `basePath` needs the host to allow that origin (CORS, and how the console's requests are authenticated); the router does not set CORS headers. The default (`''`) is unchanged behaviour.
 
 ## UI discovery (`AppPort/ui/1`)
 

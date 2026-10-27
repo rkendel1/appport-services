@@ -14,7 +14,7 @@ Discovery is intentionally not an authorization decision. A capability may be di
 | Capability | Authority path | Sensitive data rule |
 | --- | --- | --- |
 | API Keys | Discovery ops `create/read/revoke/authenticate`; authorized mutations/reads use `apikeys.create`, `apikeys.read`, and `apikeys.revoke` through `ServiceGateway` | Only create returns plaintext secret material; stored records and audits keep hashes/prefixes only. |
-| Webhooks | Discovery ops `register/read/disable/deliver/retry/replay/receive/registerIntegration`; authorized through `webhooks.*` capabilities and `ScopedSecretsResolver` for signing material | Signing material is resolved only for an authorized delivery/receive path. |
+| Webhooks | Discovery ops `register/read/readDeliveries/disable/deliver/retry/replay/receive/registerIntegration`; authorized through `webhooks.*` capabilities (deliveries are read under `webhooks.deliveries.read`, endpoints under `webhooks.read`) and `ScopedSecretsResolver` for signing material | Signing material is resolved only for an authorized delivery/receive path. |
 | Jobs | Discovery ops `create/read/execute/retry`; authorized through `jobs.create`, `jobs.retry`, `jobs.execute`, and `schedules.*` | Durable principals are re-authorized on every execution attempt. |
 | Notifications | Discovery ops `create/read/deliver/retry/acknowledge/dismiss/delete`; authorized through `notifications.*` capabilities | Notification data is validated to avoid credential/secret leakage. |
 | Files | Discovery ops `create/read/update/delete`; authorized through `files.read`, `files.write`, and `files.delete` | Only file metadata is stored here; callers never receive provider credentials. |

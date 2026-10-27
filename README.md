@@ -153,6 +153,36 @@ The host keeps ownership: AppPort Services never closes an instance it was given
 instance's own deployment mode (`db.capabilities().deployment`) is used for
 mode-dependent behavior. Use one copy of `@feltdb/core` for the host and this package.
 
+To check which instance a services object runs on (local, memory, or remote), use
+`services.db` (read-only) or `services.usesInstance(db)`, which compares identity;
+`services.ownsDb` is `false` for a host-supplied instance:
+
+```javascript
+assert.ok(services.usesInstance(db));
+```
+
+### Version, health, evidence, and configuration transfer
+
+```javascript
+import { VERSION } from '@appport/services';             // equals package.json "version"
+import manifest from '@appport/services/package.json' with { type: 'json' };
+
+const health = await services.health({ tenantId: 'acme' });
+// health.status: 'ok' | 'degraded' | 'unconfigured'; health.services.webhooks.state; health.attention.failedWebhookDeliveries
+
+const principal = services.identify({ principalId, principalType: 'user', tenantId, runId: requestId });
+await services.invoke('files.write', input, { principal });
+const { state, records } = await services.evidence.findByRunId(requestId); // state: 'none' | 'started' | 'completed' | 'failed'
+
+const document = await services.configuration.export({ principal, environment: 'staging' });
+const report = await other.configuration.import(document, { principal, dryRun: true });
+```
+
+- `services.health()` — per-service state and counts needing attention, from bounded queries. See [docs/health.md](docs/health.md).
+- `services.evidence.findByRunId()` — the effect evidence recorded under a run id (the caller's correlation id), and what a `started` row means after a crash. See [docs/AUTHORITY.md](docs/AUTHORITY.md#evidence).
+- `services.configuration.export()` / `import()` — non-secret configuration between environments; secret values never leave. See [docs/configuration.md](docs/configuration.md#export-and-import-between-environments).
+- `webhooks.deliveries.read` — its own capability for reading webhook deliveries (`invoke('webhooks.deliveries.read', { status: 'failed' })`, `GET /_appport/webhooks/deliveries`).
+
 
 Existing authenticated Express applications can mount the supported management runtime against their existing service instance:
 
@@ -518,6 +548,13 @@ The delivery is signed with HMAC-SHA256. Each delivery includes:
 ```
 
 Header: `X-AppPort-Signature: <hex-encoded-hmac-sha256>`
+
+Applications read deliveries under `webhooks.deliveries.read` (bounded, at most 200 per call):
+
+```ts
+const failed = await services.invoke('webhooks.deliveries.read', { status: 'failed', limit: 50 }, { principal });
+const one = await services.invoke('webhooks.deliveries.read', { id: deliveryId }, { principal });
+```
 
 Consumer verification:
 
