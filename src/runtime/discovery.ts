@@ -38,7 +38,7 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     id: 'webhooks',
     name: 'Webhooks',
     contractVersion: 1,
-    operations: Object.freeze(['register', 'read', 'disable', 'deliver', 'retry', 'replay', 'receive', 'registerIntegration']),
+    operations: Object.freeze(['register', 'read', 'readDeliveries', 'disable', 'deliver', 'retry', 'replay', 'receive', 'registerIntegration']),
     durable: true,
     async: true,
     dependencies: Object.freeze(['ServiceGateway', 'FeltDB', 'ScopedSecretsResolver']),

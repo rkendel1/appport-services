@@ -27,7 +27,8 @@ const VERIFIER = `
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import { APPPORT_UI_CONTRIBUTIONS, createManagementRouter, createServices, createUiContribution } from '@appport/services';
+import { APPPORT_UI_CONTRIBUTIONS, VERSION, createManagementRouter, createServices, createUiContribution } from '@appport/services';
+import manifest from '@appport/services/package.json' with { type: 'json' };
 import { validateUiContribution } from '@appport/protocol';
 
 // The install must be self-contained: never resolve the workspace package.
@@ -36,6 +37,9 @@ const resolved = import.meta.resolve('@appport/services');
 assert.ok(resolved.startsWith(here), 'resolved outside the clean install: ' + resolved);
 
 const services = createServices({ memory: true, namespace: 'pack-' + Date.now() });
+const manifestPath = import.meta.resolve('@appport/services/package.json');
+const health = await services.health();
+const evidence = await services.evidence.findByRunId('pack-run');
 const app = express();
 app.use(createManagementRouter({
   services,
@@ -73,6 +77,12 @@ console.log(JSON.stringify({
   product: validated.product,
   contributionSurfaceCount: contribution.surfaces.length,
   pages,
+  version: VERSION,
+  manifestVersion: manifest.version,
+  manifestPath,
+  usesOwnDb: services.usesInstance(services.db),
+  healthStatus: health.status,
+  evidenceState: evidence.state,
 }));
 process.exit(0);
 `;
@@ -121,7 +131,22 @@ test('the packed npm artifact serves a valid AppPort/ui/1 document at GET /v1/ui
     product: { id: string; version: string };
     contributionSurfaceCount: number;
     pages: Record<string, number>;
+    version: string;
+    manifestVersion: string;
+    manifestPath: string;
+    usesOwnDb: boolean;
+    healthStatus: string;
+    evidenceState: string;
   };
+
+  // VERSION and @appport/services/package.json resolve from the installed artifact and agree with the packed version.
+  assert.equal(result.version, version, 'VERSION from the main entry is the packed version');
+  assert.equal(result.manifestVersion, version, '@appport/services/package.json is exported and is the packed manifest');
+  assert.ok(result.manifestPath.includes('/node_modules/@appport/services/package.json'), result.manifestPath);
+  // The 0.6.0 consumer APIs are callable from the artifact.
+  assert.equal(result.usesOwnDb, true);
+  assert.equal(result.healthStatus, 'unconfigured', 'no authorizer: health reports unconfigured');
+  assert.equal(result.evidenceState, 'none');
 
   // Discovery works from the artifact and is a valid AppPort/ui/1 document.
   assert.equal(result.status, 200, 'GET /v1/ui must answer 200 from the packed artifact');

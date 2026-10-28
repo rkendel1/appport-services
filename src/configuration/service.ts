@@ -6,6 +6,10 @@ import type {
 } from './models.js';
 import { CONFIGURATION_ENVIRONMENTS } from './models.js';
 import type { ConfigurationStore } from './storage.js';
+import {
+  exportConfiguration, importConfiguration,
+  type ConfigurationExportDocument, type ConfigurationExportOptions, type ConfigurationImportOptions, type ConfigurationImportReport, type ConfigurationTransferDependencies,
+} from './transfer.js';
 import { requireCredentialRef } from '../authority/credentials.js';
 import { ServiceAuthorityError, ServiceMigrationError } from '../authority/errors.js';
 import type { ServiceGateway } from '../authority/gateway.js';
@@ -23,6 +27,8 @@ export class ConfigurationValidationError extends Error { constructor(message: s
 export interface ConfigurationServiceOptions {
   readonly store: ConfigurationStore;
   readonly declarations?: readonly ConfigurationDeclaration[];
+  /** Sibling services whose non-secret state `export()`/`import()` carry. Without them only variables and credential bindings are carried. */
+  readonly transfer?: Pick<ConfigurationTransferDependencies, 'webhooks' | 'schedules'>;
   /** Policy Enforcement Point. Ownership (tenant + application) and every change are enforced through it. */
   readonly authority?: ServiceGateway;
   readonly now?: () => Date;
@@ -122,6 +128,45 @@ export class ConfigurationService {
       else await this.options.store.deleteSecret(item as ConfigurationSecret);
       await this.record(scope.kind === 'secret' ? 'secret.deleted' : 'configuration.deleted', item, scope.kind, principal.principalId, 'deleted', 'deleted');
     });
+  }
+
+  /** Required configuration declarations, if any were configured. */
+  get declarations(): readonly ConfigurationDeclaration[] {
+    return this.options.declarations ?? [];
+  }
+
+  /**
+   * Export the non-secret configuration of the caller's tenant in one
+   * environment as a versioned JSON document: variables, credential binding
+   * names and references, active webhook endpoints (with their signing
+   * credential reference, never a secret) and enabled schedules. Every read is
+   * authorized (`configuration.read`, `webhooks.read`, `schedules.read`).
+   */
+  export(options: ConfigurationExportOptions): Promise<ConfigurationExportDocument> {
+    return exportConfiguration(this.transferDependencies(), options);
+  }
+
+  /**
+   * Plan, and unless `dryRun`, apply an export document to the caller's
+   * tenant. Returns the creates/updates/conflicts and the credential bindings
+   * the target still needs. Each write goes through its own capability
+   * (`configuration.write`, `webhooks.register`, `webhooks.remove`,
+   * `schedules.create`, `schedules.cancel`); credential bindings are never
+   * created, and secret values are refused. Not atomic: a failed item is
+   * reported and the next one is tried.
+   */
+  import(document: ConfigurationExportDocument | unknown, options: ConfigurationImportOptions): Promise<ConfigurationImportReport> {
+    return importConfiguration(this.transferDependencies(), document, options);
+  }
+
+  private transferDependencies(): ConfigurationTransferDependencies {
+    return {
+      gateway: () => this.gateway(),
+      configuration: this,
+      ...(this.options.transfer?.webhooks ? { webhooks: this.options.transfer.webhooks } : {}),
+      ...(this.options.transfer?.schedules ? { schedules: this.options.transfer.schedules } : {}),
+      now: this.now,
+    };
   }
 
   private gateway(): ServiceGateway {

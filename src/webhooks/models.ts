@@ -61,6 +61,19 @@ export interface WebhookDelivery {
 
 export type WebhookDeliveryView = Omit<WebhookDelivery, '__version'>;
 
+export const WEBHOOK_DELIVERY_STATUSES: readonly WebhookDeliveryStatus[] = Object.freeze(['pending', 'delivering', 'delivered', 'retrying', 'failed']);
+
+/** Filter for `webhooks.deliveries.read`. Always bounded. */
+export interface WebhookDeliveryQuery {
+  readonly endpointId?: string;
+  readonly status?: WebhookDeliveryStatus;
+  /** Default 50, at most 200. */
+  readonly limit?: number;
+}
+
+export const DEFAULT_WEBHOOK_DELIVERY_PAGE = 50;
+export const MAX_WEBHOOK_DELIVERY_PAGE = 200;
+
 export interface WebhookEvent {
   readonly id: string;
   readonly tenantId: string;

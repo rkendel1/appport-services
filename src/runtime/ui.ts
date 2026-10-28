@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import {
   UI_DISCOVERY_PATH,
   UI_PROTOCOL_ID,
@@ -7,6 +6,8 @@ import {
   type UiContribution,
   type UiDiscoveryDocument,
 } from '@appport/protocol';
+
+import { VERSION } from '../version.js';
 
 /**
  * The UI contract is `AppPort/ui/1`, owned by `@appport/protocol`
@@ -67,14 +68,6 @@ function countPages(services: UiMountedServices, includeConfiguration: boolean):
 const PRODUCT_ID = 'appport-services';
 const GROUP = 'AppPort Services';
 
-function packageVersion(): string {
-  try {
-    const url = new URL('../../../package.json', import.meta.url);
-    const parsed = JSON.parse(readFileSync(url, 'utf8')) as { version?: unknown };
-    if (typeof parsed.version === 'string' && parsed.version) return parsed.version;
-  } catch { /* fall through */ }
-  return '0.0.0';
-}
 
 /**
  * The `AppPort/ui/1` contribution for the surfaces that are actually mounted,
@@ -87,7 +80,7 @@ export function createUiContribution(services: UiMountedServices, options: { rea
   if (mounted.length === 0) return undefined;
   return validateUiContribution({
     protocol: UI_PROTOCOL_ID,
-    product: { id: PRODUCT_ID, version: packageVersion() },
+    product: { id: PRODUCT_ID, version: VERSION },
     surfaces: mounted.map(({ id, title, route, capabilities }) => ({ id, title, route, capabilities: [...capabilities] })),
     navigation: mounted.map(({ id, title, order }) => ({ id: `appport-services.${id}`, label: title, group: GROUP, order, surface: id })),
     // Discovery is anonymous (like `/_appport/capabilities`): it names pages and

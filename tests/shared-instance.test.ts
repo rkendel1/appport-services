@@ -43,7 +43,36 @@ test('createServices() without db still opens and owns its own instance', async 
   const path = await mkdtemp(join(tmpdir(), 'owned-instance-'));
   const services = createServices({ mode: 'local', namespace: 'standalone', path, ...options });
   assert.ok(services._getDb);
+  assert.equal(services.db, services._getDb, 'services.db is the instance services opened');
+  assert.equal(services.ownsDb, true);
+  assert.equal(services.usesInstance(services.db), true);
+  const other = createFeltDB({ memory: true, namespace: 'standalone' });
+  assert.equal(services.usesInstance(other), false, 'a different instance with the same namespace is not the one in use');
+  await other.close();
   await services.apiKeys.close();
+});
+
+test('services.db and services.usesInstance(db) report the host-supplied instance (local, memory, remote)', async () => {
+  const path = await mkdtemp(join(tmpdir(), 'uses-instance-'));
+  const local = createFeltDB({ mode: 'local', namespace: 'uses-local', path });
+  const memory = createFeltDB({ memory: true, namespace: 'uses-memory' });
+  // A remote instance connects lazily, so constructing services needs no server.
+  const remote = createFeltDB({ namespace: 'uses-remote', server: { url: 'http://127.0.0.1:9', token: 'test-token' } });
+  for (const db of [local, memory, remote]) {
+    const services = createServices({ db, application: 'uses', ...options });
+    assert.equal(services.db, db);
+    assert.equal(services.ownsDb, false, 'a host-supplied instance is never owned');
+    assert.equal(services.usesInstance(db), true);
+    for (const other of [local, memory, remote].filter((candidate) => candidate !== db)) assert.equal(services.usesInstance(other), false);
+    assert.equal(services.usesInstance(undefined), false);
+    assert.equal(services.usesInstance({}), false);
+  }
+  // Read-only: the property cannot be pointed at another instance.
+  const services = createServices({ db: memory, application: 'uses', ...options });
+  assert.throws(() => { (services as { db: unknown }).db = local; });
+  assert.equal(services.db, memory);
+  await local.close();
+  await memory.close();
 });
 
 test('createServices({ db }) accepts every deployment mode of a host instance, including remote', async () => {

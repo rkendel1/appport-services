@@ -371,5 +371,6 @@ app appport-services {
     failure_code: text
     index tenant_idx using hash(tenant_id)
     index capability_idx using hash(capability)
+    index run_idx using hash(run_id)
   }
 }

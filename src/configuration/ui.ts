@@ -23,6 +23,31 @@ import { createUiPages, type UiPage } from '../runtime/ui.js';
 export interface ConfigurationUiOptions {
   /** The mounted pages, in navigation order. Defaults to every page this package can serve. */
   readonly pages?: readonly UiPage[];
+  /**
+   * Prefix for every URL the pages use: their API requests (`/_appport/...`,
+   * `/v1/...`) and their navigation links. `''` (the default) keeps them
+   * root-relative. A path (`/services-admin`) or an origin
+   * (`https://services.example.com`, optionally with a path); no trailing slash.
+   */
+  readonly basePath?: string;
+}
+
+/** Validate and normalize a page `basePath`. Exported for the management router. */
+export function normalizeBasePath(value: unknown): string {
+  if (value === undefined || value === '') return '';
+  if (typeof value !== 'string') throw new TypeError('basePath must be a string');
+  const trimmed = value.replace(/\/+$/, '');
+  if (trimmed === '') return '';
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    if (!/^(\/[A-Za-z0-9._~!$&'()*+,;=:@%-]+)+$/.test(trimmed)) throw new TypeError('basePath must be a URL path such as /services-admin');
+    return trimmed;
+  }
+  let url: URL;
+  try { url = new URL(trimmed); } catch { throw new TypeError('basePath must be a path starting with / or an http(s) origin'); }
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password || url.search || url.hash) {
+    throw new TypeError('basePath must be an http(s) origin with an optional path, and no credentials, query or fragment');
+  }
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
 }
 
 /** What each page is for, shown on the overview. */
@@ -65,11 +90,13 @@ function scriptJson(value: unknown): string {
 const escapeText = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
 /** One management page. Exported for tests. */
-export function renderManagementPage(page: UiPage, pages: readonly UiPage[]): string {
+export function renderManagementPage(page: UiPage, pages: readonly UiPage[], options: { readonly basePath?: string } = {}): string {
   const { style, designSystem, page: pageScript } = loadAssets();
   const title = page.id === 'overview' ? 'AppPort Services' : `AppPort Services · ${page.title}`;
+  const basePath = normalizeBasePath(options.basePath);
   const description = {
     page: page.id,
+    ...(basePath ? { basePath } : {}),
     navigation: pages.map(({ id, title: label, route, order }) => ({ id, label, route, order })),
     descriptions: DESCRIPTIONS,
   };
@@ -84,10 +111,11 @@ export function renderManagementPage(page: UiPage, pages: readonly UiPage[]): st
 
 export function createConfigurationUiRouter(options: ConfigurationUiOptions = {}): Router {
   const pages = options.pages ?? createUiPages();
+  const basePath = normalizeBasePath(options.basePath);
   const router = Router();
   for (const page of pages) {
     router.get(page.route, (_req, res) => {
-      res.type('html').send(renderManagementPage(page, pages));
+      res.type('html').send(renderManagementPage(page, pages, { basePath }));
     });
   }
   return router;

@@ -15,7 +15,9 @@ import type {
   WebhookDeliveryResult,
   WebhookEndpoint,
   WebhookIntegration,
+  WebhookDeliveryQuery,
 } from './models.js';
+import { DEFAULT_WEBHOOK_DELIVERY_PAGE, MAX_WEBHOOK_DELIVERY_PAGE, WEBHOOK_DELIVERY_STATUSES } from './models.js';
 import type {
   InboundWebhookReplayStore,
   WebhookAuditSink,
@@ -213,6 +215,48 @@ export class WebhookService {
 
   async listWebhookDeliveries(tenantId: string, endpointId?: string, limit?: number): Promise<readonly WebhookDelivery[]> {
     return this.deliveryStore.list(tenantId, endpointId, limit);
+  }
+
+  /**
+   * Authorized delivery list (`webhooks.deliveries.read`, resource
+   * `webhook_delivery`): at most `limit` deliveries (default 50, max 200),
+   * filtered by endpoint and/or status. Only deliveries to this application's
+   * endpoints are returned. Independent of `webhooks.read`, which covers
+   * endpoints only.
+   */
+  async readWebhookDeliveries(input: WebhookDeliveryQuery & { readonly tenantId?: string }, caller: VerifiedPrincipal): Promise<readonly WebhookDelivery[]> {
+    const principal = requireVerifiedPrincipal(caller);
+    const tenantId = resolveTenant(input, principal);
+    const query = deliveryQuery(input);
+    return this.gateway().execute('webhooks.deliveries.read', principal,
+      { type: 'webhook_delivery', tenantId, attributes: { endpointId: query.endpointId ?? '*', status: query.status ?? '*' } },
+      { service: 'webhooks' },
+      async (context) => {
+        const owned = await this.ownedEndpointIds(tenantId, context.application);
+        if (query.endpointId && !owned.has(query.endpointId)) return [];
+        const filter = { ...(query.endpointId ? { endpointId: query.endpointId } : {}), ...(query.status ? { status: query.status } : {}) };
+        const rows = this.deliveryStore.page
+          ? await this.deliveryStore.page(tenantId, filter, query.limit)
+          : (await this.deliveryStore.list(tenantId, query.endpointId)).filter((delivery) => !query.status || delivery.status === query.status).slice(0, query.limit);
+        return rows.filter((delivery) => owned.has(delivery.endpointId));
+      });
+  }
+
+  /** One delivery under `webhooks.deliveries.read`; null when absent or not to this application's endpoint. */
+  async readWebhookDelivery(input: { readonly id: string; readonly tenantId?: string }, caller: VerifiedPrincipal): Promise<WebhookDelivery | null> {
+    const principal = requireVerifiedPrincipal(caller);
+    const tenantId = resolveTenant(input, principal);
+    if (typeof input.id !== 'string' || !input.id) throw new ServiceAuthorityError('INVALID_REQUEST', 'id must be a non-empty string');
+    const delivery = await this.getWebhookDelivery(tenantId, input.id);
+    // AuthBoundry sees the delivery's endpoint and status as resource attributes.
+    return this.gateway().execute('webhooks.deliveries.read', principal,
+      { type: 'webhook_delivery', tenantId, id: input.id, attributes: { endpointId: delivery?.endpointId ?? '*', status: delivery?.status ?? '*' } },
+      { service: 'webhooks' },
+      async (context) => delivery && (await this.ownedEndpointIds(tenantId, context.application)).has(delivery.endpointId) ? delivery : null);
+  }
+
+  private async ownedEndpointIds(tenantId: string, application: string): Promise<ReadonlySet<string>> {
+    return new Set((await this.endpointStore.list(tenantId)).filter((endpoint) => endpoint.applicationId === application).map((endpoint) => endpoint.id));
   }
 
   /**
@@ -520,6 +564,18 @@ export class WebhookService {
       req.end(payload);
     });
   }
+}
+
+function deliveryQuery(input: WebhookDeliveryQuery): Required<Pick<WebhookDeliveryQuery, 'limit'>> & WebhookDeliveryQuery {
+  const limit = input.limit ?? DEFAULT_WEBHOOK_DELIVERY_PAGE;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_WEBHOOK_DELIVERY_PAGE) {
+    throw new ServiceAuthorityError('INVALID_REQUEST', `limit must be an integer from 1 to ${MAX_WEBHOOK_DELIVERY_PAGE}`);
+  }
+  if (input.endpointId !== undefined && (typeof input.endpointId !== 'string' || !input.endpointId)) throw new ServiceAuthorityError('INVALID_REQUEST', 'endpointId must be a non-empty string');
+  if (input.status !== undefined && !WEBHOOK_DELIVERY_STATUSES.includes(input.status)) {
+    throw new ServiceAuthorityError('INVALID_REQUEST', `status must be one of ${WEBHOOK_DELIVERY_STATUSES.join(', ')}`);
+  }
+  return { ...(input.endpointId ? { endpointId: input.endpointId } : {}), ...(input.status ? { status: input.status } : {}), limit };
 }
 
 function deliveryBody(delivery: WebhookDelivery): string {

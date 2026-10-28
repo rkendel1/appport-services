@@ -7,11 +7,15 @@
 // navigation built from the surfaces actually mounted); this script renders the
 // shell and the page with StackUI's DOM helpers. It builds nodes with
 // createElement and textContent only: it never parses markup. Every request
-// goes to the product's own management routes under /_appport.
+// goes to the product's own management routes under /_appport (and /v1), behind
+// the host's `basePath` when it set one.
 'use strict';
 (function () {
   const S = window.StackUI;
   const config = JSON.parse(document.getElementById('appport-page').textContent);
+  // The router's basePath ('' by default) prefixes every root-relative URL the pages use.
+  const BASE = typeof config.basePath === 'string' ? config.basePath : '';
+  const at = (path) => (typeof path === 'string' && path.charAt(0) === '/' ? BASE + path : path);
 
   // ---- Requests -------------------------------------------------------------
 
@@ -21,7 +25,7 @@
   async function request(path, method, body) {
     let response;
     try {
-      response = await fetch(path, {
+      response = await fetch(at(path), {
         method: method || 'GET',
         headers: body === undefined ? {} : { 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -202,7 +206,7 @@
         S.dom.PageHeader({ title: 'AppPort Services', description: 'Durable application infrastructure backed by FeltDB.' }),
         links.length
           ? el('ul', { class: 'appport-services' }, links.map((item) => el('li', { class: 'appport-service' }, [
-            el('h2', { class: 'appport-service__title' }, el('a', { href: item.route }, item.label)),
+            el('h2', { class: 'appport-service__title' }, el('a', { href: at(item.route) }, item.label)),
             el('p', { class: 'appport-service__body' }, config.descriptions[item.id] || ''),
           ])))
           : S.dom.EmptyState({ title: 'No services are mounted', body: 'This host serves no management pages.' }),
@@ -911,12 +915,12 @@
   const page = (PAGES[config.page] || PAGES.overview)();
   const overview = config.navigation.find((item) => item.id === 'overview');
   document.body.prepend(S.dom.Shell({
-    product: { name: 'AppPort Services', homeHref: overview ? overview.route : (config.navigation[0] || { route: '#' }).route, mark: 'A' },
+    product: { name: 'AppPort Services', homeHref: at(overview ? overview.route : (config.navigation[0] || { route: '#' }).route), mark: 'A' },
     mainId: 'appport-main',
     navigation: config.navigation.map((item) => ({
       id: item.id,
       label: item.id === 'overview' ? 'Overview' : item.label,
-      href: item.route,
+      href: at(item.route),
       order: item.order,
       current: item.id === config.page,
       attrs: { 'data-surface': item.id },

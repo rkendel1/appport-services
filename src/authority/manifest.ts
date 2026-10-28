@@ -30,6 +30,7 @@ const ENTRIES: readonly Entry[] = [
   ['apikeys.audit', 'api-keys', 'listApiKeyAuditEvents', 'observation', 'api_key'],
 
   ['webhooks.read', 'webhooks', 'listWebhookEndpoints', 'observation', 'webhook_endpoint'],
+  ['webhooks.deliveries.read', 'webhooks', 'readWebhookDeliveries', 'observation', 'webhook_delivery'],
   ['webhooks.register', 'webhooks', 'createWebhookEndpoint', 'consequential', 'webhook_endpoint'],
   ['webhooks.remove', 'webhooks', 'disableWebhookEndpoint', 'consequential', 'webhook_endpoint'],
   ['webhooks.emit', 'webhooks', 'emitWebhookEvent', 'consequential', 'webhook_event'],

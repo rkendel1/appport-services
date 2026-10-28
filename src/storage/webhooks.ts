@@ -8,7 +8,9 @@ import type {
   WebhookDelivery,
   WebhookAuditEvent,
   WebhookIntegration,
+  WebhookDeliveryStatus,
 } from '../webhooks/models.js';
+import { boundedFind } from './bounded.js';
 
 const WEBHOOK_ENDPOINTS_COLLECTION = 'webhook_endpoints';
 const WEBHOOK_DELIVERIES_COLLECTION = 'webhook_deliveries';
@@ -47,6 +49,16 @@ export interface WebhookDeliveryStore {
     tenantId: string,
     endpointId?: string,
     limit?: number,
+  ): Promise<readonly WebhookDelivery[]>;
+  /**
+   * At most `limit` deliveries of a tenant matching the filter, answered by a
+   * bounded query at the storage boundary. Optional for custom stores; without
+   * it reads fall back to `list` and are bounded in memory.
+   */
+  page?(
+    tenantId: string,
+    filter: { readonly endpointId?: string; readonly status?: WebhookDeliveryStatus },
+    limit: number,
   ): Promise<readonly WebhookDelivery[]>;
   claim(
     id: string,
@@ -154,6 +166,15 @@ export class FeltDbWebhookDeliveryStore implements WebhookDeliveryStore {
       return results.slice(0, limit);
     }
     return results;
+  }
+
+  async page(
+    tenantId: string,
+    filter: { readonly endpointId?: string; readonly status?: WebhookDeliveryStatus },
+    limit: number,
+  ): Promise<readonly WebhookDelivery[]> {
+    const where = { tenantId, ...(filter.endpointId ? { endpointId: filter.endpointId } : {}), ...(filter.status ? { status: filter.status } : {}) };
+    return boundedFind<WebhookDelivery>(this.db, WEBHOOK_DELIVERIES_COLLECTION, where, limit);
   }
 
   async claim(
