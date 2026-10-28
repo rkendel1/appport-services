@@ -4,6 +4,9 @@ set -eu
 
 npm run test
 
+# @appport/runtime and create-appport must accept the versions published with them.
+node scripts/release-versions.mjs check
+
 # Publish order is protocol -> services -> consumers. This package declares the
 # @appport/protocol range it needs; refuse to publish unless a published version
 # satisfies it, so a consumer never installs a services release that depends on a

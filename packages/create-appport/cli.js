@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -16,10 +16,12 @@ async function createApplication(name, install) {
   const target = resolve(name);
   try { await access(target); throw new Error(`Target already exists: ${target}`); } catch (error) { if (error?.code !== 'ENOENT') throw error; }
   await mkdir(resolve(target, 'src'), { recursive: true });
+  // The generated project asks for the runtime range this package was released with.
+  const { dependencies } = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
   await writeFile(resolve(target, 'package.json'), JSON.stringify({
     name: packageName(name), version: '0.1.0', private: true, type: 'module',
     scripts: { dev: 'node --watch src/app.js', start: 'node src/app.js' },
-    dependencies: { '@appport/runtime': '^0.4.9' },
+    dependencies: { '@appport/runtime': dependencies['@appport/runtime'] },
   }, null, 2) + '\n');
   await writeFile(resolve(target, 'src/app.js'), `import { appport } from '@appport/runtime';
 
