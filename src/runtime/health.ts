@@ -4,6 +4,8 @@ import type { ConfigurationDeclaration } from '../configuration/models.js';
 import { boundedFind } from '../storage/bounded.js';
 import { getIntelligenceProvider } from '../intelligence/catalog.js';
 import { INTELLIGENCE_CREDENTIAL_NAME, INTELLIGENCE_SELECTION_NAME } from '../intelligence/service.js';
+import { isCredentialRef } from '../authority/credentials.js';
+import type { SecretCustody } from '../secrets/protocol.js';
 
 /**
  * Per-service state.
@@ -58,7 +60,29 @@ export type ConfigurationHealth = ServiceHealthBase<{
   missingRequired: number;
   /** Credential bindings that still hold a pre-reference raw value. Rotate them to a `credential-ref:`. */
   legacySecretValues: number;
-}>;
+  /**
+   * Bindings whose custody reports no usable material (`missing` or `revoked`).
+   * Present only when the host's custody is a `SecretCustody`.
+   */
+  missingMaterial?: number;
+}> & {
+  /**
+   * Custody status of each counted binding, when the host's custody is a
+   * `SecretCustody`: the binding's name and the material's state, never the
+   * value or the credential reference. `unknown` when custody could not answer.
+   */
+  readonly bindings?: readonly CredentialBindingHealth[];
+};
+
+export interface CredentialBindingHealth {
+  readonly tenantId: string;
+  readonly environment: string;
+  readonly name: string;
+  readonly state: 'set' | 'missing' | 'revoked' | 'unknown';
+  readonly version?: number;
+  readonly location?: string;
+  readonly writable?: boolean;
+}
 export type IntelligenceHealth = ServiceHealthBase<{ configured: number; missingCredentials: number }>;
 
 /** Everything needing an operator, as one flat summary. */
@@ -71,6 +95,8 @@ export interface HealthAttention {
   /** Required configuration secrets without a binding, plus intelligence selections whose provider needs a credential that is not bound. */
   readonly missingSecrets: number;
   readonly legacySecretValues: number;
+  /** Bindings whose material is missing or revoked in custody. Present only with a `SecretCustody`. */
+  readonly missingCredentialMaterial?: number;
 }
 
 export interface AppPortServicesHealth {
@@ -103,6 +129,8 @@ export interface HealthSources {
   readonly version: string;
   readonly authorizer: boolean;
   readonly credentials: boolean;
+  /** When present, every counted binding's material is checked with `status()`. */
+  readonly custody?: SecretCustody;
   readonly declarations?: readonly ConfigurationDeclaration[];
   readonly now?: () => Date;
 }
@@ -242,11 +270,19 @@ export async function collectHealth(sources: HealthSources, options: ServiceHeal
       }
     }
   }
-  const configurationReasons = [...(missingRequired > 0 ? ['missing_required'] : []), ...(legacySecretValues > 0 ? ['legacy_secret_values'] : [])];
+  // Material: a binding is only as good as what custody holds for it. Status never reveals the value.
+  const bindings = sources.custody ? await materialStatus(sources.custody, secrets) : undefined;
+  const missingMaterial = bindings?.filter((binding) => binding.state === 'missing' || binding.state === 'revoked').length;
+  const configurationReasons = [
+    ...(missingRequired > 0 ? ['missing_required'] : []),
+    ...(legacySecretValues > 0 ? ['legacy_secret_values'] : []),
+    ...(missingMaterial ? ['missing_material'] : []),
+  ];
   const configurationState: ServiceHealthState = configurationReasons.length ? 'degraded' : variables.length + secrets.length === 0 ? 'unconfigured' : 'ok';
   const configuration: ConfigurationHealth = {
     ...gate(configurationState, configurationState === 'unconfigured' ? ['no_configuration'] : configurationReasons),
-    counts: { variables: variables.length, secrets: secrets.length, missingRequired, legacySecretValues },
+    counts: { variables: variables.length, secrets: secrets.length, missingRequired, legacySecretValues, ...(bindings ? { missingMaterial } : {}) },
+    ...(bindings ? { bindings } : {}),
   };
 
   // Intelligence: a selection whose provider requires a credential needs the credential binding in the same scope.
@@ -285,8 +321,37 @@ export async function collectHealth(sources: HealthSources, options: ServiceHeal
       failedNotificationDeliveries,
       missingSecrets: missingRequiredSecrets + missingCredentials,
       legacySecretValues,
+      ...(bindings ? { missingCredentialMaterial: missingMaterial } : {}),
     },
   };
+}
+
+/** Ask custody about each binding, one at a time, never failing health on a custody error. */
+async function materialStatus(custody: SecretCustody, secrets: readonly Row[]): Promise<CredentialBindingHealth[]> {
+  const results: CredentialBindingHealth[] = [];
+  for (const row of secrets) {
+    const credentialRef = row.credentialRef;
+    const base = { tenantId: String(row.tenantId), environment: String(row.environment), name: String(row.name) };
+    if (!isCredentialRef(credentialRef)) { results.push({ ...base, state: 'unknown' }); continue; }
+    try {
+      const tenantId = String(row.tenantId);
+      const status = await custody.status({
+        reference: { secretId: credentialRef.slice('credential-ref:'.length), tenantId },
+        // Health is a trusted in-process host API; there is no caller decision to reference.
+        context: { tenantId, principalId: 'appport-services:health', purpose: 'health' },
+      });
+      const state = status?.state === 'set' || status?.state === 'missing' || status?.state === 'revoked' ? status.state : 'unknown';
+      results.push({
+        ...base, state,
+        ...(Number.isInteger(status?.version) ? { version: status.version } : {}),
+        ...(typeof status?.location === 'string' ? { location: status.location } : {}),
+        ...(typeof status?.writable === 'boolean' ? { writable: status.writable } : {}),
+      });
+    } catch {
+      results.push({ ...base, state: 'unknown' });
+    }
+  }
+  return results;
 }
 
 function providerOf(value: unknown): string | undefined {

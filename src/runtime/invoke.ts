@@ -122,6 +122,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'credential.attach': (s, input, p) => need(s.configuration, 'configuration').createSecret(input as never, p),
   'credential.rotate': (s, input, p) => need(s.configuration, 'configuration').rotateSecret(input as never, p),
   'credential.detach': (s, input, p) => need(s.configuration, 'configuration').delete({ ...input, kind: 'secret' } as never, p),
+  'credential.store': (s, input, p) => need(s.configuration, 'configuration').storeCredential(input as never, p),
+  'credential.status': (s, input, p) => need(s.configuration, 'configuration').credentialStatus(input as never, p),
 
   'intelligence.catalog': (s, input, p) => need(s.intelligence, 'intelligence').catalog(input as never, p),
   'intelligence.read': (s, input, p) => need(s.intelligence, 'intelligence').get(input as never, p),

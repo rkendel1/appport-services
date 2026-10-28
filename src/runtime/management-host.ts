@@ -5,7 +5,7 @@ import express from 'express';
 import type { ServiceAuthorizer } from '../authority/authorizer.js';
 import type { PrincipalClaims } from '../authority/principal.js';
 import type { WebhookDestinationPolicy } from '../authority/destination.js';
-import type { ScopedSecretsResolver } from '../secrets/protocol.js';
+import type { ScopedSecretsResolver, SecretCustody } from '../secrets/protocol.js';
 import { authenticateBearerToken } from './api-keys.js';
 import { resolveDeployment, DEFAULT_APPLICATION } from './deployment.js';
 import { createManagementRouter, type ManagementAuthenticationAdapter } from './management.js';
@@ -29,7 +29,7 @@ export interface ManagementHostOptions {
   /** AuthBoundry client. Without one every protected operation fails closed; identity still works. */
   readonly authorizer?: ServiceAuthorizer;
   /** AuthBoundry credential custody. */
-  readonly credentials?: ScopedSecretsResolver;
+  readonly credentials?: ScopedSecretsResolver | SecretCustody;
   /** Trusted host-only destination policy override (local development, tests). */
   readonly webhookDestinationPolicy?: WebhookDestinationPolicy;
   /**

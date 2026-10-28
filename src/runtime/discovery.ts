@@ -92,10 +92,10 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     id: 'credentials',
     name: 'Credentials',
     contractVersion: 1,
-    operations: Object.freeze(['attach', 'rotate', 'detach']),
+    operations: Object.freeze(['attach', 'rotate', 'detach', 'store', 'status']),
     durable: true,
     async: false,
-    dependencies: Object.freeze(['configuration', 'ServiceGateway', 'FeltDB']),
+    dependencies: Object.freeze(['configuration', 'ServiceGateway', 'FeltDB', 'SecretCustody']),
   }),
   intelligence: Object.freeze({
     id: 'intelligence',

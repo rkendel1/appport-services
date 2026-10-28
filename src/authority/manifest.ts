@@ -63,6 +63,8 @@ const ENTRIES: readonly Entry[] = [
   ['credential.attach', 'configuration', 'createSecret', 'consequential', 'credential'],
   ['credential.rotate', 'configuration', 'rotateSecret', 'consequential', 'credential'],
   ['credential.detach', 'configuration', 'delete', 'consequential', 'credential'],
+  ['credential.store', 'configuration', 'storeCredential', 'consequential', 'credential'],
+  ['credential.status', 'configuration', 'credentialStatus', 'observation', 'credential'],
 
   ['intelligence.catalog', 'intelligence', 'catalog', 'observation', 'intelligence'],
   ['intelligence.read', 'intelligence', 'get', 'observation', 'intelligence'],

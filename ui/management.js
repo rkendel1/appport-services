@@ -787,26 +787,111 @@
     },
 
     secrets() {
+      const api = '/v1/configuration';
+      const report = outcome();
+      // Custody status per reference, read with the list. Status never carries a value.
+      let statuses = new Map();
+      let statusError = null;
+      const material = (secret) => {
+        const status = statuses.get(secret.credentialRef);
+        if (!status) {
+          return S.dom.StatusIndicator({ tone: 'unknown', label: 'Unknown', detail: statusError && statusError.code === 'CUSTODY_READ_ONLY' ? 'custody is read-only' : 'status unavailable' });
+        }
+        const where = [status.version ? 'version ' + status.version : '', status.location || '', status.writable ? '' : 'managed by the host'].filter(Boolean).join(' · ');
+        if (status.state === 'set') return S.dom.StatusIndicator({ tone: 'positive', label: 'Set', ...(where ? { detail: where } : {}) });
+        if (status.state === 'revoked') return S.dom.StatusIndicator({ tone: 'neutral', label: 'Revoked', ...(where ? { detail: where } : {}) });
+        return S.dom.StatusIndicator({ tone: 'attention', label: 'Missing', ...(status.location ? { detail: status.location } : {}) });
+      };
       const secrets = list({
         label: 'Secrets',
         empty: 'No secrets yet',
-        columns: [{ id: 'name', header: 'Name' }, { id: 'status', header: 'Status' }, { id: 'environment', header: 'Environment' }, { id: 'updated', header: 'Updated' }],
-        read: () => request('/v1/configuration').then((result) => result.secrets),
+        emptyBody: 'Set a value below with a name to create a binding.',
+        columns: [{ id: 'name', header: 'Name' }, { id: 'reference', header: 'Reference' }, { id: 'material', header: 'Value' }, { id: 'environment', header: 'Environment' }, { id: 'updated', header: 'Updated' }, { id: 'actions', header: 'Actions' }],
+        read: async () => {
+          const result = await request(api);
+          const refs = [...new Set(result.secrets.map((secret) => secret.credentialRef))];
+          statuses = new Map();
+          statusError = null;
+          if (refs.length) {
+            try {
+              const found = await request(api + '/credentials/status?' + refs.map((ref) => 'ref=' + encodeURIComponent(ref)).join('&'));
+              for (const status of found) statuses.set(status.ref, status);
+            } catch (error) {
+              // The bindings still list; their value status shows as unknown.
+              statusError = error;
+            }
+          }
+          return result.secrets;
+        },
         row: (secret) => ({
           key: secret.name,
           attrs: { 'data-secret': secret.name },
           cells: {
             name: el('code', {}, secret.name),
-            status: S.dom.StatusIndicator({ field: 'appport.configuration.secret.configured', value: secret.configured }),
+            reference: el('code', {}, secret.credentialRef),
+            material: material(secret),
             environment: text(secret.environment),
             updated: when(secret.updatedAt),
+            actions: [action('Set value', secret.name, () => setValueFor(secret))],
           },
         }),
       });
+
+      // The "Set value" form. The value field is a password input: it is
+      // cleared after every submit, success or not, and never rendered back.
+      const formReport = outcome();
+      const form = S.dom.Form({
+        id: 'set-value',
+        label: 'Set value',
+        submitLabel: 'Set value',
+        children: [
+          S.dom.TextField({ id: 'set-value-ref', name: 'ref', label: 'Credential reference', required: true, pattern: 'credential-ref:[A-Za-z0-9][A-Za-z0-9._:-]*', autocomplete: 'off', spellcheck: 'false', placeholder: 'credential-ref:openai', hint: 'Where the host keeps the value. AppPort Services records only this reference.' }),
+          S.dom.TextField({ id: 'set-value-value', name: 'value', label: 'Value', type: 'password', required: true, autocomplete: 'new-password', spellcheck: 'false', hint: 'Sent once to the host’s credential custody. It is not stored in configuration and is never shown again.' }),
+          S.dom.TextField({ id: 'set-value-name', name: 'name', label: 'Binding name (optional)', ...NAME_FIELD, hint: 'Creates or updates the named secret binding in production. ' + NAME_FIELD.hint }),
+          S.dom.TextField({ id: 'set-value-provider', name: 'provider', label: 'Provider (optional)', autocomplete: 'off', placeholder: 'openai' }),
+        ],
+        onSubmit: async (event) => {
+          const target = event.target;
+          const submit = target.querySelector('button[type="submit"]');
+          const valueField = target.querySelector('input[name="value"]');
+          const values = Object.fromEntries(new FormData(target));
+          // Clear the value before anything else can render: it is in `values` only for this request.
+          valueField.value = '';
+          const body = { ref: String(values.ref || '').trim(), value: String(values.value || '') };
+          if (String(values.name || '').trim()) body.name = String(values.name).trim();
+          if (String(values.provider || '').trim()) body.provider = String(values.provider).trim();
+          submit.disabled = true;
+          submit.setAttribute('aria-busy', 'true');
+          target.setAttribute('aria-busy', 'true');
+          formReport.clear();
+          try {
+            const stored = await request(api + '/credentials', 'POST', body);
+            body.value = '';
+            target.reset();
+            formReport.ok('Stored a new value for ' + stored.ref + ' (version ' + stored.version + ')' + (stored.binding ? ' and bound it as ' + stored.binding.name : '') + '.');
+            await secrets.refresh();
+          } catch (error) {
+            body.value = '';
+            formReport.fail(error);
+          } finally {
+            valueField.value = '';
+            submit.disabled = false;
+            submit.removeAttribute('aria-busy');
+            target.removeAttribute('aria-busy');
+          }
+        },
+      });
+      function setValueFor(secret) {
+        form.querySelector('input[name="ref"]').value = secret.credentialRef;
+        form.querySelector('input[name="name"]').value = secret.name;
+        form.querySelector('input[name="value"]').focus();
+      }
       secrets.refresh();
       return [
-        S.dom.PageHeader({ title: 'Secrets', description: 'Provider-neutral secret metadata. Values stay out of the UI and durable state snapshots.' }),
+        S.dom.PageHeader({ title: 'Secrets', description: 'Secret bindings and whether the host holds a value for each. Values go to the host’s credential custody and never come back to this page.' }),
+        report.node,
         secrets.node,
+        el('section', {}, [el('h2', {}, 'Set value'), el('div', { class: 'appport-create' }, [form, formReport.node])]),
       ];
     },
 
