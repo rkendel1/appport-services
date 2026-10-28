@@ -2,6 +2,35 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.8.0 — unreleased (prepared, not published)
+
+The credential custody **write path**. A user had pasted a real API key into a "credential reference" field because no screen accepted a key. Services now owns how a key is collected (authorized, audited, versioned, never echoed or persisted), while the host keeps owning where the material lives. Everything is additive: a host that passes a `ScopedSecretsResolver` behaves exactly as in 0.7.0.
+
+### Added
+
+- **`SecretCustody`** (`src/secrets/protocol.ts`, exported): a `ScopedSecretsResolver` with `store({ reference, value, context }) → { version, storedAt }`, `status({ reference, context }) → { state: 'set' | 'missing' | 'revoked', version?, updatedAt?, location?, writable }` and optional `remove`. **`isSecretCustody(x)`** (has `withSecret`, `store`, `status`). Types `SecretAccessContext` (= `SecretResolutionContext`), `SecretCustodyWriteResult`, `SecretCustodyStatus`. `createServices({ credentials })` (and `appport()`, `startManagementHost()`) accept either.
+- **`credential.store`** (consequential, resource `credential`): `{ ref, value, provider?, kind?, name?, environment? }` → `{ ref, version, storedAt, binding? }`. Validates first (a `credential-ref:` value, an empty value, a value over 64 KiB, a raw key in `ref` are refused without repeating them); authorizes through the gateway; authorizes the optional `name` binding (`credential.attach` / `credential.rotate`) before the value is stored; asks custody for `status` and refuses `writable: false`; calls `store` once with `authorizationRef` = the decision id; writes value-free `Secrets` / `SecretVersions` / `SecretAuditEvents` metadata (`FeltDbSecretMetadataStore`, in `src/storage/secrets.ts`); evidence records `credentialRef` and the new `credentialVersion` only.
+- **`credential.status`** (observation, resource `credential`): `{ ref }` or `{ refs }` → `[{ ref, state, version?, updatedAt?, location?, writable }]`, one authorization per reference.
+- Both are in `SERVICE_CAPABILITY_MANIFEST`, `invoke()`, the discovery catalog (`credentials` operations `store`, `status`; dependency `SecretCustody`), `docs/capabilities.json`, and the Secrets surface's capabilities. The `services-manifest-1` conformance corpus was re-blessed (digest changed).
+- **Routes:** `POST /v1/configuration/credentials` (201) and `GET /v1/configuration/credentials/status?ref=…`, on `createConfigurationRouter` and therefore `createManagementRouter`.
+- **Secrets page:** bindings now show their reference and value status (Set with version and location, Missing, Revoked, Unknown) and a masked **Set value** form (`type="password"`, `autocomplete="new-password"`) that posts to `credential.store`; the value is cleared after every submit and never rendered back. A row's **Set value** prefills its reference and name.
+- **`ServiceFailureCode` `CUSTODY_READ_ONLY`** (HTTP 409) with an actionable message: no custody, a resolver-only custody, or a reference the custody reports as not writable (for example "This environment's credential comes from the host (environment variable FELTKIT_CREDENTIAL_X) and cannot be changed here; set it there.").
+- **`health()` with a `SecretCustody`** asks `status` for every counted binding: `services.configuration.bindings` (name, environment, state; never a value or reference), `counts.missingMaterial`, `attention.missingCredentialMaterial`, reason `missing_material`. Without a `SecretCustody` the health shape is unchanged.
+
+### Security
+
+- Errors leaving `credential.store` are redacted defensively: a message, stack or detail that contains the value is replaced (the code is kept), and a host custody's own error text is never passed through on the write path.
+- `createManagementRouter` and `configurationErrorHandler` no longer echo a JSON parse error message: Node's parser quotes the body, which could be a credential.
+- `tests/credential-custody.test.ts` proves the value is in no FeltDB operation, row, audit log or state file, no evidence, no audit or version row, no error, no configuration export, no `health()` result, no log output, no AuthBoundry request, and no management page or JSON response.
+
+### Released with it
+
+| Package | Was | Now | Dependency |
+| --- | --- | --- | --- |
+| `@appport/services` | 0.7.0 | 0.8.0 | |
+| `@appport/runtime` | 0.6.0 | 0.7.0 | `@appport/services` `^0.7.0` → `^0.8.0` |
+| `create-appport` | 0.1.14 | 0.1.15 | `@appport/runtime` `^0.6.0` → `^0.7.0` |
+
 ## 0.7.0 — unreleased (prepared, not published)
 
 Moves to `@feltdb/core` 0.15.0 (was 0.13.0). No AppPort API changed.

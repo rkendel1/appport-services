@@ -13,7 +13,7 @@
 | Notifications | create, read, deliver, retry, acknowledge, dismiss, delete | yes | yes | yes | Delivery retries use durable state and the job service. |
 | Files | create, read, update, delete | yes | no | yes | Stores durable metadata and lifecycle state; no provider credentials are exposed. |
 | Configuration | read, write, delete | yes | no | yes | Environment-scoped variable storage. |
-| Credentials | attach, rotate, detach | yes | no | yes | Stores only `credential-ref:<id>` bindings. |
+| Credentials | attach, rotate, detach, store, status | yes | no | yes | Stores only `credential-ref:<id>` bindings. `store` hands a value to the host's `SecretCustody` and keeps none of it; `status` reports whether material exists. See [credentials.md](./credentials.md). |
 | Intelligence | catalog, read, write, credential.set, credential.remove, resolve | yes | no | yes | Provider/model/endpoint/credential configuration. See [intelligence.md](./intelligence.md). |
 | Secrets | register, describe, list, rotate, revoke, retire, resolve | yes | no | no | Protocol and metadata contract only in this repository. |
 | Runtime Events | publish, subscribe, stream | no | yes | no | `appport()` mounts this as the in-process `AppPortEvents` transport. |

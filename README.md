@@ -201,6 +201,8 @@ The host owns authentication, AuthBoundry owns authorization, and AppPort Servic
 
 Outbound credentials use a server-only scoped protocol. AppPort defines the reference, context, lifecycle, audit, errors, and callback contract; AuthBoundry authorizes and AppBoundry resolves provider-held material. AppPort ships no resolver, secret store, provider adapter, or policy engine, and exposes no browser-facing credential-value route.
 
+When the host's custody is a `SecretCustody` (`withSecret` plus `store` and `status`), `credential.store` collects a value (authorized, audited, versioned, never echoed or persisted in FeltDB) and hands it to the host, and `credential.status` reports whether material exists. The host still owns where material lives; a resolver-only host gets `CUSTODY_READ_ONLY`.
+
 ```javascript
 await secrets.withSecret({
   reference: { secretId, tenantId: 'acme', provider: 'pipedrive' },

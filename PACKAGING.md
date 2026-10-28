@@ -148,7 +148,7 @@ After `npm pack`, the tarball includes:
 ## Version and Compatibility
 
 - **Package Name**: @appport/services
-- **Current Version**: 0.6.0 (see [CHANGELOG.md](CHANGELOG.md))
+- **Current Version**: 0.8.0 (see [CHANGELOG.md](CHANGELOG.md))
 - **Module Format**: ESM (type: "module")
 - **Node.js Target**: ES2022 (suitable for Node 16+)
 - **TypeScript**: Full .d.ts declarations included
