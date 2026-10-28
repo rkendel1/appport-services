@@ -19,6 +19,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { runCli } from '../../src/cli.js';
 import { startManagementHost, type ManagementHostRuntime } from '../../src/index.js';
 import { TestAuthority } from '../support/authority.js';
+import { MemoryCustody } from '../support/custody.js';
 
 const chromiumPath = process.env.CHROMIUM_PATH ?? [chromium.executablePath()].find((path) => path && existsSync(path));
 const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8');
@@ -247,6 +248,55 @@ test('configuration: add, edit in a dialog, and delete with typed confirmation',
     await remove.waitFor({ state: 'detached' });
     await row.waitFor({ state: 'detached' });
     await page.getByRole('heading', { name: 'No variables yet' }).waitFor();
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test('secrets: the masked Set value form stores through the host custody, is cleared, and never shows the value', async () => {
+  // This test needs a host whose custody can store: replace the default one.
+  await host.close();
+  const custody = new MemoryCustody('local encrypted vault');
+  host = await startManagementHost({ cwd: await deployment(), port: 0, env: {}, authorizer: authority, identify: operator, credentials: custody, installSignalHandlers: false, logger: () => {} });
+  const value = 'Xq9Zk2LeakCanary-browser-sk-test-0123456789abcdef';
+  const { page, errors, close } = await open('/secrets');
+  try {
+    const form = page.getByRole('form', { name: 'Set value' });
+    const valueField = form.locator('input[name="value"]');
+    assert.equal(await form.getByLabel('Value', { exact: false }).count(), 1, 'the value field is labelled');
+    assert.equal(await valueField.getAttribute('type'), 'password');
+    assert.equal(await valueField.getAttribute('autocomplete'), 'new-password');
+    await form.getByLabel('Credential reference').fill('credential-ref:anthropic');
+    await valueField.fill(value);
+    await form.getByLabel('Binding name (optional)').fill('ANTHROPIC_API_KEY');
+    await form.getByRole('button', { name: 'Set value' }).click();
+    const row = page.locator('tr[data-secret="ANTHROPIC_API_KEY"]');
+    await row.waitFor();
+    await page.waitForFunction(() => /Set/.test(document.querySelector('tr[data-secret="ANTHROPIC_API_KEY"]')?.textContent ?? ''));
+    assert.match(await row.innerText(), /credential-ref:anthropic/);
+    assert.match(await row.innerText(), /version 1/);
+    assert.match(await row.innerText(), /local encrypted vault/);
+    assert.match(await page.locator('.appport-outcome__ok').allInnerTexts().then((texts) => texts.join(' ')), /Stored a new value for credential-ref:anthropic \(version 1\) and bound it as ANTHROPIC_API_KEY/);
+    assert.equal(custody.peek('development', 'anthropic'), value, 'the host custody holds the value');
+
+    // The value is gone from the page: the field, the markup, and every control.
+    assert.equal(await valueField.inputValue(), '');
+    const everything = await page.evaluate(() => document.documentElement.outerHTML + Array.from(document.querySelectorAll('input, textarea')).map((control) => (control as HTMLInputElement).value).join('\n'));
+    assert.equal(everything.includes(value), false);
+    assert.equal(everything.includes(value.slice(0, 10)), false);
+
+    // "Set value" on a row prefills the reference and binding and focuses the value.
+    await row.getByRole('button', { name: 'Set value ANTHROPIC_API_KEY' }).click();
+    assert.equal(await form.getByLabel('Credential reference').inputValue(), 'credential-ref:anthropic');
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.name), 'value');
+
+    // A refused value (a reference) is reported, and the field is cleared anyway.
+    await valueField.fill('credential-ref:not-a-value');
+    await form.getByRole('button', { name: 'Set value' }).click();
+    await page.getByText('credential reference, not credential material', { exact: false }).waitFor();
+    assert.equal(await valueField.inputValue(), '');
+    assert.deepEqual(await axe(page), []);
     assert.deepEqual(errors, []);
   } finally {
     await close();
