@@ -2,7 +2,29 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## 0.6.0 — unreleased (prepared, not published)
+## 0.7.0 — unreleased (prepared, not published)
+
+Moves to `@feltdb/core` 0.15.0 (was 0.13.0). No AppPort API changed.
+
+### Changed
+
+- **A local state directory is now exclusive by default.** FeltDB 0.15 makes `createServices({ mode: 'local', path })` take `owner.lock` in the directory; a second *process* opening it is refused with `LocalStateLockedError` (`STATE_LOCKED`). Handles in one process share the lock. A host that runs an API server and a worker over one directory must pass `access: 'shared'` (it is part of `CreateServicesOptions` through `FeltDBOptions`; commits stay atomic and serialized). `examples/invoice-app` does this for both processes. A lock left by a dead process on this host is recovered automatically.
+- Includes FeltDB 0.14–0.15 fixes: a committed transaction now notifies live subscribers on the local file and memory runtimes, and `collection.refresh({ strict })`.
+
+### Available, not yet used by AppPort Services
+
+- `db.storeContent` / `db.acquireContent` (SHA-256 content-addressed bytes, local file and server runtimes). `FileService` stays metadata-only (`storageKey`); content storage is a candidate for a later release.
+- Durable agent executions (`findAgentExecution`, `cancelAgentExecution`) and paged `listTasks` / `listHandoffs` in agent state: not relevant to these services.
+
+### Released with it
+
+| Package | Was | Now | Dependency |
+| --- | --- | --- | --- |
+| `@appport/services` | 0.6.0 | 0.7.0 | `@feltdb/core` 0.13.0 → 0.15.0 |
+| `@appport/runtime` | 0.5.0 | 0.6.0 | `@appport/services` `^0.6.0` → `^0.7.0` |
+| `create-appport` | 0.1.13 | 0.1.14 | `@appport/runtime` `^0.5.0` → `^0.6.0` |
+
+## 0.6.0
 
 Consumer APIs requested by FeltKit. Everything is additive; no existing API changed behaviour. `@appport/runtime` and `create-appport` are released with it.
 

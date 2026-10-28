@@ -13,6 +13,8 @@ const services = createServices({
   mode: 'local',
   namespace: 'invoice-app',
   path: './.feltdb/invoice-app',
+  // The API server and the worker are separate processes over one directory; @feltdb/core 0.15 otherwise refuses the second (STATE_LOCKED).
+  access: 'shared',
   config: './appport.toml',
   application: 'invoice-app',
   authorizer: developmentAuthorizer,
