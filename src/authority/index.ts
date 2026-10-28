@@ -12,6 +12,6 @@ export type { CredentialRef } from './credentials.js';
 export { FeltDbEffectEvidenceStore, assertEvidenceHasNoSecrets, createEvidenceReader, evidenceState, DEFAULT_EVIDENCE_LOOKUP_LIMIT, MAX_EVIDENCE_LOOKUP_LIMIT } from './evidence.js';
 export type { EffectEvidence, EffectEvidenceStore, EffectOutcome, EffectEvidenceState, EffectEvidenceRecord, EffectEvidenceLookup, EffectEvidenceLookupOptions, EffectEvidenceReader } from './evidence.js';
 export { ServiceGateway } from './gateway.js';
-export type { ServiceGatewayOptions, ExecuteOptions, EffectTools } from './gateway.js';
+export type { ServiceGatewayOptions, ExecuteOptions, EffectTools, CredentialCustodyOptions } from './gateway.js';
 export { validateDestination, isForbiddenAddress } from './destination.js';
 export type { WebhookDestinationPolicy, ValidatedDestination, ResolvedAddress } from './destination.js';

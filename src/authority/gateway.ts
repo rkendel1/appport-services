@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { ResolvedSecret, ScopedSecretsResolver, SecretReference } from '../secrets/index.js';
 import { SecretError } from '../secrets/errors.js';
+import { isSecretCustody, type SecretCustody, type SecretCustodyStatus, type SecretCustodyWriteResult } from '../secrets/protocol.js';
 import type { ServiceAuthorizationDecision, ServiceAuthorizationRequest, ServiceAuthorizer } from './authorizer.js';
 import { assertExecutionContext, mintExecutionContext, resourceUri, type ServiceExecutionContext, type ServiceResource } from './context.js';
 import { enforceCredential } from './credential-binding.js';
@@ -19,8 +20,12 @@ export interface ServiceGatewayOptions {
   readonly application: string;
   /** AuthBoundry client. Without one every protected operation fails with AUTHORITY_UNAVAILABLE. */
   readonly authorizer?: ServiceAuthorizer;
-  /** AuthBoundry credential custody. Without one no provider credential can be resolved. */
-  readonly credentials?: ScopedSecretsResolver;
+  /**
+   * Credential custody. A resolver only resolves; a `SecretCustody` (see
+   * `isSecretCustody`) can also store values and report status. Without one no
+   * provider credential can be resolved.
+   */
+  readonly credentials?: ScopedSecretsResolver | SecretCustody;
   readonly evidence: EffectEvidenceStore;
   readonly authorizationTimeoutMs?: number;
   readonly now?: () => Date;
@@ -36,6 +41,20 @@ export interface ExecuteOptions {
 export interface EffectTools {
   /** Resolve a credential through AuthBoundry custody for this authorized effect only. */
   withCredential<T>(ref: CredentialRef, purpose: string, use: (secret: ResolvedSecret) => T | Promise<T>): Promise<T>;
+  /**
+   * Hand a value to the host's custody for this authorized effect only
+   * (`credential.store`). The value is never returned, recorded, or kept.
+   * Evidence records the reference and the stored version.
+   */
+  storeCredential(ref: CredentialRef, value: string, options: CredentialCustodyOptions): Promise<SecretCustodyWriteResult>;
+  /** Whether custody holds material for the authorized reference, without revealing it. */
+  credentialStatus(ref: CredentialRef, options?: Omit<CredentialCustodyOptions, 'kind'>): Promise<SecretCustodyStatus>;
+}
+
+export interface CredentialCustodyOptions {
+  readonly purpose: string;
+  readonly provider?: string;
+  readonly kind?: string;
 }
 
 /**
@@ -50,7 +69,7 @@ export interface EffectTools {
 export class ServiceGateway {
   readonly application: string;
   private readonly authorizer?: ServiceAuthorizer;
-  private readonly credentials?: ScopedSecretsResolver;
+  private readonly credentials?: ScopedSecretsResolver | SecretCustody;
   private readonly evidence: EffectEvidenceStore;
   private readonly timeoutMs: number;
   private readonly now: () => Date;
@@ -152,15 +171,26 @@ export class ServiceGateway {
     const evidenceId = randomUUID();
     await this.evidence.record(this.evidenceFor(context, options, evidenceId, startedAt, 'started'));
     const resolvedRefs: CredentialRef[] = [];
+    const stored: { version?: number } = {};
     const tools: EffectTools = {
       withCredential: (ref, purpose, use) => {
         resolvedRefs.push(ref);
         return this.withCredential(context, ref, purpose, use, options.provider);
       },
+      storeCredential: async (ref, value, custodyOptions) => {
+        resolvedRefs.push(ref);
+        const result = await this.storeCredential(context, ref, value, custodyOptions);
+        stored.version = result.version;
+        return result;
+      },
+      credentialStatus: (ref, custodyOptions) => {
+        resolvedRefs.push(ref);
+        return this.credentialStatus(context, ref, { purpose: custodyOptions?.purpose ?? context.capability, ...(custodyOptions?.provider ? { provider: custodyOptions.provider } : {}) });
+      },
     };
     try {
       const result = await effect(context, tools);
-      await this.evidence.complete(evidenceId, { outcome: 'succeeded', completedAt: this.now().toISOString(), ...refUpdate(options, resolvedRefs) });
+      await this.evidence.complete(evidenceId, { outcome: 'succeeded', completedAt: this.now().toISOString(), ...refUpdate(options, resolvedRefs), ...(stored.version !== undefined ? { credentialVersion: stored.version } : {}) });
       return result;
     } catch (error) {
       const outcome = isServiceAuthorityError(error)
@@ -231,6 +261,73 @@ export class ServiceGateway {
       if (marker.failed) throw marker.error;
       throw mapCredentialFailure(error, context.capability);
     }
+  }
+
+  /** The host's custody, when it can store values and report status. */
+  get custody(): SecretCustody | undefined {
+    return isSecretCustody(this.credentials) ? this.credentials : undefined;
+  }
+
+  /**
+   * Store a value through the host's custody under a live execution context
+   * for that reference. Refuses (CUSTODY_READ_ONLY) when the custody is
+   * resolver-only or reports the reference as not writable. Failures are
+   * mapped to fixed messages: nothing the host raises reaches the caller, so
+   * the value cannot be echoed back.
+   */
+  async storeCredential(contextInput: ServiceExecutionContext, ref: CredentialRef, value: string, options: CredentialCustodyOptions): Promise<SecretCustodyWriteResult> {
+    const context = this.custodyContext(contextInput, ref);
+    const custody = this.requireWritableCustody(context);
+    const reference = custodyReference(ref, context.tenantId, options);
+    const access = { tenantId: context.tenantId, principalId: context.principal.principalId, purpose: options.purpose, authorizationRef: context.authorization.decisionId };
+    let status: SecretCustodyStatus;
+    try {
+      status = await custody.status({ reference, context: access });
+    } catch (error) {
+      throw mapCredentialFailure(error, context.capability, true);
+    }
+    if (status?.writable !== true) throw readOnly(context.capability, status?.location);
+    let result: SecretCustodyWriteResult;
+    try {
+      result = await custody.store({ reference, value, context: access });
+    } catch (error) {
+      throw mapCredentialFailure(error, context.capability, true);
+    }
+    if (!result || !Number.isInteger(result.version) || result.version < 1 || typeof result.storedAt !== 'string') {
+      throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'Credential custody returned an invalid store result', { capability: context.capability, reason: 'invalid_store_result' });
+    }
+    // Only these two fields leave custody; anything else the host returned is dropped.
+    return { version: result.version, storedAt: result.storedAt };
+  }
+
+  /** Ask the host's custody whether material exists for the authorized reference. */
+  async credentialStatus(contextInput: ServiceExecutionContext, ref: CredentialRef, options: Omit<CredentialCustodyOptions, 'kind'>): Promise<SecretCustodyStatus> {
+    const context = this.custodyContext(contextInput, ref);
+    const custody = this.custody;
+    if (!custody) throw readOnly(context.capability, undefined, !this.credentials);
+    try {
+      const status = await custody.status({
+        reference: custodyReference(ref, context.tenantId, options),
+        context: { tenantId: context.tenantId, principalId: context.principal.principalId, purpose: options.purpose, authorizationRef: context.authorization.decisionId },
+      });
+      return safeStatus(status);
+    } catch (error) {
+      throw mapCredentialFailure(error, context.capability, true);
+    }
+  }
+
+  private custodyContext(contextInput: ServiceExecutionContext, ref: CredentialRef): ServiceExecutionContext {
+    const context = assertExecutionContext(contextInput, contextInput?.capability, undefined, this.now());
+    if (context.resource.attributes?.credentialRef !== ref) {
+      throw new ServiceAuthorityError('DENIED', 'Credential reference was not part of the authorized resource', { capability: context.capability, decisionId: context.authorization.decisionId, reason: 'credential_not_authorized' });
+    }
+    return context;
+  }
+
+  private requireWritableCustody(context: ServiceExecutionContext): SecretCustody {
+    const custody = this.custody;
+    if (!custody) throw readOnly(context.capability, undefined, !this.credentials);
+    return custody;
   }
 
   /**
@@ -330,6 +427,39 @@ function effectiveDelegation(context: ServiceExecutionContext): string | undefin
   return context.resource.attributes?.delegationId ?? context.principal.delegationId;
 }
 
+function custodyReference(ref: CredentialRef, tenantId: string, options: { readonly provider?: string; readonly kind?: string }): SecretReference {
+  return { ...credentialReference(ref, tenantId, options.provider), ...(options.kind ? { kind: options.kind } : {}) };
+}
+
+/** Keep only the documented, non-secret status fields. */
+function safeStatus(status: SecretCustodyStatus): SecretCustodyStatus {
+  const state = status?.state;
+  if (state !== 'set' && state !== 'missing' && state !== 'revoked') {
+    throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'Credential custody returned an invalid status', { reason: 'invalid_status' });
+  }
+  return {
+    state,
+    ...(Number.isInteger(status.version) ? { version: status.version } : {}),
+    ...(typeof status.updatedAt === 'string' ? { updatedAt: status.updatedAt } : {}),
+    ...(typeof status.location === 'string' ? { location: status.location } : {}),
+    writable: status.writable === true,
+  };
+}
+
+/** A host-supplied code is echoed only when it looks like one (a short snake_case word). */
+function safeCode(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(value);
+}
+
+function readOnly(capability: string, location?: string, none = false): ServiceAuthorityError {
+  const message = none
+    ? 'No credential custody is configured on this host, so a value cannot be stored here. Configure a SecretCustody (createServices({ credentials })), or store the credential where the host keeps credentials and attach its credential-ref.'
+    : location
+      ? `This environment's credential comes from the host (${location}) and cannot be changed here; set it there.`
+      : 'This host\'s credential custody is read-only: it resolves credentials but cannot store them. Store the value where the host keeps credentials (for example its secret manager or environment), or give createServices a SecretCustody.';
+  return new ServiceAuthorityError('CUSTODY_READ_ONLY', message, { capability, reason: none ? 'custody_unconfigured' : 'custody_read_only' });
+}
+
 function refUpdate(options: ExecuteOptions, resolved: readonly CredentialRef[]): { credentialRef?: CredentialRef } {
   const ref = options.credentialRef ?? resolved[0];
   return ref ? { credentialRef: ref } : {};
@@ -349,9 +479,16 @@ function validateDecision(request: ServiceAuthorizationRequest, decision: Servic
   }
 }
 
-function mapCredentialFailure(error: unknown, capability: string): ServiceAuthorityError {
-  if (isServiceAuthorityError(error)) return error;
-  const code = error instanceof SecretError ? error.code : undefined;
+function mapCredentialFailure(error: unknown, capability: string, custodyWrite = false): ServiceAuthorityError {
+  // On the write path even a ServiceAuthorityError from the host is rebuilt
+  // from its code: the host's message could contain the value.
+  if (isServiceAuthorityError(error)) {
+    if (!custodyWrite) return error;
+    if (error.code === 'CUSTODY_READ_ONLY') return readOnly(capability);
+    return new ServiceAuthorityError(error.code, `Credential custody refused the request (${error.code})`, { capability, ...(safeCode(error.details.reason) ? { reason: error.details.reason } : {}) });
+  }
+  const raw = error instanceof SecretError ? error.code : undefined;
+  const code = custodyWrite && !safeCode(raw) ? undefined : raw;
   switch (code) {
     case 'secret_resolution_denied':
     case 'tenant_mismatch':

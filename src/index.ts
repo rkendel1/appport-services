@@ -15,7 +15,7 @@ export type { CapabilityCatalogId, RuntimeCapabilityDescriptor } from './runtime
 export { DEFAULT_HEALTH_COUNT_LIMIT, MAX_HEALTH_COUNT_LIMIT } from './runtime/health.js';
 export type {
   AppPortServicesHealth, ServiceHealthState, ServiceHealthOptions, HealthAttention, AuthorityHealth,
-  ApiKeysHealth, WebhooksHealth, JobsHealth, SchedulesHealth, NotificationsHealth, FilesHealth, ConfigurationHealth, IntelligenceHealth,
+  ApiKeysHealth, WebhooksHealth, JobsHealth, SchedulesHealth, NotificationsHealth, FilesHealth, ConfigurationHealth, IntelligenceHealth, CredentialBindingHealth,
 } from './runtime/health.js';
 
 // Authority boundary: AppPort Services is a Policy Enforcement Point, not an authority.
@@ -32,7 +32,7 @@ export type {
   ServiceAuthorizer, ServiceAuthorizationRequest, ServiceAuthorizationDecision, AuthorizationSubject, AuthorizationResource,
   VerifiedPrincipal, PrincipalClaims, PrincipalVerification, ServiceExecutionContext, ServiceResource, AuthorizationEvidence,
   CredentialRef, EffectEvidence, EffectEvidenceStore, EffectOutcome, ServiceGatewayOptions,
-  EffectEvidenceState, EffectEvidenceRecord, EffectEvidenceLookup, EffectEvidenceLookupOptions, EffectEvidenceReader, ExecuteOptions, EffectTools,
+  EffectEvidenceState, EffectEvidenceRecord, EffectEvidenceLookup, EffectEvidenceLookupOptions, EffectEvidenceReader, ExecuteOptions, EffectTools, CredentialCustodyOptions,
   WebhookDestinationPolicy, ValidatedDestination, ResolvedAddress,
 } from './authority/index.js';
 export { invokeService } from './runtime/invoke.js';
@@ -93,6 +93,7 @@ export {
   ConfigurationService, ConfigurationAuthorizationError, ConfigurationValidationError,
   CONFIGURATION_EXPORT_FORMAT, CONFIGURATION_EXPORT_FORMAT_VERSION, parseExportDocument as parseConfigurationExport,
   createConfigurationRouter, createConfigurationManagementRouter, createConfigurationUiRouter, configurationErrorHandler,
+  MAX_CREDENTIAL_VALUE_LENGTH,
 } from './configuration/index.js';
 export type {
   ConfigurationEnvironment, ConfigurationKind, ConfigurationScope, ConfigurationVariableView,
@@ -100,8 +101,12 @@ export type {
   ConfigurationExportDocument, ConfigurationExportVariable, ConfigurationExportSecret, ConfigurationExportWebhookEndpoint, ConfigurationExportSchedule,
   ConfigurationExportOptions, ConfigurationImportOptions, ConfigurationImportReport, ConfigurationImportItem, ConfigurationImportAction,
   ConfigurationImportKind, ConfigurationMissingSecret,
+  CredentialStoreInput, CredentialStoreResult, CredentialStatusInput, CredentialStatusView,
 } from './configuration/index.js';
-export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, RegisterSecretInput, RotateSecretInput, SecretOperationInput, ResolveSecretInput, SecretReference, SecretResolutionContext, ScopedResolveSecretInput, ResolvedSecret, SecretResolutionFailureCode, SecretsProtocol, ScopedSecretsResolver } from './secrets/index.js';
+export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, RegisterSecretInput, RotateSecretInput, SecretOperationInput, ResolveSecretInput, SecretReference, SecretResolutionContext, ScopedResolveSecretInput, ResolvedSecret, SecretResolutionFailureCode, SecretsProtocol, ScopedSecretsResolver, SecretCustody, SecretAccessContext, SecretCustodyWriteResult, SecretCustodyStatus } from './secrets/index.js';
+export { isSecretCustody } from './secrets/index.js';
+export { FeltDbSecretMetadataStore } from './storage/secrets.js';
+export type { SecretMetadataStore, SecretStoredRecord, SecretFailureRecord } from './storage/secrets.js';
 export {
   SecretError, SecretNotFoundError, SecretRevokedError, SecretExpiredError, SecretResolutionDeniedError,
   SecretProviderUnavailableError, InvalidSecretReferenceError, InvalidSecretLifecycleOperationError,

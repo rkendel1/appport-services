@@ -275,7 +275,7 @@ function createOperator(cwd: string, injected?: CliAuthority): Operator {
           credentials = (await load())?.credentials;
           if (!credentials) throw new Error('No AuthBoundry credential resolver');
           return credentials.withSecret(input, use);
-        } },
+        } } satisfies ScopedSecretsResolver,
       });
       return gateway;
     },

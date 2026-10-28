@@ -27,11 +27,17 @@ The API is available through `createConfigurationRouter`:
 * `POST /v1/configuration/secrets`
 * `PUT /v1/configuration/secrets/:name`
 * `DELETE /v1/configuration/{variables|secrets}/:name`
+* `POST /v1/configuration/credentials` (`credential.store`: `{ ref, value, provider?, kind?, name?, required? }`, 201 `{ ref, version, storedAt, binding? }`)
+* `GET /v1/configuration/credentials/status?ref=…` (`credential.status`, repeat `ref` for several)
 
 Requests must carry a verified principal. Each operation is authorized by
 AuthBoundry as `configuration.read`, `configuration.write`,
-`configuration.delete`, `credential.attach`, `credential.rotate`, or
-`credential.detach` (see [AUTHORITY.md](./AUTHORITY.md)). The optional management UI is served by
+`configuration.delete`, `credential.attach`, `credential.rotate`,
+`credential.detach`, `credential.store`, or `credential.status` (see
+[AUTHORITY.md](./AUTHORITY.md)). The two credential routes need a host
+`SecretCustody`; otherwise they answer `CUSTODY_READ_ONLY` (409). The value is
+sent to the host's custody and is never stored in configuration or returned
+(see [credentials.md](./credentials.md#write-path-secretcustody-080)). The optional management UI is served by
 `createConfigurationUiRouter()` at `/configuration`; it uses the API and does
 not use browser storage.
 

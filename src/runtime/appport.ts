@@ -19,7 +19,7 @@ import type { WebhookDestinationPolicy } from '../authority/destination.js';
 import { ServiceAuthorityError } from '../authority/errors.js';
 import { SERVICE_CAPABILITY_MANIFEST, type ServiceCapability } from '../authority/manifest.js';
 import { requireVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
-import type { ScopedSecretsResolver } from '../secrets/protocol.js';
+import type { ScopedSecretsResolver, SecretCustody } from '../secrets/protocol.js';
 import type { JobExecution } from '../jobs/service.js';
 import { invokeService } from './invoke.js';
 import { assertApplicationCollection } from '../authority/reserved.js';
@@ -58,7 +58,7 @@ export interface AppPortOptions extends FeltDBOptions {
   /** AuthBoundry client. Every service effect is authorized through it; without it effects fail closed. */
   readonly authorizer?: ServiceAuthorizer;
   /** AuthBoundry credential custody used to resolve provider credentials after authorization. */
-  readonly credentials?: ScopedSecretsResolver;
+  readonly credentials?: ScopedSecretsResolver | SecretCustody;
   /** Trusted host authentication adapter for non-API-key identities (sessions, SSO). */
   readonly identify?: (request: IncomingMessage) => PrincipalClaims | null | Promise<PrincipalClaims | null>;
   readonly authorizationTimeoutMs?: number;

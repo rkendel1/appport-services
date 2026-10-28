@@ -586,7 +586,7 @@ function failureResult(error: unknown): WebhookDeliveryResult {
   const outcome = (error as { outcome?: WebhookDeliveryResult }).outcome;
   if (outcome) return outcome;
   if (isServiceAuthorityError(error)) {
-    const code = error.code === 'UNAUTHENTICATED' || error.code === 'NOT_FOUND' ? 'DENIED' : error.code;
+    const code = error.code === 'UNAUTHENTICATED' || error.code === 'NOT_FOUND' ? 'DENIED' : error.code === 'CUSTODY_READ_ONLY' ? 'AUTHORITY_UNAVAILABLE' : error.code;
     return { success: false, error: error.message, code };
   }
   return { success: false, error: error instanceof Error ? error.message : String(error), code: 'PROVIDER_ERROR' };

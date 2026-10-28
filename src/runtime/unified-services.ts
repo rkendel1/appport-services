@@ -10,7 +10,8 @@ import { FeltDbEffectEvidenceStore, createEvidenceReader, type EffectEvidenceRea
 import { ServiceGateway } from '../authority/gateway.js';
 import { SERVICE_CAPABILITY_MANIFEST, type ServiceCapability } from '../authority/manifest.js';
 import { requireVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
-import type { ScopedSecretsResolver } from '../secrets/protocol.js';
+import { isSecretCustody, type ScopedSecretsResolver, type SecretCustody } from '../secrets/protocol.js';
+import { FeltDbSecretMetadataStore } from '../storage/secrets.js';
 import { invokeService } from './invoke.js';
 import { JobService } from '../jobs/service.js';
 import { FeltDbJobStore, FeltDbJobScheduleStore, FeltDbJobAuditSink } from '../jobs/store.js';
@@ -119,8 +120,15 @@ export interface CreateServicesOptions extends FeltDBOptions {
   application?: string;
   /** AuthBoundry client. Without it every service effect fails closed. */
   authorizer?: ServiceAuthorizer;
-  /** AuthBoundry credential custody. */
-  credentials?: ScopedSecretsResolver;
+  /**
+   * Credential custody, supplied by the host. A `ScopedSecretsResolver` only
+   * resolves credentials for authorized effects. A `SecretCustody` (a resolver
+   * with `store` and `status`, see `isSecretCustody`) also lets
+   * `credential.store` hand it a value and `credential.status` / `health()`
+   * report whether material exists. AppPort Services keeps no material either
+   * way: values are never FeltDB fields.
+   */
+  credentials?: ScopedSecretsResolver | SecretCustody;
   authorizationTimeoutMs?: number;
   /** Trusted host-only destination policy override (local development, tests). */
   webhookDestinationPolicy?: WebhookDestinationPolicy;
@@ -193,6 +201,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     store: configurationStore,
     ...(configurationDeclarations ? { declarations: configurationDeclarations } : {}),
     transfer: { webhooks: webhookService, schedules: scheduleService },
+    secretMetadata: new FeltDbSecretMetadataStore(db),
     ...(authority ? { authority } : {}),
   });
   const intelligenceService = new IntelligenceService({ store: configurationStore, ...(authority ? { authority } : {}) });
@@ -246,6 +255,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
       version: VERSION,
       authorizer: Boolean(authorizer),
       credentials: Boolean(credentials),
+      ...(isSecretCustody(credentials) ? { custody: credentials } : {}),
       declarations: configurationService.declarations,
     }, healthOptions),
     invoke: (capability, input, invokeOptions) => invokeService(invokable, capability, input, invokeOptions),

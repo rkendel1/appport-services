@@ -12,7 +12,9 @@ export type ServiceFailureCode =
   | 'INVALID_REQUEST'
   | 'PROVIDER_ERROR'
   | 'UNAUTHENTICATED'
-  | 'NOT_FOUND';
+  | 'NOT_FOUND'
+  /** The host's credential custody cannot store values (resolver-only, or `status().writable` is false). */
+  | 'CUSTODY_READ_ONLY';
 
 const STATUS: Readonly<Record<ServiceFailureCode, number>> = {
   DENIED: 403,
@@ -22,6 +24,7 @@ const STATUS: Readonly<Record<ServiceFailureCode, number>> = {
   PROVIDER_ERROR: 502,
   UNAUTHENTICATED: 401,
   NOT_FOUND: 404,
+  CUSTODY_READ_ONLY: 409,
 };
 
 export class ServiceAuthorityError extends Error {

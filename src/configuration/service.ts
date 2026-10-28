@@ -10,8 +10,10 @@ import {
   exportConfiguration, importConfiguration,
   type ConfigurationExportDocument, type ConfigurationExportOptions, type ConfigurationImportOptions, type ConfigurationImportReport, type ConfigurationTransferDependencies,
 } from './transfer.js';
-import { requireCredentialRef } from '../authority/credentials.js';
-import { ServiceAuthorityError, ServiceMigrationError } from '../authority/errors.js';
+import { isCredentialRef, requireCredentialRef, type CredentialRef } from '../authority/credentials.js';
+import type { SecretCustodyStatus } from '../secrets/protocol.js';
+import type { SecretMetadataStore } from '../storage/secrets.js';
+import { ServiceAuthorityError, ServiceMigrationError, isServiceAuthorityError } from '../authority/errors.js';
 import type { ServiceGateway } from '../authority/gateway.js';
 import { rejectCallerActor, requireVerifiedPrincipal, resolveTenant, type VerifiedPrincipal } from '../authority/principal.js';
 
@@ -19,6 +21,50 @@ const NAME = /^[A-Z][A-Z0-9_]*$/;
 type Scope = Omit<ConfigurationScope, 'tenantId' | 'applicationId'> & { tenantId?: string; applicationId?: string };
 type VariableInput = Scope & { name: string; required?: boolean; value: string };
 type CredentialInput = Scope & { name: string; required?: boolean; credentialRef: string };
+
+/** `credential.store` input. `value` is handed to the host's custody and dropped; it is never stored, echoed, or recorded. */
+export interface CredentialStoreInput {
+  readonly ref: string;
+  readonly value: string;
+  readonly provider?: string;
+  readonly kind?: string;
+  /** Optional configuration binding to create (or point at `ref`) in `environment`, like `credential.attach`. */
+  readonly name?: string;
+  readonly required?: boolean;
+  /** Defaults to production, like the configuration routes. */
+  readonly environment?: ConfigurationScope['environment'];
+  readonly tenantId?: string;
+  readonly applicationId?: string;
+}
+
+/** `credential.store` result. Never the value. */
+export interface CredentialStoreResult {
+  readonly ref: CredentialRef;
+  readonly version: number;
+  readonly storedAt: string;
+  /** The binding created or updated when `name` was given. */
+  readonly binding?: ConfigurationSecretView;
+}
+
+/** `credential.status` input: one reference or several. */
+export interface CredentialStatusInput {
+  readonly ref?: string;
+  readonly refs?: readonly string[];
+  readonly provider?: string;
+  readonly environment?: ConfigurationScope['environment'];
+  readonly tenantId?: string;
+  readonly applicationId?: string;
+}
+
+/** One reference's custody status. Never the value. */
+export interface CredentialStatusView extends SecretCustodyStatus {
+  readonly ref: CredentialRef;
+}
+
+/** Longest value accepted by `credential.store` (64 KiB of UTF-16 code units). */
+export const MAX_CREDENTIAL_VALUE_LENGTH = 65_536;
+const MAX_STATUS_REFS = 100;
+const LABEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 
 /** @deprecated Denials are reported as ServiceAuthorityError with code DENIED. */
 export class ConfigurationAuthorizationError extends Error { constructor() { super('Configuration operation is not authorized'); this.name = 'ConfigurationAuthorizationError'; } }
@@ -31,6 +77,8 @@ export interface ConfigurationServiceOptions {
   readonly transfer?: Pick<ConfigurationTransferDependencies, 'webhooks' | 'schedules'>;
   /** Policy Enforcement Point. Ownership (tenant + application) and every change are enforced through it. */
   readonly authority?: ServiceGateway;
+  /** Value-free `Secrets` / `SecretVersions` / `SecretAuditEvents` metadata written by `credential.store`. */
+  readonly secretMetadata?: SecretMetadataStore;
   readonly now?: () => Date;
 }
 
@@ -116,6 +164,106 @@ export class ConfigurationService {
       await this.record('secret.rotated', item, 'secret', principal.principalId, 'rotated', 'configured');
       return secretView(item);
     });
+  }
+
+  /**
+   * Hand a credential value to the host's custody (`credential.store`) and,
+   * when `name` is given, bind it in configuration (`credential.attach`, or
+   * `credential.rotate` when the binding points elsewhere). The value is
+   * passed to `SecretCustody.store` once, inside the authorized effect, and
+   * dropped: it is not stored in FeltDB, not returned, and not part of any
+   * evidence, audit event, error, or log. Evidence records the reference and
+   * the stored version.
+   */
+  async storeCredential(input: CredentialStoreInput, caller: AuthenticatedPrincipal): Promise<CredentialStoreResult> {
+    const value = (input as { value?: unknown })?.value;
+    try {
+      return await this.storeCredentialUnredacted(input, caller);
+    } catch (error) {
+      throw redactValue(error, value);
+    }
+  }
+
+  private async storeCredentialUnredacted(input: CredentialStoreInput, caller: AuthenticatedPrincipal): Promise<CredentialStoreResult> {
+    if (!input || typeof input !== 'object') throw new ServiceAuthorityError('INVALID_REQUEST', 'credential.store input must be an object');
+    const ref = requireCredentialRef(input.ref, 'ref');
+    validateCredentialValue(input.value);
+    const provider = optionalLabel(input.provider, 'provider');
+    const kind = optionalLabel(input.kind, 'kind');
+    if (input.name !== undefined) validateName(input.name);
+    const { principal, owned } = this.own({ ...input, environment: input.environment ?? 'production' }, caller);
+    const gateway = this.gateway();
+    return gateway.execute('credential.store', principal, resource(owned, input.name, 'credential', ref), { service: 'configuration', credentialRef: ref, ...(provider ? { provider } : {}) }, async (_context, tools) => {
+      // A name that is a variable can never become a binding: refuse before anything is stored.
+      if (input.name !== undefined && await this.options.store.getVariable(owned, input.name)) {
+        throw new ConfigurationValidationError(`Configuration ${input.name} already exists as a variable`);
+      }
+      // The binding change is authorized before the value reaches custody, so a denial stores nothing.
+      const current = input.name !== undefined ? await this.options.store.getSecret(owned, input.name) : null;
+      const bindingCapability = input.name === undefined ? undefined : !current ? 'credential.attach' : current.credentialRef !== ref ? 'credential.rotate' : undefined;
+      const bindingContext = bindingCapability ? await gateway.authorize(bindingCapability, principal, resource(owned, input.name, 'credential', ref)) : undefined;
+
+      let stored;
+      try {
+        stored = await tools.storeCredential(ref, input.value, { purpose: 'credential.store', ...(provider ? { provider } : {}), ...(kind ? { kind } : {}) });
+      } catch (error) {
+        await this.options.secretMetadata?.recordFailure({
+          tenantId: owned.tenantId, secretId: ref.slice('credential-ref:'.length), ...(provider ? { provider } : {}),
+          principalId: principal.principalId, purpose: 'credential.store', reason: failureReason(error), timestamp: this.now().toISOString(),
+        }).catch(() => undefined);
+        throw error;
+      }
+      await this.options.secretMetadata?.recordStored({
+        tenantId: owned.tenantId, secretId: ref.slice('credential-ref:'.length), providerRef: ref,
+        ...(provider ? { provider } : {}), ...(kind ? { kind } : {}),
+        version: stored.version, storedAt: stored.storedAt, principalId: principal.principalId, purpose: 'credential.store',
+      });
+
+      let binding: ConfigurationSecretView | undefined;
+      if (input.name !== undefined) {
+        if (!bindingContext) binding = secretView(current!);
+        else binding = await gateway.run(bindingContext, { service: 'configuration', credentialRef: ref }, () => this.bind(owned, input.name!, ref, input.required, principal.principalId, current));
+      }
+      return { ref, version: stored.version, storedAt: stored.storedAt, ...(binding ? { binding } : {}) };
+    });
+  }
+
+  /**
+   * Whether the host's custody holds material for each reference
+   * (`credential.status`, an observation), without revealing it. One
+   * authorization per reference.
+   */
+  async credentialStatus(input: CredentialStatusInput, caller: AuthenticatedPrincipal): Promise<CredentialStatusView[]> {
+    if (!input || typeof input !== 'object') throw new ServiceAuthorityError('INVALID_REQUEST', 'credential.status input must be an object');
+    const raw = input.refs !== undefined ? input.refs : input.ref !== undefined ? [input.ref] : undefined;
+    if (!Array.isArray(raw) || raw.length === 0) throw new ServiceAuthorityError('INVALID_REQUEST', 'credential.status needs ref or a non-empty refs list');
+    if (raw.length > MAX_STATUS_REFS) throw new ServiceAuthorityError('INVALID_REQUEST', `credential.status accepts at most ${MAX_STATUS_REFS} references`);
+    const refs = [...new Set(raw.map((ref, index) => requireCredentialRef(ref, input.refs !== undefined ? `refs[${index}]` : 'ref')))];
+    const provider = optionalLabel(input.provider, 'provider');
+    const { principal, owned } = this.own({ ...input, environment: input.environment ?? 'production' }, caller);
+    const results: CredentialStatusView[] = [];
+    for (const ref of refs) {
+      results.push(await this.gateway().execute('credential.status', principal, resource(owned, undefined, 'credential', ref), { service: 'configuration', credentialRef: ref, ...(provider ? { provider } : {}) },
+        async (_context, tools) => ({ ref, ...await tools.credentialStatus(ref, { purpose: 'credential.status', ...(provider ? { provider } : {}) }) })));
+    }
+    return results;
+  }
+
+  /** Create or re-point a binding; the caller has already authorized the change. */
+  private async bind(owned: ConfigurationScope, name: string, credentialRef: CredentialRef, required: boolean | undefined, actor: string, current: ConfigurationSecret | null): Promise<ConfigurationSecretView> {
+    const timestamp = this.now().toISOString();
+    if (!current) {
+      const item: ConfigurationSecret = { ...owned, name, credentialRef, id: randomUUID(), required: required ?? false, createdAt: timestamp, updatedAt: timestamp, createdBy: actor, __version: 1 };
+      await this.options.store.saveSecret(item);
+      await this.record('secret.created', item, 'secret', actor, 'created', 'configured');
+      return secretView(item);
+    }
+    const { value: _legacyValue, ...rest } = current as ConfigurationSecret & { value?: unknown };
+    const item: ConfigurationSecret = { ...rest, credentialRef, required: required ?? current.required, updatedAt: timestamp, __version: current.__version + 1 };
+    if ('value' in current) Object.assign(item, { value: undefined });
+    await this.options.store.saveSecret(item, current.__version);
+    await this.record('secret.rotated', item, 'secret', actor, 'rotated', 'configured');
+    return secretView(item);
   }
 
   async delete(scope: Scope & { name: string; kind: 'variable' | 'secret' }, caller: AuthenticatedPrincipal): Promise<void> {
@@ -215,6 +363,42 @@ function rejectRawSecret(input: object): void {
     throw new ServiceMigrationError('Secret values are no longer stored in configuration. Register the credential with AuthBoundry and pass credentialRef: "credential-ref:<id>".');
   }
 }
+function validateCredentialValue(value: unknown): asserts value is string {
+  // Messages here never include the value.
+  if (typeof value !== 'string') throw new ServiceAuthorityError('INVALID_REQUEST', 'value is required and must be a string');
+  if (value.trim().length === 0) throw new ServiceAuthorityError('INVALID_REQUEST', 'value must not be empty');
+  if (value.length > MAX_CREDENTIAL_VALUE_LENGTH) throw new ServiceAuthorityError('INVALID_REQUEST', `value must be at most ${MAX_CREDENTIAL_VALUE_LENGTH} characters`);
+  if (value.trim().startsWith('credential-ref:') || isCredentialRef(value.trim())) {
+    throw new ServiceAuthorityError('INVALID_REQUEST', 'value is a credential reference, not credential material. Pass the secret itself as value and the reference as ref, or use credential.attach to bind an existing reference.');
+  }
+}
+
+function optionalLabel(value: unknown, field: string): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string' || !LABEL.test(value)) throw new ServiceAuthorityError('INVALID_REQUEST', `${field} must be a short identifier (letters, digits, . _ : -)`);
+  return value;
+}
+
+function failureReason(error: unknown) {
+  const code = isServiceAuthorityError(error) ? error.code : undefined;
+  return code === 'DENIED' ? 'secret_resolution_denied' as const : code === 'CUSTODY_READ_ONLY' ? 'secret_unavailable' as const : 'internal_error' as const;
+}
+
+/**
+ * Defense in depth: no error leaving `credential.store` may contain the value,
+ * whatever raised it. A message that does is replaced; the code is kept.
+ */
+function redactValue(error: unknown, value: unknown): unknown {
+  if (typeof value !== 'string' || value.length === 0) return error;
+  const leaks = (text: unknown) => typeof text === 'string' && text.includes(value);
+  if (!(error instanceof Error)) return leaks(String(error)) ? new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'credential.store failed') : error;
+  const details = isServiceAuthorityError(error) ? error.details : undefined;
+  if (!leaks(error.message) && !leaks(error.stack) && !leaks(details?.reason)) return error;
+  if (isServiceAuthorityError(error)) return new ServiceAuthorityError(error.code, `credential.store failed (${error.code})`, { ...(details?.capability ? { capability: details.capability } : {}), ...(details?.decisionId ? { decisionId: details.decisionId } : {}) });
+  if (error instanceof ConfigurationValidationError) return new ConfigurationValidationError('credential.store input is invalid');
+  return new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'credential.store failed');
+}
+
 function validateName(name: unknown) {
   if (typeof name !== 'string' || !NAME.test(name)) throw new ConfigurationValidationError('Name must be an uppercase configuration identifier');
 }

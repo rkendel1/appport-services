@@ -57,7 +57,7 @@ const SURFACES: readonly SurfaceDefinition[] = [
   { id: 'files', title: 'Files', route: '/files', order: 60, mounted: (s) => Boolean(s.files), capabilities: ['files.read', 'files.write', 'files.delete'] },
   { id: 'configuration', title: 'Configuration', route: '/configuration', order: 70, mounted: (s, c) => c && Boolean(s.configuration), capabilities: ['configuration.read', 'configuration.write', 'configuration.delete'] },
   { id: 'intelligence', title: 'Intelligence', route: '/intelligence', order: 75, mounted: (s, c) => c && Boolean(s.intelligence), capabilities: ['intelligence.catalog', 'intelligence.read', 'intelligence.write', 'intelligence.credential.set', 'intelligence.credential.remove'] },
-  { id: 'secrets', title: 'Secrets', route: '/secrets', order: 80, mounted: (s, c) => c && Boolean(s.configuration), capabilities: ['configuration.read', 'credential.attach', 'credential.rotate', 'credential.detach'] },
+  { id: 'secrets', title: 'Secrets', route: '/secrets', order: 80, mounted: (s, c) => c && Boolean(s.configuration), capabilities: ['configuration.read', 'credential.attach', 'credential.rotate', 'credential.detach', 'credential.status', 'credential.store'] },
 ];
 
 /** The number of management pages (everything but the overview) that are mounted. */

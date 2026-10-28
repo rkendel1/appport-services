@@ -25,6 +25,28 @@ export function createConfigurationRouter(service: ConfigurationService): Router
   router.post('/variables', async (req, res, next) => { try { res.status(201).json(await service.createVariable(bodyInput(req), req.auth!)); } catch (error) { next(error); } });
   router.patch('/variables/:name', async (req, res, next) => { try { res.json(await service.updateVariable({ ...bodyInput(req), name: req.params.name }, req.auth!)); } catch (error) { next(error); } });
   router.post('/secrets', async (req, res, next) => { try { res.status(201).json(await service.createSecret(credentialInput(req), req.auth!)); } catch (error) { next(error); } });
+  // credential.store: the value goes to the host's custody; the answer never contains it.
+  router.post('/credentials', async (req, res, next) => {
+    try {
+      const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
+      res.status(201).json(await service.storeCredential({
+        ...scope(req),
+        ref: body.ref as string,
+        value: body.value as string,
+        ...(body.provider === undefined ? {} : { provider: body.provider as string }),
+        ...(body.kind === undefined ? {} : { kind: body.kind as string }),
+        ...(body.name === undefined || body.name === '' ? {} : { name: body.name as string }),
+        ...(body.required === undefined ? {} : { required: body.required === true }),
+      }, req.auth!));
+    } catch (error) { next(error); }
+  });
+  // credential.status: ?ref=credential-ref:a&ref=credential-ref:b
+  router.get('/credentials/status', async (req, res, next) => {
+    try {
+      const refs = ([] as unknown[]).concat(req.query.ref ?? []).filter((ref): ref is string => typeof ref === 'string');
+      res.json(await service.credentialStatus({ ...scope(req), refs, ...(typeof req.query.provider === 'string' ? { provider: req.query.provider } : {}) }, req.auth!));
+    } catch (error) { next(error); }
+  });
   router.put('/secrets/:name', async (req, res, next) => { try { res.json(await service.rotateSecret({ ...credentialInput(req), name: req.params.name }, req.auth!)); } catch (error) { next(error); } });
   router.delete('/:kind/:name', async (req, res, next) => {
     try {
@@ -44,10 +66,18 @@ export function createConfigurationManagementRouter(service: ConfigurationServic
 }
 
 export function configurationErrorHandler(error: unknown, _req: Request, res: { status(code: number): { json(body: unknown): void } }): void {
+  // A body that is not JSON: the parser's message quotes the body, which may be a credential.
+  if (isBodyParseError(error)) { res.status(400).json({ error: 'Request body is not valid JSON', code: 'INVALID_INPUT' }); return; }
   if (isServiceAuthorityError(error)) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
   if (error instanceof ConfigurationAuthorizationError) { res.status(403).json({ error: error.message }); return; }
   if (error instanceof ConfigurationValidationError) { res.status(400).json({ error: error.message }); return; }
   res.status(500).json({ error: 'Configuration operation failed' });
+}
+
+/** An Express/body-parser failure to read the body. Its message may quote the body, so it is never echoed. */
+export function isBodyParseError(error: unknown): boolean {
+  const type = typeof error === 'object' && error ? (error as { type?: unknown }).type : undefined;
+  return typeof type === 'string' && /^(entity|request|stream|encoding|charset|parameters)\./.test(type);
 }
 
 export { environments };

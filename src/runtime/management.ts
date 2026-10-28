@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 
 import type { ApiKeyService } from '../api-keys/service.js';
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
-import { createConfigurationRouter } from '../configuration/http.js';
+import { createConfigurationRouter, isBodyParseError } from '../configuration/http.js';
 import { createIntelligenceRouter } from '../intelligence/http.js';
 import type { IntelligenceService } from '../intelligence/service.js';
 import { createConfigurationUiRouter, normalizeBasePath } from '../configuration/ui.js';
@@ -167,6 +167,12 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
 }
 
 export function managementErrorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction): void {
+  // The JSON parser's message quotes the body, which may be a credential value: never echo it.
+  if (isBodyParseError(error)) {
+    const status = Number((error as { status?: unknown }).status);
+    res.status(status >= 400 && status < 500 ? status : 400).json({ error: { code: 'INVALID_INPUT', message: 'Request body could not be read as JSON' } });
+    return;
+  }
   if (isServiceAuthorityError(error)) {
     res.status(error.status).json({ error: { code: error.code, message: error.message } });
     return;

@@ -73,10 +73,10 @@
     "id": "credentials",
     "name": "Credentials",
     "contractVersion": 1,
-    "operations": ["attach", "rotate", "detach"],
+    "operations": ["attach", "rotate", "detach", "store", "status"],
     "durable": true,
     "async": false,
-    "dependencies": ["configuration", "ServiceGateway", "FeltDB"],
+    "dependencies": ["configuration", "ServiceGateway", "FeltDB", "SecretCustody"],
     "runtimeMounted": true
   },
   {

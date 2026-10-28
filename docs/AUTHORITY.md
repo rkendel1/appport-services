@@ -173,7 +173,7 @@ AuthBoundry a stable hash to pin.
 | Schedules | `schedules.read`, `schedules.create`, `schedules.cancel` |
 | Notifications | `notifications.read`, `notifications.send`, `notifications.update`, `notifications.delete` |
 | Files | `files.read`, `files.write`, `files.delete` |
-| Configuration | `configuration.read`, `configuration.write`, `configuration.delete`, `credential.attach`, `credential.rotate`, `credential.detach` |
+| Configuration | `configuration.read`, `configuration.write`, `configuration.delete`, `credential.attach`, `credential.rotate`, `credential.detach`, `credential.store`, `credential.status` |
 
 \* Runtime-internal. These are authorized on every delivery, receipt, or
 job run, but cannot be invoked by callers.
@@ -210,6 +210,7 @@ URI match the request.
 | `INVALID_REQUEST` | bad input, undeclared capability, forbidden destination, or a migration error | never |
 | `PROVIDER_ERROR` | authorized, but the provider failed | yes, once |
 | `UNAUTHENTICATED` | no verified principal or execution context | never |
+| `CUSTODY_READ_ONLY` | `credential.store`/`credential.status` on a host whose custody cannot store (resolver-only, none, or `writable: false`); HTTP 409 | never |
 
 Provider failures are never reported as authorization failures.
 
@@ -236,6 +237,12 @@ service/provider call
   service no longer generates, encrypts, or holds signing secrets.
 - Configuration is not authority. Attaching `credential-ref:cred_123` means
   the credential is configured. It does not let anyone use it.
+- `credential.store` hands a value to the host's `SecretCustody` inside an
+  authorized effect (custody gets `authorizationRef` = the decision id) and
+  keeps nothing: evidence records `credentialRef` and `credentialVersion`. A
+  `name` binding is authorized separately (`credential.attach` or
+  `credential.rotate`) before the value is stored. See
+  [credentials.md](./credentials.md#write-path-secretcustody-080).
 
 ## Application scoping
 

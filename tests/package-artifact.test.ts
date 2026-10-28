@@ -27,7 +27,7 @@ const VERIFIER = `
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import { APPPORT_UI_CONTRIBUTIONS, VERSION, createManagementRouter, createServices, createUiContribution } from '@appport/services';
+import { APPPORT_UI_CONTRIBUTIONS, SERVICE_CAPABILITY_MANIFEST, VERSION, createManagementRouter, createServices, createUiContribution, isSecretCustody } from '@appport/services';
 import manifest from '@appport/services/package.json' with { type: 'json' };
 import { validateUiContribution } from '@appport/protocol';
 
@@ -83,6 +83,8 @@ console.log(JSON.stringify({
   usesOwnDb: services.usesInstance(services.db),
   healthStatus: health.status,
   evidenceState: evidence.state,
+  custodyGuard: isSecretCustody({ withSecret() {}, store() {}, status() {} }) && !isSecretCustody({ withSecret() {} }),
+  credentialCapabilities: SERVICE_CAPABILITY_MANIFEST.filter((capability) => capability.name === 'credential.store' || capability.name === 'credential.status').map((capability) => capability.name + ':' + capability.effect),
 }));
 process.exit(0);
 `;
@@ -137,6 +139,8 @@ test('the packed npm artifact serves a valid AppPort/ui/1 document at GET /v1/ui
     usesOwnDb: boolean;
     healthStatus: string;
     evidenceState: string;
+    custodyGuard: boolean;
+    credentialCapabilities: string[];
   };
 
   // VERSION and @appport/services/package.json resolve from the installed artifact and agree with the packed version.
@@ -147,6 +151,9 @@ test('the packed npm artifact serves a valid AppPort/ui/1 document at GET /v1/ui
   assert.equal(result.usesOwnDb, true);
   assert.equal(result.healthStatus, 'unconfigured', 'no authorizer: health reports unconfigured');
   assert.equal(result.evidenceState, 'none');
+  // The 0.8.0 credential custody write path is in the artifact.
+  assert.equal(result.custodyGuard, true, 'isSecretCustody is exported and recognises a SecretCustody');
+  assert.deepEqual(result.credentialCapabilities, ['credential.status:observation', 'credential.store:consequential']);
 
   // Discovery works from the artifact and is a valid AppPort/ui/1 document.
   assert.equal(result.status, 200, 'GET /v1/ui must answer 200 from the packed artifact');
