@@ -4,7 +4,7 @@ All notable changes to `@appport/services`. Releases before 0.6.0 are described 
 
 ## 0.6.0 — unreleased (prepared, not published)
 
-Consumer APIs requested by FeltKit. Everything is additive; no existing API changed behaviour.
+Consumer APIs requested by FeltKit. Everything is additive; no existing API changed behaviour. `@appport/runtime` and `create-appport` are released with it.
 
 ### Added
 
@@ -16,6 +16,14 @@ Consumer APIs requested by FeltKit. Everything is additive; no existing API chan
 - **`createManagementRouter({ basePath })`.** Prefixes every request and navigation link the packaged pages make (a path or an http(s) origin). Default `''` keeps the previous behaviour.
 - **`VERSION`** exported from the main entry, read from the package's own `package.json` so it cannot drift, and **`@appport/services/package.json`** in the `exports` map.
 
-### Notes
+### Released with it
 
-- `@appport/runtime` (0.4.9) and `create-appport` (0.1.12) are versioned independently and are not changed by this release (as in 0.5.0). `@appport/runtime` still declares `@appport/services@^0.4.9`.
+| Package | Was | Now | Dependency |
+| --- | --- | --- | --- |
+| `@appport/services` | 0.5.0 | 0.6.0 | |
+| `@appport/runtime` | 0.4.9 | 0.5.0 | `@appport/services` `^0.4.9` → `^0.6.0` |
+| `create-appport` | 0.1.12 | 0.1.13 | `@appport/runtime` `^0.4.9` → `^0.5.0` |
+
+### Fixed
+
+- **`npx create-appport` installed services 0.4.x.** The published `@appport/runtime` 0.4.9 declared `@appport/services@^0.4.9`, which on 0.x accepts no 0.5.x, so 0.5.0 never reached a scaffolded project. The runtime and the scaffolder now move with every services release: `npm run release:bump -- <patch|minor|major>` bumps all three and their ranges (runtime by the same increment as services, create-appport by a patch), and `npm run check:versions`, run first by `npm test` and by `scripts/publish-packages.sh`, refuses a range that does not accept the version in this repository. The scaffolder writes the runtime range from its own `package.json` instead of a hard-coded copy.

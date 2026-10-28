@@ -192,8 +192,15 @@ All criteria met and tested.
 
 1. `@appport/protocol` (repository `rkendel1/appport`), with any change this
    package needs;
-2. `@appport/services` (and `@appport/runtime`, `create-appport`);
+2. `@appport/services`, then `@appport/runtime`, then `create-appport`;
 3. consumers.
+
+The three packages in this repository release together. Prepare a release with
+`npm run release:bump -- <patch|minor|major>`: it bumps `@appport/services` and
+`@appport/runtime` by that increment and `create-appport` by a patch, and points
+each one's range at the version before it in the chain. `npm run check:versions`
+(run first by `npm test` and by the publish script) refuses a range that does not
+accept the version in this repository, because on 0.x `^0.4.9` accepts no 0.5.x.
 
 `scripts/publish-packages.sh` refuses to publish unless a published
 `@appport/protocol` satisfies the range in `package.json`. The test

@@ -42,9 +42,11 @@
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test --test-concurrency=1 dist/tests/**/*.test.js",
+    "test": "node scripts/release-versions.mjs check && npm run build && node --test --test-concurrency=1 dist/tests/**/*.test.js",
     "publish:packages": "sh scripts/publish-packages.sh",
-    "test:browser": "npm run build && node --test --test-concurrency=1 dist/tests/browser/*.browser.js"
+    "test:browser": "npm run build && node --test --test-concurrency=1 dist/tests/browser/*.browser.js",
+    "check:versions": "node scripts/release-versions.mjs check",
+    "release:bump": "node scripts/release-versions.mjs bump"
   },
   "keywords": [
     "appport",
