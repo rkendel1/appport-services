@@ -1,4 +1,5 @@
-export type { SecretsProtocol, ScopedSecretsResolver } from './protocol.js';
+export type { SecretsProtocol, ScopedSecretsResolver, SecretCustody, SecretAccessContext, SecretCustodyWriteResult, SecretCustodyStatus } from './protocol.js';
+export { isSecretCustody } from './protocol.js';
 export type { Secret, SecretVersion, SecretMetadata, SecretStatus, SecretVersionStatus, SecretAuditEvent, SecretAuditEventType, RegisterSecretInput, RotateSecretInput, SecretOperationInput, ResolveSecretInput, SecretReference, SecretResolutionContext, ScopedResolveSecretInput, ResolvedSecret, SecretResolutionFailureCode } from './models.js';
 export {
   SecretError, SecretNotFoundError, SecretRevokedError, SecretExpiredError, SecretResolutionDeniedError,

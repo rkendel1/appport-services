@@ -25,6 +25,8 @@ export interface EffectEvidence {
   readonly decision: 'allow' | 'deny' | 'none';
   readonly decisionId?: string;
   readonly credentialRef?: string;
+  /** The custody version a `credential.store` effect produced. Never the value. */
+  readonly credentialVersion?: number;
   readonly service: string;
   readonly provider?: string;
   readonly requestId: string;
@@ -36,7 +38,7 @@ export interface EffectEvidence {
 
 export interface EffectEvidenceStore {
   record(evidence: EffectEvidence): Promise<void>;
-  complete(id: string, updates: Pick<EffectEvidence, 'outcome' | 'completedAt'> & Partial<Pick<EffectEvidence, 'failureCode' | 'credentialRef' | 'provider'>>): Promise<void>;
+  complete(id: string, updates: Pick<EffectEvidence, 'outcome' | 'completedAt'> & Partial<Pick<EffectEvidence, 'failureCode' | 'credentialRef' | 'credentialVersion' | 'provider'>>): Promise<void>;
   get(id: string): Promise<EffectEvidence | null>;
   list(tenantId: string): Promise<readonly EffectEvidence[]>;
   findByDecision(decisionId: string): Promise<readonly EffectEvidence[]>;
@@ -150,6 +152,10 @@ const SECRET_VALUE = /(app_live_[0-9a-f]{6}_)|(^bearer\s)|(-----BEGIN)/i;
 /** Evidence is built from fixed fields; this guard keeps a future change from leaking material into it. */
 export function assertEvidenceHasNoSecrets(evidence: Partial<EffectEvidence>): void {
   for (const [key, value] of Object.entries(evidence)) {
+    if (key === 'credentialVersion') {
+      if (value !== undefined && !Number.isInteger(value)) throw new Error('Evidence field "credentialVersion" must be an integer');
+      continue;
+    }
     if (key !== 'credentialRef' && SECRET_KEY.test(key)) throw new Error(`Evidence field "${key}" is not permitted`);
     if (typeof value === 'string' && SECRET_VALUE.test(value)) throw new Error(`Evidence field "${key}" contains credential material`);
     if (key === 'credentialRef' && value !== undefined && !String(value).startsWith('credential-ref:')) {
