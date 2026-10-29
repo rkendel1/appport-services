@@ -2,7 +2,22 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## 0.9.0 — unreleased
+## 0.9.1 — unreleased
+
+0.9.0's fragment declared every collection but no indexes, so on Managed FeltDB every
+service's tenant-scoped read was refused (`INDEX_UNAVAILABLE`: an application-scoped
+authority answers a query filtered on `tenantId` only through a schema-declared equality
+index). Found running FeltKit's starter, with every service enabled, on Managed FeltDB.
+Additive: a host republishes its contract with the new indexes.
+
+### Fixed
+
+- **`servicesContract(...)` carries an index per collection**: `<collection>_by_tenant` on
+  `["tenantId"]`, in the same order as the collections. New exports `SERVICE_INDEXES` and
+  `ServicesContractIndex`. A test encodes FeltDB's rule: every tenant-scoped collection has an
+  equality index on its scope field, on declared fields only.
+
+## 0.9.0 — 2026-10-29
 
 The services declare what they store, so a host can run them on Managed FeltDB. An
 application-scoped FeltDB authority stores only what its promoted contract declares, and the
@@ -19,10 +34,6 @@ are stored changed.
   application-contract entries for every collection the services store, each declared once,
   composed deterministically (name order, each collection once, dependencies included:
   `schedules` brings `jobs`; every service brings `service_effect_evidence`).
-- **`SERVICE_INDEXES`** and `ServicesContractIndex`: each collection's `<collection>_by_tenant`
-  equality index on `tenantId`, carried in the fragment. Managed FeltDB answers a tenant-scoped
-  query only through such an index (`INDEX_UNAVAILABLE` without one), and every store reads by
-  tenant; found running FeltKit's starter on an application-scoped authority.
 - `ApiKeyPrefixRecord` (the `api_key_prefixes` record) is exported.
 
 ### Tests
