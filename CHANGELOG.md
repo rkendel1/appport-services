@@ -19,6 +19,10 @@ are stored changed.
   application-contract entries for every collection the services store, each declared once,
   composed deterministically (name order, each collection once, dependencies included:
   `schedules` brings `jobs`; every service brings `service_effect_evidence`).
+- **`SERVICE_INDEXES`** and `ServicesContractIndex`: each collection's `<collection>_by_tenant`
+  equality index on `tenantId`, carried in the fragment. Managed FeltDB answers a tenant-scoped
+  query only through such an index (`INDEX_UNAVAILABLE` without one), and every store reads by
+  tenant; found running FeltKit's starter on an application-scoped authority.
 - `ApiKeyPrefixRecord` (the `api_key_prefixes` record) is exported.
 
 ### Tests
