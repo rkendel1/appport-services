@@ -15,6 +15,10 @@
  * and optional; numbers are `integer` where the service only ever writes counts or
  * versions. Policies stay the host's decision.
  *
+ * Every store reads within a tenant (`where tenantId = …`). An application-scoped authority
+ * answers a query filtered on a tenant-scope field only through a schema-declared equality
+ * index, so each collection declares one on `tenantId` (`<collection>_by_tenant`).
+ *
  * Kept current by tests: tests/services-contract.test.ts drives every write path of every
  * service and requires each committed collection and field to be declared, with a value of
  * the declared type, and compares each declaration with the TypeScript type of the record
@@ -35,10 +39,16 @@ export interface ServicesContractCollection {
   readonly fields: readonly ServicesContractField[];
 }
 
+/** A FeltDB application-contract equality index. */
+export interface ServicesContractIndex {
+  readonly name: string;
+  readonly collection: string;
+  readonly fields: readonly string[];
+}
+
 export interface ServicesContractFragment {
   readonly collections: readonly ServicesContractCollection[];
-  /** The services declare no indexes; present so a fragment composes like FeltDB's. */
-  readonly indexes: readonly { readonly name: string; readonly collection: string; readonly fields: readonly string[] }[];
+  readonly indexes: readonly ServicesContractIndex[];
 }
 
 /** The services, by the names hosts enable them with. */
@@ -109,6 +119,11 @@ export const SERVICE_COLLECTIONS: Readonly<Record<string, ServicesContractCollec
   collection('job_audit_events', 'id:text type:text jobId:text scheduleId:text tenantId:text principalId:text timestamp:text result:text details:json'),
 ].map((c) => [c.name, c])));
 
+/** The equality index each collection's tenant-scoped reads use. */
+export const SERVICE_INDEXES: Readonly<Record<string, ServicesContractIndex>> = Object.freeze(Object.fromEntries(
+  Object.values(SERVICE_COLLECTIONS).map((c) => [c.name, Object.freeze({ name: `${c.name}_by_tenant`, collection: c.name, fields: Object.freeze(['tenantId']) })]),
+));
+
 /** Stored by every service: the gateway records evidence for each effect. */
 const SHARED = ['service_effect_evidence'] as const;
 
@@ -130,8 +145,9 @@ export const SERVICE_REQUIREMENTS: Readonly<Record<ServiceName, { readonly colle
 
 /**
  * The contract entries for `services` (and the services they need): every collection they
- * store, each once, in name order, so the same set always yields the same fragment,
- * whatever order it is given in. No services, no entries. An unknown name is refused.
+ * store, each once, in name order, and its tenant index, so the same set always yields the
+ * same fragment, whatever order it is given in. No services, no entries. An unknown name is
+ * refused.
  */
 export function servicesContract(services: Iterable<ServiceName> | 'all'): ServicesContractFragment {
   const wanted = new Set<ServiceName>();
@@ -145,8 +161,9 @@ export function servicesContract(services: Iterable<ServiceName> | 'all'): Servi
   if (wanted.size === 0) return Object.freeze({ collections: Object.freeze([]), indexes: Object.freeze([]) });
   const names = new Set<string>(SHARED);
   for (const name of wanted) for (const c of SERVICE_REQUIREMENTS[name].collections) names.add(c);
+  const sorted = [...names].sort();
   return Object.freeze({
-    collections: Object.freeze([...names].sort().map((name) => SERVICE_COLLECTIONS[name]!)),
-    indexes: Object.freeze([]),
+    collections: Object.freeze(sorted.map((name) => SERVICE_COLLECTIONS[name]!)),
+    indexes: Object.freeze(sorted.map((name) => SERVICE_INDEXES[name]!)),
   });
 }

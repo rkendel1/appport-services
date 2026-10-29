@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as api from '../src/index.js';
-import { SERVICE_COLLECTIONS, SERVICE_NAMES, SERVICE_REQUIREMENTS, servicesContract, type ServiceName, type ServicesContractField } from '../src/contract/services-contract.js';
+import { SERVICE_COLLECTIONS, SERVICE_INDEXES, SERVICE_NAMES, SERVICE_REQUIREMENTS, servicesContract, type ServiceName, type ServicesContractField } from '../src/contract/services-contract.js';
 import { exercise, type JsonType } from './support/contract-exerciser.js';
 import { recordTypes } from './support/record-types.js';
 
@@ -77,6 +77,26 @@ test('declarations follow FeltDB conventions: id is required text, everything el
   }
 });
 
+test('every tenant-scoped read is index-backed, as an application-scoped FeltDB authority requires', () => {
+  // feltdb::state_contract: a query filtered on one of these fields is answered only through a
+  // schema-declared equality index (else INDEX_UNAVAILABLE). Every store reads within a tenant.
+  const scopeFields = ['tenant_id', 'tenantId', 'organization_id', 'organizationId', 'scope_prefix'];
+  const fragment = servicesContract('all');
+  for (const c of fragment.collections) {
+    const scoped = c.fields.filter((f) => scopeFields.includes(f.name)).map((f) => f.name);
+    assert.ok(scoped.length, `${c.name}: its stores read by tenant, so it declares tenantId`);
+    const indexes = fragment.indexes.filter((i) => i.collection === c.name);
+    for (const field of scoped) assert.ok(indexes.some((i) => i.fields.includes(field)), `${c.name}: an equality index on ${field}`);
+  }
+  for (const index of fragment.indexes) {
+    const declared = SERVICE_COLLECTIONS[index.collection];
+    assert.ok(declared, `${index.name}: on a declared collection`);
+    for (const field of index.fields) assert.ok(declared.fields.some((f) => f.name === field), `${index.name}: ${field} is a declared field`);
+  }
+  assert.equal(new Set(fragment.indexes.map((i) => i.name)).size, fragment.indexes.length, 'index names are unique');
+  assert.deepEqual(Object.keys(SERVICE_INDEXES).sort(), Object.keys(SERVICE_COLLECTIONS).sort());
+});
+
 test('composition is deterministic: same services, same fragment, whatever the order; each collection once; dependencies included', () => {
   const a = servicesContract(['schedules', 'files', 'intelligence', 'configuration']);
   const b = servicesContract(['configuration', 'intelligence', 'files', 'schedules', 'files']);
@@ -87,6 +107,7 @@ test('composition is deterministic: same services, same fragment, whatever the o
   assert.equal(new Set(names).size, names.length, 'no collection twice');
   assert.ok(names.includes('jobs'), 'schedules brings jobs');
   assert.ok(names.includes('service_effect_evidence'), 'evidence for every effect');
+  assert.deepEqual(a.indexes.map((i) => i.collection), names, 'an index per collection, in the same order');
   assert.deepEqual(servicesContract([]), { collections: [], indexes: [] });
   assert.deepEqual(servicesContract('all').collections.map((c) => c.name), Object.keys(SERVICE_COLLECTIONS).sort());
   assert.throws(() => servicesContract(['files', 'nope' as ServiceName]), /Unknown AppPort service "nope"/);

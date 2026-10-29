@@ -192,6 +192,7 @@ export { apiKeyAuth, requireApiKeyAuth } from './runtime/express-middleware.js';
 export {
   servicesContract,
   SERVICE_COLLECTIONS,
+  SERVICE_INDEXES,
   SERVICE_NAMES,
   SERVICE_REQUIREMENTS,
   SERVICES_CONTRACT_VERSION,
@@ -201,4 +202,5 @@ export type {
   ServicesContractCollection,
   ServicesContractField,
   ServicesContractFragment,
+  ServicesContractIndex,
 } from './contract/services-contract.js';

@@ -42,7 +42,13 @@ What a service stores:
 Conventions, as FeltDB's own agent-state entries (`FELTDB_AGENT_STATE_CONTRACT`): `id` is
 required text; every other field is nullable and optional; `integer` where a service only
 writes counts or versions; objects and arrays are `json`. `__version` is FeltDB's record
-identity and is not declared. The services declare no indexes.
+identity and is not declared.
+
+Indexes: every store reads within a tenant (`where tenantId = …`), and an application-scoped
+FeltDB authority answers a query filtered on a tenant-scope field only through a
+schema-declared equality index (otherwise `INDEX_UNAVAILABLE`). So each collection declares
+`<collection>_by_tenant` on `["tenantId"]` (`SERVICE_INDEXES`), and the fragment carries the
+indexes of exactly the collections it carries, in the same order.
 
 ## How it is kept true
 
