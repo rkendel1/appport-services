@@ -187,3 +187,18 @@ export { apiKeyAuth, requireApiKeyAuth } from './runtime/express-middleware.js';
 // src/_internal.ts to enforce the public/private boundary. The compiled
 // dist/src/index.js contains ONLY the consumer-facing public API above.
 // ============================================================================
+
+// What the services store, as FeltDB application-contract entries (docs/contract.md).
+export {
+  servicesContract,
+  SERVICE_COLLECTIONS,
+  SERVICE_NAMES,
+  SERVICE_REQUIREMENTS,
+  SERVICES_CONTRACT_VERSION,
+} from './contract/services-contract.js';
+export type {
+  ServiceName,
+  ServicesContractCollection,
+  ServicesContractField,
+  ServicesContractFragment,
+} from './contract/services-contract.js';

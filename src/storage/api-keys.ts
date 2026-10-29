@@ -15,7 +15,7 @@ const API_KEYS_COLLECTION = 'api_keys';
 const API_KEY_PREFIXES_COLLECTION = 'api_key_prefixes';
 const API_KEY_AUDIT_COLLECTION = 'api_key_audit_events';
 
-interface ApiKeyPrefixRecord {
+export interface ApiKeyPrefixRecord {
   readonly id: string;
   readonly apiKeyId: string;
   readonly tenantId: string;

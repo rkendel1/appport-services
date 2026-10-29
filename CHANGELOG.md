@@ -2,7 +2,42 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## 0.8.0 — unreleased (prepared, not published)
+## 0.9.0 — unreleased
+
+The services declare what they store, so a host can run them on Managed FeltDB. An
+application-scoped FeltDB authority stores only what its promoted contract declares, and the
+services' collections and fields were internal: hosts could not declare them (FeltKit refused
+to deploy an application with services to Managed FeltDB). Additive: nothing about how records
+are stored changed.
+
+### Added
+
+- **`servicesContract(names | 'all')`**, `SERVICE_COLLECTIONS`, `SERVICE_REQUIREMENTS`,
+  `SERVICE_NAMES`, `SERVICES_CONTRACT_VERSION` and the types `ServiceName`,
+  `ServicesContractCollection`, `ServicesContractField`, `ServicesContractFragment`
+  (`src/contract/services-contract.ts`, [docs/contract.md](docs/contract.md)): FeltDB
+  application-contract entries for every collection the services store, each declared once,
+  composed deterministically (name order, each collection once, dependencies included:
+  `schedules` brings `jobs`; every service brings `service_effect_evidence`).
+- `ApiKeyPrefixRecord` (the `api_key_prefixes` record) is exported.
+
+### Tests
+
+- `tests/services-contract.test.ts` drives every write path of each service on a fresh FeltDB
+  instance and checks every committed record against the declarations (collection, field,
+  and a value FeltDB accepts for the declared type), that every declared collection is
+  written, and that each declaration is exactly the TypeScript type of the record its store
+  writes (`tests/support/stored-records.ts`, read with the TypeScript compiler).
+
+### Released with it
+
+| Package | Was | Now | Dependency |
+| --- | --- | --- | --- |
+| `@appport/services` | 0.8.0 | 0.9.0 | |
+| `@appport/runtime` | 0.7.0 | 0.8.0 | `@appport/services` ^0.9.0 |
+| `create-appport` | 0.1.15 | 0.1.16 | `@appport/runtime` ^0.8.0 |
+
+## 0.8.0 — published
 
 The credential custody **write path**. A user had pasted a real API key into a "credential reference" field because no screen accepted a key. Services now owns how a key is collected (authorized, audited, versioned, never echoed or persisted), while the host keeps owning where the material lives. Everything is additive: a host that passes a `ScopedSecretsResolver` behaves exactly as in 0.7.0.
 
