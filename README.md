@@ -117,7 +117,7 @@ It binds `127.0.0.1:4100` by default; override with `--host` / `--port`. State i
 
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
 
-The repository defines AppPort capabilities for **tenant-scoped API keys**, **durable webhooks**, **durable job execution** (including schedules), provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts, **durable notifications**, and **files**. Legacy runtime state uses **`@feltdb/core@0.15.0`**. Secret material remains with an authorized provider and is never durable AppPort state.
+The repository defines AppPort capabilities for **tenant-scoped API keys**, **durable webhooks**, **durable job execution** (including schedules), provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts, **durable notifications**, and **files**. Legacy runtime state uses **`@feltdb/core@0.16.1`**. Secret material remains with an authorized provider and is never durable AppPort state.
 
 ```text
             Application
@@ -299,7 +299,7 @@ feltdb.flow (generated authoritative application contract)
        ↓
 TypeScript implementation
        ↓
-FeltDB (@feltdb/core@0.15.0)
+FeltDB (@feltdb/core@0.16.1)
 ```
 
 The Flow contract is parsed and validated at test time. The TypeScript stores (FeltDbApiKeyStore, FeltDbWebhookEndpointStore, etc.) implement the contract semantics directly against FeltDB collections.
@@ -330,7 +330,7 @@ Dependencies are pinned, including:
 ```json
 {
   "dependencies": {
-    "@feltdb/core": "0.15.0"
+    "@feltdb/core": "0.16.1"
   }
 }
 ```
@@ -702,7 +702,7 @@ authorization, and the sensitive-data boundary.
 
 ## Where does durable state live?
 
-AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.15.0`.
+AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.16.1`.
 
 ```text
 feltdb.flow (generated Flow contract)
@@ -717,7 +717,7 @@ AppPort Services
       └─→ Secrets protocol (Secrets, SecretVersions, SecretAuditEvents)
       │
       ▼
- @feltdb/core@0.15.0
+ @feltdb/core@0.16.1
       │
       ▼
  real FeltDB
