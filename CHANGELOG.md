@@ -2,7 +2,33 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## 0.9.1 — unreleased
+## 0.10.0 — unreleased
+
+Moves to `@feltdb/core` 0.16.1 (was 0.15.0). No AppPort API changed.
+
+The services recognize FeltDB's errors by class (`ConditionalConflictError`), so they must run on
+the same `@feltdb/core` copy as the host that opens the FeltDB instance and passes it to
+`createServices({ db })`. Hosts that need FeltDB 0.16.1 (Managed FeltDB clients that stay correct
+across contract promotions: `REVISION_NOT_ACTIVE`) could not use the services without loading a
+second FeltDB copy, whose errors these checks never match. FeltKit worked around it with an npm
+`overrides` entry; a library depending on the services cannot.
+
+### Changed
+
+- **`@feltdb/core` 0.16.1.** Includes FeltDB 0.16: state requests run only under an application
+  environment's active contract, and a running remote client recovers from a promotion
+  (`REVISION_NOT_ACTIVE`, nothing applied) instead of failing until restarted; bounded queries
+  without `orderBy` and `collection.find()` behave the same against `feltdb-server` as embedded.
+
+### Released with it
+
+| Package | Was | Now | Dependency |
+| --- | --- | --- | --- |
+| `@appport/services` | 0.9.1 | 0.10.0 | `@feltdb/core` 0.15.0 → 0.16.1 |
+| `@appport/runtime` | 0.8.1 | 0.9.0 | `@appport/services` `^0.9.1` → `^0.10.0` |
+| `create-appport` | 0.1.17 | 0.1.18 | `@appport/runtime` `^0.8.1` → `^0.9.0` |
+
+## 0.9.1
 
 0.9.0's fragment declared every collection but no indexes, so on Managed FeltDB every
 service's tenant-scoped read was refused (`INDEX_UNAVAILABLE`: an application-scoped
