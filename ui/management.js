@@ -999,8 +999,18 @@
 
   const page = (PAGES[config.page] || PAGES.overview)();
   const overview = config.navigation.find((item) => item.id === 'overview');
+  // The shared theme control: System (the operating system, the default),
+  // Light or Dark. The choice applies to this page only and is never stored:
+  // these pages keep nothing in the browser.
+  const chooseTheme = (preference) => {
+    if (preference === 'light' || preference === 'dark') document.documentElement.setAttribute('data-stack-theme', preference);
+    else document.documentElement.removeAttribute('data-stack-theme');
+  };
+  // `id: 'appport'` places the pages in the Boundry family: the AppPort accent,
+  // "A Boundry product" and the other Boundry products in the navigation.
   document.body.prepend(S.dom.Shell({
-    product: { name: 'AppPort Services', homeHref: at(overview ? overview.route : (config.navigation[0] || { route: '#' }).route), mark: 'A' },
+    product: { id: 'appport', name: 'AppPort Services', homeHref: at(overview ? overview.route : (config.navigation[0] || { route: '#' }).route), mark: 'A' },
+    theme: { preference: 'system', onChange: chooseTheme },
     mainId: 'appport-main',
     navigation: config.navigation.map((item) => ({
       id: item.id,

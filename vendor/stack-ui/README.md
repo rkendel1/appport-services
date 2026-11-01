@@ -1,6 +1,6 @@
 # Vendored @stack-ui static build
 
-The shared Stack design system (`rkendel1/stack-ui`), vendored because the
+The Boundry design foundation (Stack UI) (`rkendel1/stack-ui`), vendored because the
 management pages are server-delivered HTML with no client build step.
 
 - Every file comes unmodified from `release/stack-ui-static-<VERSION>/` of
@@ -10,7 +10,9 @@ management pages are server-delivered HTML with no client build step.
   `ui/management.css` and `ui/management.js`. No extra routes are served.
 - The stateless build has no theme preference, so the pages keep nothing in
   browser storage (`tests/intelligence.test.ts` checks this) and follow the
-  operating system's colour scheme. `stack-ui-core.js` is the full build,
+  operating system's colour scheme by default. The shell's theme control
+  (System, Light, Dark) applies a choice to the open page only; it is never
+  stored. `stack-ui-core.js` is the full build,
   kept so this directory stays identical to the release.
 - `tests/configuration-ui.test.ts` checks every file against `SHA256SUMS`.
 

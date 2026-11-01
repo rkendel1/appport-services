@@ -5,12 +5,13 @@ import { Router } from 'express';
 import { createUiPages, type UiPage } from '../runtime/ui.js';
 
 /**
- * The packaged management pages, on the shared Stack design system.
+ * The packaged management pages, on the Boundry design foundation (Stack UI).
  *
  * Every page is one HTML document: the vendored design-system styles and
  * stateless classic script (`vendor/stack-ui`, checked against its
- * `SHA256SUMS`; it has no theme preference, so the pages keep nothing in
- * browser storage and follow the operating system's colour scheme), this
+ * `SHA256SUMS`; it has no stored theme preference, so the pages keep nothing
+ * in browser storage: they follow the operating system's colour scheme, and the
+ * shell's theme control applies a choice to the open page only), this
  * package's page styles and script (`ui/`), and a JSON description of the page
  * and its navigation. The navigation is the list of surfaces actually mounted,
  * so it never links to a page this host does not serve. The browser renders the
