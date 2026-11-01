@@ -6,6 +6,11 @@ All notable changes to `@appport/services`. Releases before 0.6.0 are described 
 
 Moves to `@feltdb/core` 0.16.1 (was 0.15.0). No AppPort API changed.
 
+The packaged management pages move to the Boundry design foundation 0.6.0 (was Stack UI 0.3.0): they
+carry the Boundry family (the AppPort accent, "A Boundry product", and the other Boundry products in
+the navigation, apart from this host's own pages), and the shell offers System, Light or Dark for the
+open page. The choice is never stored; the pages still keep nothing in the browser.
+
 The services recognize FeltDB's errors by class (`ConditionalConflictError`), so they must run on
 the same `@feltdb/core` copy as the host that opens the FeltDB instance and passes it to
 `createServices({ db })`. Hosts that need FeltDB 0.16.1 (Managed FeltDB clients that stay correct

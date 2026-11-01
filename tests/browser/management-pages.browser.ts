@@ -92,8 +92,13 @@ test('every page: the shell lists exactly the mounted pages, marks this one, lab
     const { page, errors, close } = await open(route);
     try {
       const nav = page.getByRole('navigation', { name: 'AppPort Services navigation' });
-      const links = await nav.locator('a').evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute('href')));
+      // The product's own navigation is exactly the mounted routes; the Boundry
+      // family (other products and boundry.company) is listed apart from it.
+      const links = await nav.locator('a:not(.stack-shell__switcher a)').evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute('href')));
       assert.deepEqual([...links].sort(), [...host.routes].sort(), `${route}: navigation is the mounted routes`);
+      const family = await nav.locator('.stack-shell__switcher a').evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute('href')));
+      assert.ok(family.length > 0 && family.every((href) => /^https:\/\//.test(href ?? '')), `${route}: the Boundry family links are external`);
+      assert.ok(family.includes('https://boundry.company'), `${route}: links to boundry.company`);
       const current = await nav.locator('[aria-current="page"]').evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute('href')));
       assert.deepEqual(current, [route], `${route}: exactly this page is current`);
       assert.equal(await page.locator('h1').count(), 1, `${route}: one page heading`);
@@ -371,15 +376,24 @@ test('a failed read is an error with Retry, never an empty list', async () => {
   }
 });
 
-test('the pages follow the operating system\'s colour scheme and keep nothing in browser storage', async () => {
+test('the pages follow the operating system\'s colour scheme, offer a theme choice for the page, and keep nothing in browser storage', async () => {
   const light = await open('/services', { colorScheme: 'light' });
   const dark = await open('/services', { colorScheme: 'dark' });
   try {
     const background = (page: Page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     assert.notEqual(await background(dark.page), await background(light.page), 'a dark system gives a dark page');
-    assert.equal(await light.page.locator('select[id$="-theme"]').count(), 0, 'no theme control: there is no stored preference to set');
+    // The shared theme control chooses for this page only.
+    const control = light.page.locator('select[id$="-theme"]');
+    assert.equal(await control.count(), 1, 'the shared theme control');
+    await control.selectOption('dark');
+    assert.equal(await background(light.page), await background(dark.page), 'choosing Dark draws the page dark');
+    await control.selectOption('system');
+    assert.notEqual(await background(light.page), await background(dark.page), 'System follows the operating system again');
     const stored = await light.page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length }));
-    assert.deepEqual(stored, { local: 0, session: 0 });
+    assert.deepEqual(stored, { local: 0, session: 0 }, 'the choice is never stored');
+    // The pages are a Boundry product surface.
+    assert.equal(await light.page.locator('.stack-shell').getAttribute('data-stack-product'), 'appport');
+    assert.equal(await light.page.locator('.stack-shell__family').getAttribute('href'), 'https://boundry.company');
   } finally {
     await light.close();
     await dark.close();
