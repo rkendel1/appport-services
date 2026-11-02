@@ -2,7 +2,22 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## 0.10.0 — unreleased
+## 0.11.0 — unreleased
+
+**`@feltdb/core` is a peer dependency** (`>=0.16.1 <1.0.0`; was the exact dependency 0.16.1). Services
+always ran on the host's FeltDB instance (`createServices({ db })`) and matches FeltDB's errors by
+class, so it needs the host's one copy. As an exact dependency it pulled its own copy whenever the
+host was on another release, and hosts had to override it (FeltKit did, in every app). Now npm installs
+the host's copy only, the latest 0.x by default, and no override is needed. Tested against
+`@feltdb/core` 0.17.1 (357 tests). No AppPort API changed.
+
+| Package | From | To | Change |
+| --- | --- | --- | --- |
+| `@appport/services` | 0.10.0 | 0.11.0 | `@feltdb/core` exact 0.16.1 → peer `>=0.16.1 <1.0.0` |
+| `@appport/runtime` | 0.9.0 | 0.10.0 | `@appport/services` `^0.11.0` |
+| `create-appport` | 0.1.18 | 0.1.19 | `@appport/runtime` `^0.10.0` |
+
+## 0.10.0 — 2026-11-02
 
 Moves to `@feltdb/core` 0.16.1 (was 0.15.0). No AppPort API changed.
 
