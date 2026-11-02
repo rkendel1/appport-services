@@ -117,7 +117,7 @@ It binds `127.0.0.1:4100` by default; override with `--host` / `--port`. State i
 
 AppPort manages its FeltDB runtime dependency; consumers do not import `@feltdb/core` or AppPort's internal stores.
 
-The repository defines AppPort capabilities for **tenant-scoped API keys**, **durable webhooks**, **durable job execution** (including schedules), provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts, **durable notifications**, and **files**. Legacy runtime state uses **`@feltdb/core@0.16.1`**. Secret material remains with an authorized provider and is never durable AppPort state.
+The repository defines AppPort capabilities for **tenant-scoped API keys**, **durable webhooks**, **durable job execution** (including schedules), provider-neutral **Secrets** metadata/lifecycle and scoped-resolution contracts, **durable notifications**, and **files**. Legacy runtime state uses **`@feltdb/core`** (the host's copy, 0.16.1 or later 0.x). Secret material remains with an authorized provider and is never durable AppPort state.
 
 ```text
             Application
@@ -151,7 +151,9 @@ const services = createServices({ db, application: 'invoices', authorizer: authB
 
 The host keeps ownership: AppPort Services never closes an instance it was given. The
 instance's own deployment mode (`db.capabilities().deployment`) is used for
-mode-dependent behavior. Use one copy of `@feltdb/core` for the host and this package.
+mode-dependent behavior. Use one copy of `@feltdb/core` for the host and this package: it is a
+peer dependency (`>=0.16.1 <1.0.0`), so the host's copy is the one Services uses, and npm installs
+no second one.
 
 To check which instance a services object runs on (local, memory, or remote), use
 `services.db` (read-only) or `services.usesInstance(db)`, which compares identity;
@@ -299,7 +301,7 @@ feltdb.flow (generated authoritative application contract)
        ↓
 TypeScript implementation
        ↓
-FeltDB (@feltdb/core@0.16.1)
+FeltDB (@feltdb/core, the host's copy)
 ```
 
 The Flow contract is parsed and validated at test time. The TypeScript stores (FeltDbApiKeyStore, FeltDbWebhookEndpointStore, etc.) implement the contract semantics directly against FeltDB collections.
@@ -325,12 +327,13 @@ npm install
 npm run build
 ```
 
-Dependencies are pinned, including:
+`@feltdb/core` is a peer dependency: install it beside Services (the latest 0.x release; npm 7 and
+later install it for you), and Services uses that one copy:
 
 ```json
 {
-  "dependencies": {
-    "@feltdb/core": "0.16.1"
+  "peerDependencies": {
+    "@feltdb/core": ">=0.16.1 <1.0.0"
   }
 }
 ```
@@ -702,7 +705,7 @@ authorization, and the sensitive-data boundary.
 
 ## Where does durable state live?
 
-AppPort Services stores all state directly in FeltDB collections through `@feltdb/core@0.16.1`.
+AppPort Services stores all state directly in FeltDB collections through the host's `@feltdb/core` (0.16.1 or later 0.x).
 
 ```text
 feltdb.flow (generated Flow contract)
@@ -717,7 +720,7 @@ AppPort Services
       └─→ Secrets protocol (Secrets, SecretVersions, SecretAuditEvents)
       │
       ▼
- @feltdb/core@0.16.1
+ @feltdb/core (the host's copy)
       │
       ▼
  real FeltDB

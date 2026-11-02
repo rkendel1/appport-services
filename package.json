@@ -1,6 +1,6 @@
 {
   "name": "@appport/services",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "API keys, durable webhooks, background jobs, and provider-neutral secrets for AppPort applications",
   "type": "module",
   "exports": {
@@ -57,12 +57,15 @@
   "license": "ISC",
   "dependencies": {
     "@appport/protocol": "^1.0.3",
-    "@feltdb/core": "0.16.1",
     "@iarna/toml": "^2.2.5",
     "express": "^4.18.2",
     "express-rate-limit": "^8.7.0"
   },
+  "peerDependencies": {
+    "@feltdb/core": ">=0.16.1 <1.0.0"
+  },
   "devDependencies": {
+    "@feltdb/core": ">=0.17.1 <1.0.0",
     "@types/express": "^4.17.21",
     "@types/node": "22.10.2",
     "axe-core": "^4.10.3",
