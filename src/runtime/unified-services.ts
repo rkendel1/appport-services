@@ -22,6 +22,7 @@ import { ConfigurationService } from '../configuration/service.js';
 import { FeltDbConfigurationStore } from '../configuration/storage.js';
 import { IntelligenceService } from '../intelligence/service.js';
 import { NotificationService } from '../notifications/service.js';
+import { InAppNotificationChannel, type NotificationChannel } from '../notifications/channels.js';
 import { FeltDbNotificationAuditSink, FeltDbNotificationDeliveryStore, FeltDbNotificationStore } from '../storage/notifications.js';
 import { FileService } from '../files/service.js';
 import { FeltDbFileAuditSink, FeltDbFileStore } from '../storage/files.js';
@@ -136,6 +137,12 @@ export interface CreateServicesOptions extends FeltDBOptions {
   apiKeyVerifierKey?: string | Uint8Array;
   /** Configuration the application declares; `required` ones without a binding are reported by `health()`. */
   configurationDeclarations?: readonly ConfigurationDeclaration[];
+  /**
+   * Delivery channels the host supplies, beside the durable in-app inbox (for
+   * example `new EmailNotificationChannel({ transport: createMailPort(), address })`).
+   * A notification names the channels it is delivered on; `in-app` stays the default.
+   */
+  notificationChannels?: readonly NotificationChannel[];
 }
 
 /**
@@ -157,7 +164,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
 
   // Create one FeltDB runtime shared by all services
   // Extract FeltDB options (exclude config)
-  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, configurationDeclarations, ...feltdbOptions } = options;
+  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, configurationDeclarations, notificationChannels, ...feltdbOptions } = options;
   const runtime = createFeltDbRuntime(feltdbOptions);
   const { db } = runtime;
   const evidenceStore = new FeltDbEffectEvidenceStore(db);
@@ -211,6 +218,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     auditSink: new FeltDbNotificationAuditSink(db),
     jobs: jobService,
     authority: gateway,
+    ...(notificationChannels?.length ? { channels: [new InAppNotificationChannel(), ...notificationChannels] } : {}),
   });
   const fileService = new FileService({
     store: new FeltDbFileStore(db),
