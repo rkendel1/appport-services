@@ -84,6 +84,7 @@ export { DEFAULT_WEBHOOK_DELIVERY_PAGE, MAX_WEBHOOK_DELIVERY_PAGE, WEBHOOK_DELIV
 export { JobService, JobWorker } from './jobs/index.js';
 export { NotificationService, NotificationAuthorizationError, NotificationValidationError, NotificationNotFoundError, NotificationSensitiveDataError, NOTIFICATION_DELIVERY_JOB } from './notifications/index.js';
 export { NotificationChannelRegistry, InAppNotificationChannel, BrowserNotificationChannel, BROWSER_NOTIFICATION_EVENT, assertNoCredentials } from './notifications/index.js';
+export { EmailNotificationChannel, type EmailTransport, type EmailMessage, type EmailContent, type EmailChannelOptions } from './notifications/index.js';
 export { createNotificationRouter, notificationErrorHandler } from './notifications/index.js';
 export { FeltDbNotificationStore, FeltDbNotificationDeliveryStore, FeltDbNotificationAuditSink } from './storage/notifications.js';
 export { FileService, FileAuthorizationError, FileValidationError, FileNotFoundError } from './files/index.js';

@@ -2,6 +2,23 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.13.0 — unreleased
+
+**E-mail notifications.** `EmailNotificationChannel` delivers a notification by e-mail, and
+`createServices({ notificationChannels })` registers host channels beside the in-app inbox (which
+stays the default). Its transport is Mailerport's `send()`: pass `createMailPort()` from
+`mailerport` as it is (this package does not depend on it). The host maps a recipient (a
+principal id) to an address with `address()`, and may `render()` the message at delivery, so what a
+message carries, such as a signed link, is never stored in the notification. No address fails the
+delivery without retry; a transport error is retried like any channel failure. The delivery's
+idempotency key is passed to the transport.
+
+| Package | From | To | Change |
+| --- | --- | --- | --- |
+| `@appport/services` | 0.12.0 | 0.13.0 | `EmailNotificationChannel`, `notificationChannels` |
+| `@appport/runtime` | 0.11.0 | 0.12.0 | `@appport/services` `^0.13.0` |
+| `create-appport` | 0.1.20 | 0.1.21 | `@appport/runtime` `^0.12.0` |
+
 ## 0.11.0 — unreleased
 
 **`@feltdb/core` is a peer dependency** (`>=0.16.1 <1.0.0`; was the exact dependency 0.16.1). Services
