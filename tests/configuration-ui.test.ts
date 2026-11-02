@@ -112,5 +112,5 @@ test('the vendored design system matches its SHA256SUMS', () => {
     const actual = createHash('sha256').update(readFileSync(new URL(`vendor/stack-ui/${file}`, root))).digest('hex');
     assert.equal(actual, digest, `vendor/stack-ui/${file}`);
   }
-  assert.equal(read('vendor/stack-ui/VERSION').trim(), '0.6.0');
+  assert.equal(read('vendor/stack-ui/VERSION').trim(), '0.6.1');
 });
