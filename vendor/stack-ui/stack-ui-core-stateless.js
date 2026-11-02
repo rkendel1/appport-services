@@ -1,4 +1,4 @@
-/*! @stack-ui/core 0.6.0 — classic build, stateless (no theme preference). Exposes window.StackUI. */
+/*! @stack-ui/core 0.6.1 — classic build, stateless (no theme preference). Exposes window.StackUI. */
 'use strict';
 (function (global) {
 'use strict';
@@ -1613,5 +1613,5 @@ function formDialog(props, doc) {
   });
 }
 
-global.StackUI = Object.freeze({ version: "0.6.0", TONES, GLYPHS, OUTCOMES, OUTCOME_LABELS, VERIFICATION_STATES, FRESHNESS_STATES, CAPABILITY_STATES, humanize, fields, valuesOf, resolve, verification, verificationOf, freshnessOf, capability, PORTFOLIO, portfolioProduct, isTree, formatTime, StatusIndicator, VerificationBadge, FreshnessLabel, Unavailable, Loading, EmptyState, ErrorPanel, MetadataList, ResourceIdentity, PageHeader, Button, Breadcrumbs, tabsKeydown, Tabs, TabPanel, DataTable, FilterBar, Pagination, THEME_OPTIONS, Shell, TextField, Select, Form, Dialog, ConfirmAction, EvidenceSummary, Alert, Checkbox, FieldGroup, ActivityTimeline, BrandMark, ThemeSwitch, SiteHeader, SiteFooter, COMPONENTS, toDom, focusMain, dom, openDialog, confirmAction, formDialog });
+global.StackUI = Object.freeze({ version: "0.6.1", TONES, GLYPHS, OUTCOMES, OUTCOME_LABELS, VERIFICATION_STATES, FRESHNESS_STATES, CAPABILITY_STATES, humanize, fields, valuesOf, resolve, verification, verificationOf, freshnessOf, capability, PORTFOLIO, portfolioProduct, isTree, formatTime, StatusIndicator, VerificationBadge, FreshnessLabel, Unavailable, Loading, EmptyState, ErrorPanel, MetadataList, ResourceIdentity, PageHeader, Button, Breadcrumbs, tabsKeydown, Tabs, TabPanel, DataTable, FilterBar, Pagination, THEME_OPTIONS, Shell, TextField, Select, Form, Dialog, ConfirmAction, EvidenceSummary, Alert, Checkbox, FieldGroup, ActivityTimeline, BrandMark, ThemeSwitch, SiteHeader, SiteFooter, COMPONENTS, toDom, focusMain, dom, openDialog, confirmAction, formDialog });
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -11,7 +11,7 @@
 //
 // Exit 0 when every check passes; 1 with a list of failures otherwise.
 
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync, realpathSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -70,14 +70,18 @@ export async function checkConformance(options) {
     // React escapes nothing in a script's __html, so the shared script text appears verbatim.
     if (!html.includes(THEME_INIT_SCRIPT)) fail(where, 'missing the shared pre-paint theme script (THEME_INIT_SCRIPT)');
     if (!html.includes('data-stack-theme-control')) fail(where, 'missing the shared theme control (ThemeSwitch or Shell theme): sites must offer System, Light and Dark');
-    if (!/class="stack-site-footer[\s"]/.test(html)) fail(where, 'missing the shared SiteFooter (the Boundry family footer)');
-    if (!linksCompany(html)) fail(where, `no link to ${company}`);
-    for (const product of PORTFOLIO.products) {
-      if (!html.includes(`href="${product.href}"`)) fail(where, `the Boundry family does not link to ${product.name} (${product.href})`);
+    const hasFooter = /class="stack-site-footer[\s"]/.test(html);
+    if (!hasFooter) {
+      // One cause, one message: without the shared footer the family links below are missing too.
+      fail(where, 'missing the shared SiteFooter (the Boundry family footer): render SiteFooter({ product: { id } })');
+    } else {
+      if (!linksCompany(html)) fail(where, `no link to ${company}`);
+      const missing = PORTFOLIO.products.filter((product) => !html.includes(`href="${product.href}"`));
+      if (missing.length) fail(where, `the Boundry family footer does not link to ${missing.map((p) => `${p.name} (${p.href})`).join(', ')}: the vendored foundation may be out of date`);
     }
     if (!options.company) {
       if (!new RegExp(`data-stack-product="${options.product}"`).test(html)) fail(where, `the page does not declare data-stack-product="${options.product}"`);
-      if (!html.includes('is a <a href="https://boundry.company">Boundry product</a>')) fail(where, 'the footer does not state that the product is a Boundry product');
+      if (hasFooter && !html.includes('is a <a href="https://boundry.company">Boundry product</a>')) fail(where, 'the footer does not state that the product is a Boundry product (pass product: { id } to SiteFooter)');
       if (options.headerFamily && !/<header[\s\S]*?A Boundry product[\s\S]*?<\/header>/.test(html)) fail(where, 'the header does not carry "A Boundry product"');
     }
   }
@@ -100,7 +104,12 @@ export async function checkConformance(options) {
   return failures;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Run as a command — directly, or through the package's bin link (node_modules/.bin is a
+// symlink, so compare real paths; comparing the link itself would silently skip every check).
+const invokedDirectly = (() => {
+  try { return Boolean(process.argv[1]) && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+})();
+if (invokedDirectly) {
   try {
     const failures = await checkConformance(parseArgs(process.argv.slice(2)));
     if (failures.length) {
