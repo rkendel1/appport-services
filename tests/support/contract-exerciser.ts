@@ -53,6 +53,11 @@ const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
     await s.services.notifications!.recoverDeliveries(TENANT);
     const other = await s.invoke('notifications.send', { recipient: 'alice', type: 'task.done', title: 'Second' });
     await s.invoke('notifications.delete', { id: (other.notification ?? other).id });
+    // The transaction context's write path (TransactionContext.queueNotification).
+    const notify = await s.services.authorize('notifications.send', s.principal, { type: 'notification', attributes: { recipient: 'alice' } });
+    await s.services.transaction(async (tx) => {
+      tx.queueNotification({ tenantId: TENANT, recipient: 'alice', type: 'task.done', title: 'In a transaction', body: 'b', data: { task: 't2' }, source: { type: 'task', id: 't2' }, priority: 'low' }, notify);
+    });
   },
   configuration: async (s) => {
     await s.invoke('configuration.write', { name: 'SUPPORT_EMAIL', value: 'help@example.com', environment: 'production', required: true, description: 'Where support mail goes' });
@@ -90,6 +95,11 @@ const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
       s.services.webhooks!.registerInboundHandler('stripe', async () => undefined);
       const body = JSON.stringify({ id: 'evt_1' });
       await s.services.webhooks!.receiveWebhook({ integrationId: integration.id, rawBody: body, headers: signInbound('whsec_contract_signing', body, 'evt_1') });
+      // The transaction context's write path (TransactionContext.queueWebhookDeliveries).
+      const emit = await s.services.authorize('webhooks.emit', s.principal, { type: 'webhook_event', attributes: { eventType: 'order.paid' } });
+      await s.services.transaction(async (tx) => {
+        await tx.queueWebhookDeliveries([endpoint.id], { tenantId: TENANT, type: 'order.paid', payload: { order: 3 } }, emit);
+      });
       await s.invoke('webhooks.remove', { id: endpoint.id });
     } finally {
       await hook.close();
@@ -107,6 +117,11 @@ const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
     await s.services.jobs!.executeJob(TENANT, job.id, 'worker-1');
     await s.invoke('jobs.retry', { id: job.id });
     await s.services.jobs!.executeJob(TENANT, job.id, 'worker-1');
+    // The transaction context's write path (TransactionContext.queueJob).
+    const enqueue = await s.services.authorize('jobs.create', s.principal, { type: 'job', attributes: { jobType: 'report.build' } });
+    await s.services.transaction(async (tx) => {
+      tx.queueJob({ tenantId: TENANT, type: 'report.build', payload: { week: 2 }, maxAttempts: 2, runAt: new Date(Date.now() + 60_000).toISOString() }, enqueue);
+    });
   },
   schedules: async (s) => {
     s.services.jobs!.register('digest.send', async () => undefined);

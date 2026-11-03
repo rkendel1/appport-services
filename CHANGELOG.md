@@ -2,6 +2,51 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.13.1 — unreleased
+
+**Transactional effects are contract-safe.** `tx.queueJob` and `tx.queueWebhookDeliveries` (the
+transaction context of `services.transaction()`) wrote audit fields that `servicesContract` did not
+declare: `job_audit_events.jobType` and `webhook_audit_events.eventType`. On a FeltDB that enforces
+the composed contract (FeltDB 0.18 state contracts, Managed FeltDB), every such transaction was
+refused (`record contains an unknown field jobType`). The job or deliveries, the audit record, the
+authority evidence, and the caller's own operations were refused with it, so nothing partial was
+ever written, but the effect could not be created in the caller's transaction at all. Hosts (FeltKit's
+after-commit outbox) had to create jobs and webhook deliveries outside the transaction that records
+them done.
+
+- **Declared.** `job_audit_events.jobType` and `webhook_audit_events.eventType` are declared, and
+  the stored-record types say so (`JobAuditEvent.jobType`, `WebhookAuditEvent.eventType`,
+  `'webhook.event.emitted'`). `SERVICES_CONTRACT_VERSION` is 2: a host that promoted the services'
+  declarations to a FeltDB authority composes them again and evolves its contract. The change is
+  additive: records written before stay valid.
+- **One identity per audit record.** The transaction context keyed each audit record under one random
+  id and wrote another in its `id` field. FeltDB keeps the key as the record's id, so the second was
+  discarded, and nothing read it. No lookup, deduplication or recovery depended on it. The record is
+  now keyed by its own id, as every audit store writes it. The webhook audit record also carries
+  `principalId`, as every other audit record does.
+- **The contract test covers the transaction context.** The exerciser that drives every write path for
+  `servicesContract` now calls `tx.queueJob`, `tx.queueWebhookDeliveries` and `tx.queueNotification`.
+  Without the two declarations, it fails naming both fields.
+- **Proven on an enforcing FeltDB.** `tests/transactional-contract.test.ts` runs on a persisted
+  FeltDB with the composed contract installed:
+  - a job, or webhook deliveries, commit with their audit record, their evidence and the caller's
+    outbox completion;
+  - a refused audit record (the 0.13.0 declarations), a refused job field, or a stale caller
+    precondition leaves no record at all;
+  - after a restart, the effect is there once, and a stale completion cannot create it again;
+  - the non-transactional paths are unchanged.
+- **Not in scope.** This makes creating a job or delivery atomic with the caller's records. It doesn't
+  make delivery to an external system exactly once: a worker can still deliver and crash before
+  recording it.
+- **Development dependency.** `@feltdb/core` 0.18.0 for the tests (state contracts). The peer
+  range is unchanged.
+
+| Package | From | To | Change |
+| --- | --- | --- | --- |
+| `@appport/services` | 0.13.0 | 0.13.1 | transactional effects contract-safe; `SERVICES_CONTRACT_VERSION` 2 |
+| `@appport/runtime` | 0.12.0 | 0.12.1 | `@appport/services` `^0.13.1` |
+| `create-appport` | 0.1.21 | 0.1.22 | `@appport/runtime` `^0.12.1` |
+
 ## 0.13.0 — unreleased
 
 **E-mail notifications.** `EmailNotificationChannel` delivers a notification by e-mail, and

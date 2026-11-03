@@ -100,7 +100,9 @@ export interface WebhookAuditEvent {
     | 'webhook.delivery.replayed'
     | 'webhook.integration.registered'
     | 'webhook.inbound.accepted'
-    | 'webhook.inbound.rejected';
+    | 'webhook.inbound.rejected'
+    /** An event queued in a transaction (TransactionContext.queueWebhookDeliveries). */
+    | 'webhook.event.emitted';
   readonly endpointId?: string;
   readonly deliveryId?: string;
   readonly integrationId?: string;
@@ -109,6 +111,8 @@ export interface WebhookAuditEvent {
   readonly timestamp: string;
   readonly result: 'success' | 'failure';
   readonly reason?: string;
+  /** The event's type, on the record a transaction writes (`webhook.event.emitted`). */
+  readonly eventType?: string;
 }
 
 export interface WebhookDeliveryResult {

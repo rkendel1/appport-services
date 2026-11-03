@@ -23,7 +23,7 @@ const contract = {
 | `SERVICE_COLLECTIONS` | Every collection the services store, by name, declared once: each field's FeltDB type, `required`, `nullable`. |
 | `SERVICE_REQUIREMENTS` | Per service: the collections it stores and the services it needs. |
 | `SERVICE_NAMES`, `ServiceName` | `files`, `notifications`, `configuration`, `apiKeys`, `webhooks`, `jobs`, `schedules`, `intelligence`. |
-| `SERVICES_CONTRACT_VERSION` | Bumped when a declaration changes in a way a promoted contract must follow. |
+| `SERVICES_CONTRACT_VERSION` | Bumped when a declaration changes in a way a promoted contract must follow. 2 (0.13.1): `job_audit_events.jobType` and `webhook_audit_events.eventType`, written by the transaction context. |
 
 What a service stores:
 

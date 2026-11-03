@@ -6,7 +6,8 @@ import type { ServiceGateway } from '../authority/gateway.js';
 import { toDurablePrincipal } from '../authority/principal.js';
 import { assertApplicationCollection } from '../authority/reserved.js';
 import { assertNoCredentials } from '../notifications/sensitive.js';
-import type { WebhookEndpoint } from '../webhooks/models.js';
+import type { JobAuditEvent } from '../jobs/models.js';
+import type { WebhookAuditEvent, WebhookEndpoint } from '../webhooks/models.js';
 
 /**
  * Transaction context for atomic composition of application state, webhooks, and jobs.
@@ -132,20 +133,17 @@ export class TransactionContextImpl {
       });
     }
 
-    // Audit record
-    this.builder.addOperation({
-      collection: 'webhook_audit_events',
+    // Audit record: keyed by its own id, as every audit store writes it.
+    const audit: WebhookAuditEvent = {
       id: crypto.randomUUID(),
-      requireAbsent: true,
-      value: {
-        id: crypto.randomUUID(),
-        type: 'webhook.event.emitted',
-        tenantId: event.tenantId,
-        eventType: event.type,
-        timestamp: createdAt,
-        result: 'success',
-      },
-    });
+      type: 'webhook.event.emitted',
+      tenantId: event.tenantId,
+      principalId: authorized.principal.principalId,
+      eventType: event.type,
+      timestamp: createdAt,
+      result: 'success',
+    };
+    this.builder.addOperation({ collection: 'webhook_audit_events', id: audit.id, requireAbsent: true, value: audit });
   }
 
   /**
@@ -196,22 +194,18 @@ export class TransactionContextImpl {
       value: job,
     });
 
-    // Audit record
-    this.builder.addOperation({
-      collection: 'job_audit_events',
+    // Audit record: keyed by its own id, as every audit store writes it.
+    const audit: JobAuditEvent = {
       id: crypto.randomUUID(),
-      requireAbsent: true,
-      value: {
-        id: crypto.randomUUID(),
-        type: 'job.enqueued',
-        jobId: job.id,
-        tenantId: job.tenantId,
-        jobType: job.type,
-        principalId: authorized.principal.principalId,
-        timestamp: now,
-        result: 'success',
-      },
-    });
+      type: 'job.enqueued',
+      jobId: job.id,
+      tenantId: job.tenantId,
+      jobType: job.type,
+      principalId: authorized.principal.principalId,
+      timestamp: now,
+      result: 'success',
+    };
+    this.builder.addOperation({ collection: 'job_audit_events', id: audit.id, requireAbsent: true, value: audit });
 
     return id;
   }

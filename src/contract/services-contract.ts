@@ -55,8 +55,12 @@ export interface ServicesContractFragment {
 export type ServiceName = 'files' | 'notifications' | 'configuration' | 'apiKeys' | 'webhooks' | 'jobs' | 'schedules' | 'intelligence';
 export const SERVICE_NAMES: readonly ServiceName[] = Object.freeze(['files', 'notifications', 'configuration', 'apiKeys', 'webhooks', 'jobs', 'schedules', 'intelligence']);
 
-/** Bumped when a declaration changes in a way a promoted contract must follow. */
-export const SERVICES_CONTRACT_VERSION = 1;
+/**
+ * Bumped when a declaration changes in a way a promoted contract must follow.
+ * 2: `job_audit_events.jobType` and `webhook_audit_events.eventType`, written by the transaction
+ * context (`queueJob`, `queueWebhookDeliveries`) and undeclared in 1.
+ */
+export const SERVICES_CONTRACT_VERSION = 2;
 
 const collection = (name: string, spec: string): ServicesContractCollection => Object.freeze({
   name,
@@ -107,7 +111,7 @@ export const SERVICE_COLLECTIONS: Readonly<Record<string, ServicesContractCollec
     attemptCount:integer nextAttemptAt:text createdAt:text lastAttemptAt:text deliveredAt:text lastStatusCode:integer lastError:text
     principal:json`),
   collection('webhook_audit_events', `id:text type:text endpointId:text deliveryId:text integrationId:text tenantId:text principalId:text
-    timestamp:text result:text reason:text`),
+    timestamp:text result:text reason:text eventType:text`),
   collection('webhook_integrations', `id:text tenantId:text applicationId:text provider:text principalId:text signingCredentialRef:text
     createdAt:text createdBy:text disabledAt:text`),
   collection('inbound_webhook_events', 'id:text integrationId:text provider:text eventId:text eventTimestamp:text acceptedAt:text tenantId:text'),
@@ -116,7 +120,7 @@ export const SERVICE_COLLECTIONS: Readonly<Record<string, ServicesContractCollec
     lastError:text principal:json`),
   collection('job_schedules', `id:text tenantId:text applicationId:text type:text payload:json interval:text nextRunAt:text enabled:boolean
     createdAt:text createdBy:text principal:json`),
-  collection('job_audit_events', 'id:text type:text jobId:text scheduleId:text tenantId:text principalId:text timestamp:text result:text details:json'),
+  collection('job_audit_events', 'id:text type:text jobId:text scheduleId:text tenantId:text principalId:text timestamp:text result:text details:json jobType:text'),
 ].map((c) => [c.name, c])));
 
 /** The equality index each collection's tenant-scoped reads use. */

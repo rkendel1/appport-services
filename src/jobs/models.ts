@@ -72,6 +72,8 @@ export interface JobAuditEvent {
   timestamp: string;
   result: 'success' | 'failure';
   details?: Record<string, unknown>;
+  /** The job's type, on the record a transaction writes (`job.enqueued`, TransactionContext.queueJob). */
+  jobType?: string;
 }
 
 export interface CreateJobInput {
