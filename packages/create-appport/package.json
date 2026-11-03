@@ -1,6 +1,6 @@
 {
   "name": "create-appport",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Create a contract-driven AppPort application",
   "type": "module",
   "bin": {
@@ -12,6 +12,6 @@
   ],
   "license": "ISC",
   "dependencies": {
-    "@appport/runtime": "^0.12.1"
+    "@appport/runtime": "^0.13.0"
   }
 }

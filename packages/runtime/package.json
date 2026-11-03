@@ -1,6 +1,6 @@
 {
   "name": "@appport/runtime",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Contract-driven AppPort application runtime",
   "type": "module",
   "exports": {
@@ -19,7 +19,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@appport/services": "^0.13.1"
+    "@appport/services": "^0.14.0"
   },
   "keywords": [
     "appport",
