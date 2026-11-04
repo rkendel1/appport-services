@@ -94,6 +94,11 @@ export class ServiceGateway {
       if (getServiceCapability(capability.name) || extensions.has(capability.name)) {
         throw new Error(`Extension capability "${capability.name}" is already declared`);
       }
+      // Only declarations made by extensionCapabilities(): namespaced by their extension, never invocable.
+      const namespace = capability.service?.startsWith('extension:') ? capability.service.slice('extension:'.length) : '';
+      if (!namespace || !capability.name.startsWith(`${namespace}.`) || capability.invocable !== false || capability.authorization?.required !== true) {
+        throw new Error(`Extension capability "${capability.name}" must come from a defined extension (extension:<id>, <id>.<name>, not invocable, authorization required)`);
+      }
       extensions.set(capability.name, Object.freeze({ ...capability, authorization: Object.freeze({ ...capability.authorization }) }));
     }
     this.extensionCapabilities = extensions;

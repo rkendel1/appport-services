@@ -21,6 +21,17 @@ its own. See [docs/extensions.md](docs/extensions.md).
 - `createUiContribution`, `createUiPages`, and `createUiDiscoveryDocument` accept `{ extensions }`.
 - No change without extensions: the manifest is the same object and the UI contribution is
   identical.
+- Hardening:
+  - extension routes refuse a request without a host identity (`401`) before any handler runs;
+  - the router mounts only registrations `createServices` returned;
+  - declarations are copied once, then validated, then frozen;
+  - extension ids may not take built-in capability namespaces, and capabilities may not use built-in
+    resource types;
+  - page ids may not take built-in ones, and page routes are unique;
+  - descriptions are required;
+  - renderer scripts may not contain `<script` or `<!--`;
+  - the shell dispatches only to its own page renderers (`hasOwnProperty`);
+  - `docs/extensions.md` ships in the package.
 
 ## 0.13.1 — unreleased
 

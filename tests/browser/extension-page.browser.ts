@@ -12,17 +12,26 @@ import express from 'express';
 import { createFeltDB } from '@feltdb/core';
 import { chromium, type Browser } from 'playwright-core';
 
-import { createManagementRouter, createServices } from '../../src/index.js';
+import { createManagementRouter, createServices, defineServicesExtension } from '../../src/index.js';
 import { TestAuthority } from '../support/authority.js';
 import { NOTES_COLLECTION, notesExtension } from '../support/notes-extension.js';
 
 const chromiumPath = process.env.CHROMIUM_PATH ?? [chromium.executablePath()].find((path) => path && existsSync(path));
+// An id that is also an Object.prototype property: the shell must still dispatch to the extension's renderer.
+const constructorExtension = defineServicesExtension({
+  id: 'constructor',
+  capabilities: [{ name: 'constructor.read', operation: 'read', effect: 'observation', resource: 'constructor_item' }],
+  pages: [{
+    id: 'constructor', title: 'Constructor', route: '/constructor', order: 95, description: 'A page whose id is an Object.prototype name.', capabilities: ['constructor.read'],
+    script: "window.AppPortServicesPages = window.AppPortServicesPages || {}; window.AppPortServicesPages['constructor'] = function (ui) { return ui.el('section', { 'data-extension-page': 'constructor' }, [ui.el('h1', {}, 'Constructor')]); };",
+  }],
+});
 const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8');
 
 test('an extension page renders in the host shell, is in the navigation, writes through the host, and passes axe', async () => {
   assert.ok(chromiumPath, 'Chromium is required; set CHROMIUM_PATH');
   const db = createFeltDB({ namespace: `ext-browser-${crypto.randomUUID()}`, memory: true } as never);
-  const services = createServices({ db, authorizer: new TestAuthority({ allowAll: true }), extensions: [notesExtension] });
+  const services = createServices({ db, authorizer: new TestAuthority({ allowAll: true }), extensions: [notesExtension, constructorExtension] });
   const app = express();
   app.use(createManagementRouter({
     services,
@@ -67,6 +76,14 @@ test('an extension page renders in the host shell, is in the navigation, writes 
       assert.deepEqual(errors, [], 'no script errors');
       await context.close();
     }
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${base}/constructor`);
+    await page.waitForSelector('.stack-shell__main [data-extension-page="constructor"]');
+    assert.deepEqual(errors, [], 'an Object.prototype name as page id renders its own page');
+    await context.close();
   } finally {
     await browser.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));

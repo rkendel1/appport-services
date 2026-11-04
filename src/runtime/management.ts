@@ -19,7 +19,7 @@ import { ServiceAuthorityError, ServiceMigrationError, isServiceAuthorityError }
 import type { ServiceGateway } from '../authority/gateway.js';
 import { isVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
 import { ownedBy } from './invoke.js';
-import type { RegisteredServicesExtension } from '../extensions/extension.js';
+import { isRegisteredServicesExtension, type RegisteredServicesExtension } from '../extensions/extension.js';
 
 export const API_KEY_MANAGEMENT_CAPABILITIES = {
   read: 'apikeys.read',
@@ -144,7 +144,10 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   mountExistingServiceRoutes(router, options.services, gateway);
 
   const extensions = options.extensions ?? [];
-  for (const { extension, context } of extensions) {
+  for (const registration of extensions) {
+    // Only what createServices registered (validated, bound to its db and gateway) is mounted.
+    if (!isRegisteredServicesExtension(registration)) throw new Error('Management extensions must be the ones createServices returned (services.extensions)');
+    const { extension, context } = registration;
     // One host: the extension's capabilities live in this gateway, and it runs on this gateway's instance.
     if (context.gateway !== gateway) throw new Error(`Extension "${extension.id}" is registered with another Services instance; register it with createServices({ extensions }) on this host`);
     for (const capability of extension.capabilities ?? []) {
@@ -152,6 +155,8 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
     }
     if (extension.routes) {
       const extensionRouter = Router();
+      // Every extension route needs a host identity; the handler never sees an unauthenticated request.
+      extensionRouter.use((req, _res, next) => next(req.auth ? undefined : new ManagementAuthenticationError()));
       extension.routes(extensionRouter, context);
       router.use(`/v1/extensions/${extension.id}`, extensionRouter);
     }

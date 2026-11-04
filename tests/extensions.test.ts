@@ -17,6 +17,7 @@ import {
   type PrincipalClaims,
 } from '../src/index.js';
 import { TestAuthority } from './support/authority.js';
+import { Router } from 'express';
 import { NOTES_COLLECTION, notesExtension } from './support/notes-extension.js';
 
 const principals: Record<string, PrincipalClaims> = {
@@ -88,19 +89,21 @@ test('1-2: the extension registers a page, served in the host shell, and the hos
   }
 });
 
-test('3: the host enforces the declared capabilities: page needs all of them, each route its own, refusals are recorded evidence', async () => {
+test('3: the host enforces the declared capabilities: page needs all of them, each route its own, a refused effect is recorded evidence', async () => {
   const h = await host();
   try {
     assert.equal((await h.call('/notes', 'nobody')).status, 403, 'no notes capability: the page is refused');
     assert.equal((await h.call('/notes', 'reader')).status, 403, 'the page drives read and write: read alone is not enough');
     assert.equal((await h.call('/notes', 'someone-unknown')).status, 401, 'no host identity');
+    // The page gate asks AuthBoundry (gateway.authorize), as the built-in /api-keys page does; it is not an effect and writes no evidence.
+    assert.equal((await h.db.collection('service_effect_evidence').find({})).length, 0, 'a refused page view is not an effect');
     assert.equal((await h.call('/v1/extensions/notes', 'reader')).status, 200, 'read is allowed for the read route');
     const denied = await h.call('/v1/extensions/notes', 'reader', { method: 'POST', body: JSON.stringify({ text: 'x' }) });
     assert.equal(denied.status, 403);
     assert.equal((await denied.json()).error.code, 'DENIED');
     assert.equal((await h.call('/v1/extensions/notes', 'nobody')).status, 403);
     const evidence = await h.db.collection<{ capability: string; decision: string; principalId: string }>('service_effect_evidence').find({ capability: 'notes.write' });
-    assert.ok(evidence.some((e) => e.principalId === 'reader' && e.decision === 'deny'), 'the refusal is in the host evidence store');
+    assert.ok(evidence.some((e) => e.principalId === 'reader' && e.decision === 'deny'), 'the refused write is in the host evidence store');
   } finally {
     await h.close();
   }
@@ -184,4 +187,87 @@ test('an extension bound to another Services instance is refused: one host, one 
     await first.apiKeys.close();
     await second.apiKeys.close();
   }
+});
+
+test('extension routes never run without a host identity, even when the handler does not check', async () => {
+  let reached = 0;
+  const careless = defineServicesExtension({
+    id: 'careless',
+    capabilities: [{ name: 'careless.read', operation: 'read', effect: 'observation', resource: 'careless_item' }],
+    routes(router) { router.get('/', (_req, res) => { reached += 1; res.json({ ok: true }); }); },
+  });
+  const services = createServices({ memory: true, namespace: `careless-${crypto.randomUUID()}`, authorizer: authority({}), extensions: [careless] });
+  const app = express();
+  app.use(createManagementRouter({ services, authority: services.gateway, extensions: services.extensions, authenticate: (r) => principals[String(r.headers['x-test-principal'])] ?? null, includeConfiguration: false }));
+  const server = createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address();
+    const url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/v1/extensions/careless`;
+    const anonymous = await fetch(url);
+    assert.equal(anonymous.status, 401);
+    assert.equal((await anonymous.json()).error.code, 'UNAUTHENTICATED');
+    assert.equal(reached, 0, 'the handler never ran');
+    assert.equal((await fetch(url, { headers: { 'x-test-principal': 'alice' } })).status, 200);
+    assert.equal(reached, 1);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await services.apiKeys.close();
+  }
+});
+
+test('the router mounts only registrations createServices made: no hand-built context, no unregistered extension, no foreign db', async () => {
+  const services = createServices({ memory: true, namespace: `forge-${crypto.randomUUID()}`, authorizer: authority({}), extensions: [notesExtension] });
+  try {
+    const mount = (extensions: unknown) => createManagementRouter({ services, authority: services.gateway, extensions: extensions as never, authenticate: () => null });
+    const real = services.extensions[0]!;
+    assert.doesNotThrow(() => mount(services.extensions));
+    const other = createFeltDB({ namespace: `other-${crypto.randomUUID()}`, memory: true } as never);
+    assert.throws(() => mount([{ extension: real.extension, context: { ...real.context, db: other } }]), /createServices returned/, 'a borrowed gateway with another db');
+    assert.throws(() => mount([{ ...real }]), /createServices returned/, 'a copy of a registration');
+    const unvalidated = { id: 'raw', pages: [{ id: 'raw', title: 'Raw', route: '/raw', order: 1, description: 'd', capabilities: [], script: '</script><b>' }], routes: (r: ReturnType<typeof Router>) => r.get('/', (_q, s) => { s.json({}); }) };
+    assert.throws(() => mount([{ extension: unvalidated, context: real.context }]), /createServices returned/, 'an extension that was never validated or registered');
+  } finally {
+    await services.apiKeys.close();
+  }
+});
+
+test('declarations cannot take built-in namespaces, resources, page ids or routes, or change after they are checked', () => {
+  const capability = { name: 'demo.read', operation: 'read', effect: 'observation' as const, resource: 'demo_item' };
+  const page = { id: 'demo', title: 'Demo', route: '/demo', order: 1, description: 'd', capabilities: ['demo.read'], script: 'void 0;' };
+  const refused: Array<[string, unknown]> = [
+    ['built-in capability namespace credential', { id: 'credential', capabilities: [{ ...capability, name: 'credential.export' }] }],
+    ['built-in capability namespace apikeys', { id: 'apikeys', capabilities: [{ ...capability, name: 'apikeys.purge' }] }],
+    ['built-in resource type', { id: 'demo', capabilities: [{ ...capability, resource: 'api_key' }] }],
+    ['built-in page id', { id: 'api', capabilities: [{ ...capability, name: 'api.read' }], pages: [{ ...page, id: 'api-keys', route: '/api', capabilities: ['api.read'] }] }],
+    ['two pages on one route', { id: 'demo', capabilities: [capability], pages: [page, { ...page, id: 'demo-b' }] }],
+    ['missing description', { id: 'demo', capabilities: [capability], pages: [{ ...page, description: undefined }] }],
+    ['non-string description', { id: 'demo', capabilities: [capability], pages: [{ ...page, description: 7 }] }],
+    ['<!--<script> in the renderer', { id: 'demo', capabilities: [capability], pages: [{ ...page, script: 'var s = "<!--<script>";' }] }],
+    ['<script in the renderer', { id: 'demo', capabilities: [capability], pages: [{ ...page, script: 'var s = "<SCRIPT";' }] }],
+  ];
+  for (const [label, extension] of refused) assert.throws(() => defineServicesExtension(extension as never), ServicesExtensionError, label);
+  // Two extensions may not contribute the same page route.
+  const a = defineServicesExtension({ id: 'alpha', capabilities: [{ ...capability, name: 'alpha.read' }], pages: [{ ...page, id: 'alpha', route: '/alpha', capabilities: ['alpha.read'] }] });
+  assert.throws(() => createServices({ memory: true, namespace: `x-${crypto.randomUUID()}`, extensions: [a, a] }), ServicesExtensionError);
+  // A getter cannot pass the checks and then hand over something else: each field is read once.
+  let reads = 0;
+  const sneaky = { ...page, get script() { reads += 1; return reads <= 4 ? 'void 0;' : '</script><img src=x onerror=alert(1)>'; } };
+  const defined = defineServicesExtension({ id: 'demo', capabilities: [capability], pages: [sneaky] });
+  assert.equal(defined.pages![0]!.script, 'void 0;');
+  assert.equal(reads, 1);
+  assert.ok(Object.isFrozen(defined) && Object.isFrozen(defined.pages![0]) && Object.isFrozen(defined.capabilities![0]));
+});
+
+test('the gateway takes extension capabilities only in the shape defined extensions produce', async () => {
+  const { ServiceGateway } = await import('../src/index.js');
+  const base = { name: 'demo.read', version: 1, service: 'extension:demo', operation: 'read', effect: 'observation' as const, invocable: false, authorization: { required: true as const, resource: 'demo_item' } };
+  assert.doesNotThrow(() => new ServiceGateway({ application: 'a', evidence: {} as never, extensionCapabilities: [base] }));
+  for (const bad of [
+    { ...base, name: 'APIKEYS.READ' },
+    { ...base, name: 'read' },
+    { ...base, service: 'apikeys' },
+    { ...base, invocable: true },
+    { ...base, name: 'apikeys.read' },
+  ]) assert.throws(() => new ServiceGateway({ application: 'a', evidence: {} as never, extensionCapabilities: [bad as never] }), bad.name);
 });

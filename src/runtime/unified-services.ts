@@ -9,7 +9,7 @@ import type { WebhookDestinationPolicy } from '../authority/destination.js';
 import { FeltDbEffectEvidenceStore, createEvidenceReader, type EffectEvidenceReader } from '../authority/evidence.js';
 import { ServiceGateway } from '../authority/gateway.js';
 import { SERVICE_CAPABILITY_MANIFEST, type ServiceCapability } from '../authority/manifest.js';
-import { defineServicesExtensions, extensionCapabilities, type RegisteredServicesExtension, type ServicesExtension } from '../extensions/extension.js';
+import { defineServicesExtensions, extensionCapabilities, registerServicesExtension, type RegisteredServicesExtension, type ServicesExtension } from '../extensions/extension.js';
 import { requireVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
 import { isSecretCustody, type ScopedSecretsResolver, type SecretCustody } from '../secrets/protocol.js';
 import { FeltDbSecretMetadataStore } from '../storage/secrets.js';
@@ -254,7 +254,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     ...invokable,
     // Unchanged without extensions; with them, the extensions' capabilities follow the built-in manifest.
     capabilities: extensionManifest.length ? Object.freeze([...SERVICE_CAPABILITY_MANIFEST, ...extensionManifest]) : SERVICE_CAPABILITY_MANIFEST,
-    extensions: Object.freeze(extensions.map((extension) => Object.freeze({ extension, context: Object.freeze({ db, gateway, application: gateway.application }) }))),
+    extensions: Object.freeze(extensions.map((extension) => registerServicesExtension(extension, { db, gateway, application: gateway.application }))),
     discovery: describeCapabilities({
       apikeys: true,
       webhooks: true,

@@ -1001,7 +1001,7 @@
   // same helpers into the same shell. Built-in pages take precedence; an unknown id is the overview.
   const contributed = window.AppPortServicesPages && Object.prototype.hasOwnProperty.call(window.AppPortServicesPages, config.page)
     ? window.AppPortServicesPages[config.page] : null;
-  const page = PAGES[config.page]
+  const page = Object.prototype.hasOwnProperty.call(PAGES, config.page)
     ? PAGES[config.page]()
     : typeof contributed === 'function'
       ? contributed({ S, el, request, at, failureOf, config })
