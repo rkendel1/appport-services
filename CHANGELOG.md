@@ -2,7 +2,12 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## Unreleased
+## 0.15.0 — prepared, not published
+
+Released with `@appport/runtime` 0.14.0 (re-exports this package; depends on `^0.15.0`) and
+`create-appport` 0.1.24 (depends on `@appport/runtime` `^0.14.0`). Additive: no export, option or
+default changes for a host that registers no extensions. `@feltdb/core` stays a peer dependency
+(`>=0.16.1 <1.0.0`). Everything since 0.14.0 is the management extension work below.
 
 **Management extensions.** Another AppPort package can add management pages, navigation entries,
 JSON routes, and the capabilities they need to a Services host. It uses the host's FeltDB instance,
@@ -21,7 +26,7 @@ its own. See [docs/extensions.md](docs/extensions.md).
 - `createUiContribution`, `createUiPages`, and `createUiDiscoveryDocument` accept `{ extensions }`.
 - No change without extensions: the manifest is the same object and the UI contribution is
   identical.
-- Hardening:
+- Rules the host enforces:
   - extension routes refuse a request without a host identity (`401`) before any handler runs;
   - the router mounts only registrations `createServices` returned;
   - declarations are copied once, then validated, then frozen;
@@ -32,8 +37,16 @@ its own. See [docs/extensions.md](docs/extensions.md).
   - renderer scripts may not contain `<script` or `<!--`;
   - the shell dispatches only to its own page renderers (`hasOwnProperty`);
   - `docs/extensions.md` ships in the package.
+- Viewing an extension page is gated but not recorded as effect evidence, the same as the built-in
+  `/api-keys` page; the page's operations are recorded. Restricted API keys are refused every
+  extension capability (fail closed).
 
-## 0.13.1 — unreleased
+Release-note correction: the headings below said "unreleased" when they shipped. Checked against
+the npm tarballs: the 0.11.0 notes first shipped in 0.12.0 (0.11.0 was never published), the 0.13.0
+notes in 0.13.0, and the 0.13.1 notes in 0.14.0 (published 0.14.0 is byte-identical to the
+`dist/src` built from its release commit).
+
+## 0.14.0 — 2026-11-03 (prepared as 0.13.1)
 
 **Transactional effects are contract-safe.** `tx.queueJob` and `tx.queueWebhookDeliveries` (the
 transaction context of `services.transaction()`) wrote audit fields that `servicesContract` did not
@@ -78,7 +91,7 @@ them done.
 | `@appport/runtime` | 0.12.0 | 0.12.1 | `@appport/services` `^0.13.1` |
 | `create-appport` | 0.1.21 | 0.1.22 | `@appport/runtime` `^0.12.1` |
 
-## 0.13.0 — unreleased
+## 0.13.0 — 2026-11-02
 
 **E-mail notifications.** `EmailNotificationChannel` delivers a notification by e-mail, and
 `createServices({ notificationChannels })` registers host channels beside the in-app inbox (which
@@ -95,7 +108,7 @@ idempotency key is passed to the transport.
 | `@appport/runtime` | 0.11.0 | 0.12.0 | `@appport/services` `^0.13.0` |
 | `create-appport` | 0.1.20 | 0.1.21 | `@appport/runtime` `^0.12.0` |
 
-## 0.11.0 — unreleased
+## 0.12.0 — 2026-11-02 (prepared as 0.11.0)
 
 **`@feltdb/core` is a peer dependency** (`>=0.16.1 <1.0.0`; was the exact dependency 0.16.1). Services
 always ran on the host's FeltDB instance (`createServices({ db })`) and matches FeltDB's errors by
