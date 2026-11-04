@@ -8,6 +8,7 @@ import {
 } from '@appport/protocol';
 
 import { VERSION } from '../version.js';
+import type { ServicesExtension } from '../extensions/extension.js';
 
 /**
  * The UI contract is `AppPort/ui/1`, owned by `@appport/protocol`
@@ -61,8 +62,24 @@ const SURFACES: readonly SurfaceDefinition[] = [
 ];
 
 /** The number of management pages (everything but the overview) that are mounted. */
-function countPages(services: UiMountedServices, includeConfiguration: boolean): number {
-  return SURFACES.filter((surface) => surface.id !== 'overview' && surface.mounted(services, includeConfiguration)).length;
+function countPages(services: UiMountedServices, includeConfiguration: boolean, extensionPages = 0): number {
+  return SURFACES.filter((surface) => surface.id !== 'overview' && surface.mounted(services, includeConfiguration)).length + extensionPages;
+}
+
+/** Built-in surfaces plus extension pages, in one list. Without extensions, exactly the built-in surfaces. */
+function mountedSurfaces(services: UiMountedServices, includeConfiguration: boolean, extensions: readonly ServicesExtension[]): Array<Pick<SurfaceDefinition, 'id' | 'title' | 'route' | 'order' | 'capabilities'> & { extension?: { id: string; description: string; script: string } }> {
+  const pages = extensions.flatMap((extension) => (extension.pages ?? []).map((page) => ({ extension, page })));
+  const builtIn = SURFACES.filter((surface) => surface.id === 'overview'
+    // With extension pages, the overview is mounted once the host shows more than two pages in all.
+    ? (pages.length ? countPages(services, includeConfiguration, pages.length) > 2 : surface.mounted(services, includeConfiguration))
+    : surface.mounted(services, includeConfiguration));
+  return [
+    ...builtIn,
+    ...pages.map(({ extension, page }) => ({
+      id: page.id, title: page.title, route: page.route, order: page.order, capabilities: page.capabilities,
+      extension: { id: extension.id, description: page.description, script: page.script },
+    })),
+  ];
 }
 
 const PRODUCT_ID = 'appport-services';
@@ -74,9 +91,9 @@ const GROUP = 'AppPort Services';
  * or `undefined` when none are. The result is validated by the protocol's own
  * validator before it is returned.
  */
-export function createUiContribution(services: UiMountedServices, options: { readonly includeConfiguration?: boolean } = {}): UiContribution | undefined {
+export function createUiContribution(services: UiMountedServices, options: { readonly includeConfiguration?: boolean; readonly extensions?: readonly ServicesExtension[] } = {}): UiContribution | undefined {
   const includeConfiguration = options.includeConfiguration !== false;
-  const mounted = SURFACES.filter((surface) => surface.mounted(services, includeConfiguration));
+  const mounted = mountedSurfaces(services, includeConfiguration, options.extensions ?? []);
   if (mounted.length === 0) return undefined;
   return validateUiContribution({
     protocol: UI_PROTOCOL_ID,
@@ -103,7 +120,7 @@ export function createUiContribution(services: UiMountedServices, options: { rea
  */
 export function createUiDiscoveryDocument(
   services: UiMountedServices,
-  options: { readonly includeConfiguration?: boolean; readonly callerCapabilities?: readonly string[] } = {},
+  options: { readonly includeConfiguration?: boolean; readonly callerCapabilities?: readonly string[]; readonly extensions?: readonly ServicesExtension[] } = {},
 ): UiDiscoveryDocument | undefined {
   const contribution = createUiContribution(services, options);
   if (!contribution) return undefined;
@@ -116,6 +133,8 @@ export interface UiPage {
   readonly title: string;
   readonly route: string;
   readonly order: number;
+  /** An extension's page: its overview description and its renderer script. Absent for built-in pages. */
+  readonly extension?: { readonly id: string; readonly description: string; readonly script: string };
 }
 
 const EVERYTHING: UiMountedServices = { apiKeys: true, webhooks: true, jobs: true, schedules: true, files: true, notifications: true, configuration: true, intelligence: true };
@@ -125,12 +144,11 @@ const EVERYTHING: UiMountedServices = { apiKeys: true, webhooks: true, jobs: tru
  * the contribution describes, so the packaged navigation never links to a page
  * this host does not serve. With no services given, every page.
  */
-export function createUiPages(services: UiMountedServices = EVERYTHING, options: { readonly includeConfiguration?: boolean } = {}): UiPage[] {
+export function createUiPages(services: UiMountedServices = EVERYTHING, options: { readonly includeConfiguration?: boolean; readonly extensions?: readonly ServicesExtension[] } = {}): UiPage[] {
   const includeConfiguration = options.includeConfiguration !== false;
-  return SURFACES
-    .filter((surface) => surface.mounted(services, includeConfiguration))
+  return mountedSurfaces(services, includeConfiguration, options.extensions ?? [])
     .sort((a, b) => a.order - b.order)
-    .map(({ id, title, route, order }) => ({ id, title, route, order }));
+    .map(({ id, title, route, order, extension }) => ({ id, title, route, order, ...(extension ? { extension } : {}) }));
 }
 
 /** Every surface this package can contribute, for hosts that mount everything. */

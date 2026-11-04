@@ -997,7 +997,15 @@
 
   // ---- Frame -------------------------------------------------------------------
 
-  const page = (PAGES[config.page] || PAGES.overview)();
+  // A page contributed by a registered extension (createServices({ extensions })) renders with the
+  // same helpers into the same shell. Built-in pages take precedence; an unknown id is the overview.
+  const contributed = window.AppPortServicesPages && Object.prototype.hasOwnProperty.call(window.AppPortServicesPages, config.page)
+    ? window.AppPortServicesPages[config.page] : null;
+  const page = Object.prototype.hasOwnProperty.call(PAGES, config.page)
+    ? PAGES[config.page]()
+    : typeof contributed === 'function'
+      ? contributed({ S, el, request, at, failureOf, config })
+      : PAGES.overview();
   const overview = config.navigation.find((item) => item.id === 'overview');
   // The shared theme control: System (the operating system, the default),
   // Light or Dark. The choice applies to this page only and is never stored:

@@ -9,6 +9,7 @@ import type { WebhookDestinationPolicy } from '../authority/destination.js';
 import { FeltDbEffectEvidenceStore, createEvidenceReader, type EffectEvidenceReader } from '../authority/evidence.js';
 import { ServiceGateway } from '../authority/gateway.js';
 import { SERVICE_CAPABILITY_MANIFEST, type ServiceCapability } from '../authority/manifest.js';
+import { defineServicesExtensions, extensionCapabilities, registerServicesExtension, type RegisteredServicesExtension, type ServicesExtension } from '../extensions/extension.js';
 import { requireVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
 import { isSecretCustody, type ScopedSecretsResolver, type SecretCustody } from '../secrets/protocol.js';
 import { FeltDbSecretMetadataStore } from '../storage/secrets.js';
@@ -49,6 +50,8 @@ export interface AppPortServices {
   readonly schedules: ScheduleService;
   /** The Policy Enforcement Point every service effect passes through. */
   readonly gateway: ServiceGateway;
+  /** The registered management extensions, bound to this instance (empty without any). */
+  readonly extensions: readonly RegisteredServicesExtension[];
   /** Deterministic capability manifest. */
   readonly capabilities: readonly ServiceCapability[];
   /** Capability discovery derived from the mounted implementation. */
@@ -143,6 +146,12 @@ export interface CreateServicesOptions extends FeltDBOptions {
    * A notification names the channels it is delivered on; `in-app` stays the default.
    */
   notificationChannels?: readonly NotificationChannel[];
+  /**
+   * Management extensions the host trusts (`defineServicesExtension`): their capabilities join the
+   * gateway's manifest, and each is bound to this instance's FeltDB, gateway and application. No
+   * second Services instance, database or authorizer is created for them.
+   */
+  extensions?: readonly ServicesExtension[];
 }
 
 /**
@@ -164,7 +173,10 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
 
   // Create one FeltDB runtime shared by all services
   // Extract FeltDB options (exclude config)
-  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, configurationDeclarations, notificationChannels, ...feltdbOptions } = options;
+  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, configurationDeclarations, notificationChannels, extensions: extensionInput, ...feltdbOptions } = options;
+  // Validated before anything is opened: a bad declaration never leaves a half-built host.
+  const extensions = defineServicesExtensions(extensionInput ?? []);
+  const extensionManifest = extensions.flatMap(extensionCapabilities);
   const runtime = createFeltDbRuntime(feltdbOptions);
   const { db } = runtime;
   const evidenceStore = new FeltDbEffectEvidenceStore(db);
@@ -174,6 +186,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     credentials,
     evidence: evidenceStore,
     authorizationTimeoutMs,
+    ...(extensionManifest.length ? { extensionCapabilities: extensionManifest } : {}),
   });
   const authority = authorizer || credentials ? gateway : undefined;
 
@@ -239,7 +252,9 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
 
   const services: AppPortServices = {
     ...invokable,
-    capabilities: SERVICE_CAPABILITY_MANIFEST,
+    // Unchanged without extensions; with them, the extensions' capabilities follow the built-in manifest.
+    capabilities: extensionManifest.length ? Object.freeze([...SERVICE_CAPABILITY_MANIFEST, ...extensionManifest]) : SERVICE_CAPABILITY_MANIFEST,
+    extensions: Object.freeze(extensions.map((extension) => registerServicesExtension(extension, { db, gateway, application: gateway.application }))),
     discovery: describeCapabilities({
       apikeys: true,
       webhooks: true,

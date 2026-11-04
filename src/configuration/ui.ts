@@ -95,18 +95,23 @@ export function renderManagementPage(page: UiPage, pages: readonly UiPage[], opt
   const { style, designSystem, page: pageScript } = loadAssets();
   const title = page.id === 'overview' ? 'AppPort Services' : `AppPort Services · ${page.title}`;
   const basePath = normalizeBasePath(options.basePath);
+  // Extension pages describe themselves; built-in descriptions are unchanged.
+  const extensionDescriptions = Object.fromEntries(pages.filter((p) => p.extension).map((p) => [p.id, p.extension!.description]));
   const description = {
     page: page.id,
     ...(basePath ? { basePath } : {}),
     navigation: pages.map(({ id, title: label, route, order }) => ({ id, label, route, order })),
-    descriptions: DESCRIPTIONS,
+    descriptions: Object.keys(extensionDescriptions).length ? { ...DESCRIPTIONS, ...extensionDescriptions } : DESCRIPTIONS,
   };
+  // An extension page's renderer registers itself (window.AppPortServicesPages) before the shared
+  // page script draws the shell; only the page being served has its script included.
+  const extensionScript = page.extension ? `<script>${page.extension.script}</script>` : '';
   return '<!doctype html><html lang="en"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width, initial-scale=1">'
     + `<title>${escapeText(title)}</title><style>${style}</style></head><body>`
     + `<noscript><p class="appport-noscript">The ${escapeText(page.title)} page needs JavaScript.</p></noscript>`
     + `<script type="application/json" id="appport-page">${scriptJson(description)}</script>`
-    + `<script>${designSystem}</script><script>${pageScript}</script>`
+    + `<script>${designSystem}</script>${extensionScript}<script>${pageScript}</script>`
     + '</body></html>';
 }
 

@@ -2,6 +2,37 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## Unreleased
+
+**Management extensions.** Another AppPort package can add management pages, navigation entries,
+JSON routes, and the capabilities they need to a Services host. It uses the host's FeltDB instance,
+authentication adapter, gateway (AuthBoundry decision and effect evidence), and UI shell, and none of
+its own. See [docs/extensions.md](docs/extensions.md).
+
+- `defineServicesExtension`, `defineServicesExtensions`, `ServicesExtensionError`, and the types
+  `ServicesExtension`, `ServicesExtensionCapability`, `ServicesExtensionPage`,
+  `ServicesExtensionContext`, `RegisteredServicesExtension`.
+- `createServices({ extensions })` validates and binds extensions; `services.extensions` and
+  `services.capabilities` (built-in manifest followed by extension capabilities).
+- `ServiceGateway` accepts `extensionCapabilities` and has `capability(name)`.
+- `createManagementRouter({ extensions })` mounts extension routes at `/v1/extensions/<id>` and pages
+  at their routes, each page gated on every capability it declares. It refuses extensions bound to
+  another Services instance.
+- `createUiContribution`, `createUiPages`, and `createUiDiscoveryDocument` accept `{ extensions }`.
+- No change without extensions: the manifest is the same object and the UI contribution is
+  identical.
+- Hardening:
+  - extension routes refuse a request without a host identity (`401`) before any handler runs;
+  - the router mounts only registrations `createServices` returned;
+  - declarations are copied once, then validated, then frozen;
+  - extension ids may not take built-in capability namespaces, and capabilities may not use built-in
+    resource types;
+  - page ids may not take built-in ones, and page routes are unique;
+  - descriptions are required;
+  - renderer scripts may not contain `<script` or `<!--`;
+  - the shell dispatches only to its own page renderers (`hasOwnProperty`);
+  - `docs/extensions.md` ships in the package.
+
 ## 0.13.1 — unreleased
 
 **Transactional effects are contract-safe.** `tx.queueJob` and `tx.queueWebhookDeliveries` (the

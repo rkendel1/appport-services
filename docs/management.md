@@ -134,6 +134,10 @@ What this package does with that:
 
 The packaged API-key page is mounted at `/api-keys` and requires AuthBoundry to allow all three API-key capabilities. When present on the supplied instance, the router also mounts the webhook, job, schedule, file, and notification handlers and their packaged pages. Each operation maps to one manifest capability (for example `webhooks.register`, `jobs.create`, `files.write`, `notifications.send`, `schedules.cancel`). Configuration composes `/v1/configuration` and its `/configuration` and `/secrets` pages with `configuration.read`, `configuration.write`, `configuration.delete`, `credential.attach`, `credential.rotate`, `credential.detach`, `credential.store`, and `credential.status`. The `/secrets` page's masked **Set value** form posts to `POST /v1/configuration/credentials` (`credential.store`) and shows each binding's value status from `GET /v1/configuration/credentials/status`; the value goes to the host's `SecretCustody` and is cleared from the form after every submit (see [credentials.md](./credentials.md#the-secrets-page)). UI pages are mounted only when their corresponding service handler is present.
 
+## Management extensions
+
+Another package can add pages, navigation entries, routes under `/v1/extensions/<id>`, and the capabilities they need to this router. It uses the host's FeltDB instance, authentication adapter, gateway and shell (`createServices({ extensions })`, then `createManagementRouter({ extensions: services.extensions })`). See [extensions.md](./extensions.md).
+
 ## Standalone runtime
 
 `appport()` and `application.start()` continue to start the standalone HTTP runtime. Its `/_appport/api/keys` routes are the same shared management implementation. Standalone Bearer authentication is retained for standalone deployments; embedded hosts use their own authentication adapter and do not need an AppPort credential bootstrap path.

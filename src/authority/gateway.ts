@@ -9,7 +9,7 @@ import { enforceCredential } from './credential-binding.js';
 import { credentialReference, type CredentialRef } from './credentials.js';
 import { ServiceAuthorityError, isServiceAuthorityError } from './errors.js';
 import type { EffectEvidence, EffectEvidenceStore } from './evidence.js';
-import { getServiceCapability } from './manifest.js';
+import { getServiceCapability, type ServiceCapability } from './manifest.js';
 import { mintVerifiedPrincipal, requireVerifiedPrincipal, type DurablePrincipal, type PrincipalClaims, type VerifiedPrincipal } from './principal.js';
 
 const DEFAULT_AUTHORIZATION_TIMEOUT_MS = 5_000;
@@ -29,6 +29,12 @@ export interface ServiceGatewayOptions {
   readonly evidence: EffectEvidenceStore;
   readonly authorizationTimeoutMs?: number;
   readonly now?: () => Date;
+  /**
+   * Capabilities declared by registered extensions (`createServices({ extensions })`). They are
+   * authorized exactly like the static manifest's: same AuthBoundry decision, same evidence. They
+   * may not reuse a manifest name.
+   */
+  readonly extensionCapabilities?: readonly ServiceCapability[];
 }
 
 export interface ExecuteOptions {
@@ -73,6 +79,7 @@ export class ServiceGateway {
   private readonly evidence: EffectEvidenceStore;
   private readonly timeoutMs: number;
   private readonly now: () => Date;
+  private readonly extensionCapabilities: ReadonlyMap<string, ServiceCapability>;
 
   constructor(options: ServiceGatewayOptions) {
     if (!options.application?.trim()) throw new Error('ServiceGateway requires an application');
@@ -82,6 +89,24 @@ export class ServiceGateway {
     this.evidence = options.evidence;
     this.timeoutMs = options.authorizationTimeoutMs ?? DEFAULT_AUTHORIZATION_TIMEOUT_MS;
     this.now = options.now ?? (() => new Date());
+    const extensions = new Map<string, ServiceCapability>();
+    for (const capability of options.extensionCapabilities ?? []) {
+      if (getServiceCapability(capability.name) || extensions.has(capability.name)) {
+        throw new Error(`Extension capability "${capability.name}" is already declared`);
+      }
+      // Only declarations made by extensionCapabilities(): namespaced by their extension, never invocable.
+      const namespace = capability.service?.startsWith('extension:') ? capability.service.slice('extension:'.length) : '';
+      if (!namespace || !capability.name.startsWith(`${namespace}.`) || capability.invocable !== false || capability.authorization?.required !== true) {
+        throw new Error(`Extension capability "${capability.name}" must come from a defined extension (extension:<id>, <id>.<name>, not invocable, authorization required)`);
+      }
+      extensions.set(capability.name, Object.freeze({ ...capability, authorization: Object.freeze({ ...capability.authorization }) }));
+    }
+    this.extensionCapabilities = extensions;
+  }
+
+  /** A capability this gateway enforces: the static manifest's, or one a registered extension declared. */
+  capability(name: string): ServiceCapability | undefined {
+    return getServiceCapability(name) ?? this.extensionCapabilities.get(name);
   }
 
   /** Brand identity claims produced by a trusted host authentication adapter. */
@@ -96,7 +121,7 @@ export class ServiceGateway {
 
   /** Ask AuthBoundry and return a single-use execution context. Does not perform or record an effect. */
   async authorize(capabilityName: string, principalInput: unknown, resource: ServiceResource, requestId: string = randomUUID()): Promise<ServiceExecutionContext> {
-    const capability = getServiceCapability(capabilityName);
+    const capability = this.capability(capabilityName);
     if (!capability) throw new ServiceAuthorityError('INVALID_REQUEST', `Capability "${capabilityName}" is not declared in the service capability manifest`);
     if (resource?.type !== capability.authorization.resource) {
       throw new ServiceAuthorityError('INVALID_REQUEST', `Capability "${capability.name}" applies to ${capability.authorization.resource} resources, not ${String(resource?.type)}`, { capability: capability.name });
@@ -407,7 +432,7 @@ export class ServiceGateway {
       ...(principal.delegationId ? { delegationId: principal.delegationId } : {}),
       ...(principal.runId ? { runId: principal.runId } : {}),
       capability,
-      capabilityVersion: getServiceCapability(capability)?.version ?? 0,
+      capabilityVersion: this.capability(capability)?.version ?? 0,
       resource: resourceUri(this.application, resource),
       decision: error.details.decisionId ? 'deny' : 'none',
       ...(error.details.decisionId ? { decisionId: error.details.decisionId } : {}),

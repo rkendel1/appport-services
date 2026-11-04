@@ -23,6 +23,7 @@
     "vendor/stack-ui",
     "appport.flow",
     "docs/api-keys.md",
+    "docs/extensions.md",
     "docs/credentials.md",
     "docs/configuration.md",
     "docs/intelligence.md",
