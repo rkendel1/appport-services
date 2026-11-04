@@ -7,7 +7,9 @@ All notable changes to `@appport/services`. Releases before 0.6.0 are described 
 Released with `@appport/runtime` 0.14.0 (re-exports this package; depends on `^0.15.0`) and
 `create-appport` 0.1.24 (depends on `@appport/runtime` `^0.14.0`). Additive: no export, option or
 default changes for a host that registers no extensions. `@feltdb/core` stays a peer dependency
-(`>=0.16.1 <1.0.0`). Everything since 0.14.0 is the management extension work below.
+(`>=0.16.1 <1.0.0`); this release is built and tested against `@feltdb/core` 0.21.0 (the dev
+dependency moves from a 0.18.0 install to `^0.21.0`), the version FeltKit requires. Everything else
+since 0.14.0 is the management extension work below.
 
 **Management extensions.** Another AppPort package can add management pages, navigation entries,
 JSON routes, and the capabilities they need to a Services host. It uses the host's FeltDB instance,
