@@ -19,6 +19,7 @@ import { ServiceAuthorityError, ServiceMigrationError, isServiceAuthorityError }
 import type { ServiceGateway } from '../authority/gateway.js';
 import { isVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
 import { ownedBy } from './invoke.js';
+import type { RegisteredServicesExtension } from '../extensions/extension.js';
 
 export const API_KEY_MANAGEMENT_CAPABILITIES = {
   read: 'apikeys.read',
@@ -83,6 +84,13 @@ export interface CreateManagementRouterOptions {
    * (CORS and its credentials) itself. Routes served by the router do not move.
    */
   readonly basePath?: string;
+  /**
+   * Registered management extensions (`services.extensions`). Their routes are mounted under
+   * `/v1/extensions/<id>` behind `authenticate`, their pages join the UI, and each page is served
+   * only to a caller the gateway allows every capability the page declares. Each must be bound to
+   * this router's `authority`: an extension registered on another Services instance is refused.
+   */
+  readonly extensions?: readonly RegisteredServicesExtension[];
 }
 
 export class ManagementAuthenticationError extends Error {
@@ -135,6 +143,36 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
 
   mountExistingServiceRoutes(router, options.services, gateway);
 
+  const extensions = options.extensions ?? [];
+  for (const { extension, context } of extensions) {
+    // One host: the extension's capabilities live in this gateway, and it runs on this gateway's instance.
+    if (context.gateway !== gateway) throw new Error(`Extension "${extension.id}" is registered with another Services instance; register it with createServices({ extensions }) on this host`);
+    for (const capability of extension.capabilities ?? []) {
+      if (!gateway.capability(capability.name)) throw new Error(`Extension "${extension.id}" capability "${capability.name}" is not known to this gateway`);
+    }
+    if (extension.routes) {
+      const extensionRouter = Router();
+      extension.routes(extensionRouter, context);
+      router.use(`/v1/extensions/${extension.id}`, extensionRouter);
+    }
+    if (options.includeUi !== false) {
+      for (const page of extension.pages ?? []) {
+        router.get(page.route, async (req, _res, next) => {
+          try {
+            const principal = requirePrincipal(req);
+            // The page drives these operations; AuthBoundry must allow each, as for the built-in /api-keys page.
+            for (const name of page.capabilities) {
+              const capability = gateway.capability(name)!;
+              await gateway.authorize(name, principal, { type: capability.authorization.resource, tenantId: principal.tenantId });
+            }
+            next();
+          } catch (error) { next(error); }
+        });
+      }
+    }
+  }
+  const registered = extensions.map((e) => e.extension);
+
   if (options.includeConfiguration !== false && options.services.configuration) {
     router.use('/v1/configuration', createConfigurationRouter(options.services.configuration));
   }
@@ -145,7 +183,7 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   // data. A host that serves no pages advertises none (404, as the protocol's own
   // server answers when no UI is advertised).
   const discovery = options.includeUi !== false
-    ? createUiDiscoveryDocument(options.services, { includeConfiguration: options.includeConfiguration !== false })
+    ? createUiDiscoveryDocument(options.services, { includeConfiguration: options.includeConfiguration !== false, extensions: registered })
     : undefined;
   router.get(UI_DISCOVERY_PATH, (_req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -154,10 +192,10 @@ export function createManagementRouter(options: CreateManagementRouterOptions): 
   });
   if (options.includeUi !== false) {
     // The navigation lists exactly the pages this host mounts.
-    const ui = createConfigurationUiRouter({ pages: createUiPages(options.services, { includeConfiguration: options.includeConfiguration !== false }), basePath });
+    const ui = createConfigurationUiRouter({ pages: createUiPages(options.services, { includeConfiguration: options.includeConfiguration !== false, extensions: registered }), basePath });
     // The pages served are exactly the surfaces the contribution describes.
     const supportedUiPaths = new Set(
-      createUiContribution(options.services, { includeConfiguration: options.includeConfiguration !== false })?.surfaces.map((surface) => surface.route) ?? [],
+      createUiContribution(options.services, { includeConfiguration: options.includeConfiguration !== false, extensions: registered })?.surfaces.map((surface) => surface.route) ?? [],
     );
     router.use((req, res, next) => supportedUiPaths.has(req.path) ? ui(req, res, next) : next());
   }

@@ -205,3 +205,7 @@ export type {
   ServicesContractFragment,
   ServicesContractIndex,
 } from './contract/services-contract.js';
+
+// Management extensions: another package's pages, routes and capabilities in this host.
+export { defineServicesExtension, defineServicesExtensions, ServicesExtensionError } from './extensions/extension.js';
+export type { ServicesExtension, ServicesExtensionCapability, ServicesExtensionPage, ServicesExtensionContext, RegisteredServicesExtension } from './extensions/extension.js';
