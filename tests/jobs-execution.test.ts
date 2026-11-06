@@ -343,3 +343,65 @@ test('concurrent tenants remain isolated', async () => {
 
   await runtime.db.close();
 });
+
+test('a running job whose lease expired is taken over by another worker, as a new attempt', async () => {
+  let now = new Date('2026-09-10T12:00:00Z');
+  const path = await mkdtemp(join(tmpdir(), 'appport-jobs-takeover-test-'));
+  const runtime = createFeltDbRuntime({ mode: 'local', namespace: 'jobs-takeover-' + Math.random().toString(16).slice(2), path });
+  const service = new JobService({
+    jobStore: new FeltDbJobStore(runtime.db),
+    scheduleStore: new FeltDbJobScheduleStore(runtime.db),
+    auditSink: new FeltDbJobAuditSink(runtime.db),
+    authority: testGateway(runtime.db),
+    now: () => now,
+    leaseDurationMs: 5000,
+  });
+  const jobStore = new FeltDbJobStore(runtime.db);
+  const runs: string[] = [];
+  service.register('test.job', async (_job, execution) => { runs.push(execution!.runId); });
+  const job = await service.enqueue({ tenantId: 'tenant-a', type: 'test.job', payload: {} }, caller('tenant-a'));
+
+  // Worker A claims the job and stops before settling it (a crash).
+  const fresh = (await jobStore.get('tenant-a', job.id))!;
+  assert.ok(await jobStore.claim('tenant-a', job.id, fresh.__version, new Date(now.getTime() + 5000).toISOString()));
+  assert.equal(await service.executeJob('tenant-a', job.id, 'worker-b'), false, 'held while the lease is valid');
+
+  now = new Date(now.getTime() + 6000);
+  assert.equal(await service.executeJob('tenant-a', job.id, 'worker-b'), true, 'taken over once the lease expired');
+  assert.deepEqual(runs, [`${job.id}:2`], 'the abandoned attempt counts: this run is the second attempt');
+  const done = await service.getJob('tenant-a', job.id);
+  assert.deepEqual([done?.status, done?.attemptCount], ['completed', 1]);
+  await runtime.db.close();
+});
+
+test('a job whose every attempt is abandoned fails after maxAttempts instead of being retried forever', async () => {
+  let now = new Date('2026-09-10T12:00:00Z');
+  const path = await mkdtemp(join(tmpdir(), 'appport-jobs-abandoned-test-'));
+  const runtime = createFeltDbRuntime({ mode: 'local', namespace: 'jobs-abandoned-' + Math.random().toString(16).slice(2), path });
+  const service = new JobService({
+    jobStore: new FeltDbJobStore(runtime.db),
+    scheduleStore: new FeltDbJobScheduleStore(runtime.db),
+    auditSink: new FeltDbJobAuditSink(runtime.db),
+    authority: testGateway(runtime.db),
+    now: () => now,
+    leaseDurationMs: 5000,
+  });
+  const started: string[] = [];
+  let entered: () => void = () => undefined;
+  // Every attempt starts and never settles: its worker is gone.
+  service.register('test.job', (_job, execution) => { started.push(execution!.runId); entered(); return new Promise<void>(() => undefined); });
+  const job = await service.enqueue({ tenantId: 'tenant-a', type: 'test.job', payload: {}, maxAttempts: 2 }, caller('tenant-a'));
+  for (const worker of ['worker-a', 'worker-b']) {
+    const running = new Promise<void>((resolve) => { entered = resolve; });
+    void service.executeJob('tenant-a', job.id, worker);
+    await running;
+    now = new Date(now.getTime() + 6000);
+  }
+  assert.deepEqual(started, [`${job.id}:1`, `${job.id}:2`]);
+  assert.equal(await service.executeJob('tenant-a', job.id, 'worker-c'), false, 'not started a third time');
+  assert.equal(started.length, 2);
+  const failed = await service.getJob('tenant-a', job.id);
+  assert.deepEqual([failed?.status, failed?.attemptCount], ['failed', 2]);
+  assert.match(String(failed?.lastError), /lease expired/);
+  await runtime.db.close();
+});
