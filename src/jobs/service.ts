@@ -173,9 +173,31 @@ export class JobService {
    * behavior for compatibility.
    */
   async executeJob(tenantId: string, jobId: string, workerId: string): Promise<boolean> {
-    const job = await this.jobStore.get(tenantId, jobId);
+    let job = await this.jobStore.get(tenantId, jobId);
     if (!job) return false;
-    if (job.status === 'running' && job.leaseOwner !== workerId) return false;
+    const nowIso = this.now().toISOString();
+    // A running job is held by its lease. Once the lease has expired, the attempt was abandoned (its worker
+    // stopped before settling it): any worker may take the job over. The abandoned attempt counts, so a job
+    // that stops its worker every time fails after maxAttempts instead of running forever.
+    const abandoned = job.status === 'running' && Boolean(job.leaseExpiresAt) && job.leaseExpiresAt! <= nowIso;
+    if (job.status === 'running' && !abandoned && job.leaseOwner !== workerId) return false;
+    if (abandoned) {
+      const attemptCount = job.attemptCount + 1;
+      const lastError = `lease expired before attempt ${attemptCount} settled; it may have partly run`;
+      if (attemptCount >= job.maxAttempts) {
+        const failed = await this.jobStore.updateJob(tenantId, jobId, job.__version, { status: 'failed', attemptCount, lastError });
+        if (failed) {
+          await this.auditSink.record({
+            id: randomUUID(), type: 'job.failed', jobId, tenantId, principalId: job.principal?.principalId ?? 'system',
+            timestamp: nowIso, result: 'failure', details: { error: lastError, attemptCount },
+          });
+        }
+        return false;
+      }
+      const counted = await this.jobStore.updateJob(tenantId, jobId, job.__version, { attemptCount, lastError });
+      if (!counted) return false;
+      job = counted;
+    }
 
     const leaseExpiresAt = new Date(this.now().getTime() + this.leaseDurationMs).toISOString();
     const claimed = await this.jobStore.claim(tenantId, jobId, job.__version, leaseExpiresAt);
