@@ -41,6 +41,10 @@ export type { JobExecution } from './jobs/service.js';
 export type { InboundWebhookHandler, InboundWebhookHandlerInput } from './webhooks/service.js';
 export { ApiKeyScopesNotSupportedError } from './api-keys/service.js';
 
+// Agent Feedback Protocol: durable FeedbackStore for @appport/sdk createFeedbackProvider (>= 1.7.0)
+export { FeltDbFeedbackStore, FeedbackStoreIntegrityError, FeedbackStoreRejectedError, feedbackStoreContract } from './storage/feedback.js';
+export type { FeltDbFeedbackStoreOptions, FeedbackStoreContract, FeedbackStoreRecord, FeedbackSummary } from './storage/feedback.js';
+
 // Atomic transaction API
 export type { AppPortTransactionContext, AppPortTransactionCollection } from './runtime/transaction.js';
 
