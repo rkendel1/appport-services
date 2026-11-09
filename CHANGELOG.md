@@ -2,6 +2,27 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.16.0 — prepared, not published
+
+Released with `@appport/runtime` 0.15.0 (depends on `^0.16.0`) and `create-appport` 0.1.25 (depends on
+`@appport/runtime` `^0.15.0`). Additive. **Requires `@appport/protocol` `^1.5.0`** (was `^1.0.3`): the package now
+imports the Agent Feedback Protocol primitives at runtime, so it cannot be installed beside an older protocol.
+Publish after `@appport/protocol` 1.5.0 and `@appport/sdk` 1.7.0.
+
+**Durable agent feedback.** `FeltDbFeedbackStore` implements the `FeedbackStore` contract of `@appport/sdk` 1.7.0 on
+FeltDB, for providers built with `createFeedbackProvider`. See [docs/feedback-store.md](docs/feedback-store.md).
+
+- `FeltDbFeedbackStore(db, { tenantId })`: `findSubmission`, `create`, `get`, `replace` (the SDK contract) and
+  `list()` (the provider's queue, heads only).
+- `feedbackStoreContract()`: the FeltDB application-contract entries it writes (`feedback_records`,
+  `feedback_submissions`, `feedback_updates`, each tenant-indexed), to compose with `servicesContract(...)`.
+- `FeedbackStoreIntegrityError`, `FeedbackStoreRejectedError`; types `FeltDbFeedbackStoreOptions`,
+  `FeedbackStoreContract`, `FeedbackStoreRecord`, `FeedbackSummary`.
+- Durable before acknowledgement; idempotency key and record in one transaction; append-only history with
+  compare-and-set heads; every read re-verified against digests and history.
+- `@appport/sdk` `^1.7.0` is a dev dependency (tests run the real provider and consumer); it is not a runtime dependency.
+- Example: `examples/feedback-store/example.mjs`.
+
 ## 0.15.0 — prepared, not published
 
 Released with `@appport/runtime` 0.14.0 (re-exports this package; depends on `^0.15.0`) and

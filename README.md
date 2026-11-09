@@ -777,3 +777,10 @@ AppPort is declarative: it defines what the Secrets capability means. AppBoundry
   - `jobs.test.ts` — Job lifecycle, scheduling, and durability tests
   - `jobs-execution.test.ts` — Concurrent execution, leasing, and recovery tests
 - `/docs` — architecture notes
+
+## Durable agent feedback
+
+`FeltDbFeedbackStore` stores the AppPort Agent Feedback Protocol (`appport.feedback/1`) in FeltDB for providers built
+with `@appport/sdk`'s `createFeedbackProvider({ store })`: durable before acknowledgement, idempotent, append-only
+lifecycle history, safe across restarts and concurrent provider instances. See
+[docs/feedback-store.md](docs/feedback-store.md) and `examples/feedback-store/example.mjs`.
