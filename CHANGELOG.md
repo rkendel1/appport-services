@@ -2,6 +2,20 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.16.2
+
+Released with `@appport/runtime` 0.15.2 (depends on `^0.16.2`) and `create-appport` 0.1.27 (depends on
+`@appport/runtime` `^0.15.2`). Bug fixes to jobs; no API changes. Dev dependency `@appport/sdk` moves to `^1.8.1`
+(with `@appport/server` 1.3.2, `@appport/protocol` stays 1.5.0); the published package's dependencies are unchanged.
+
+- **One job per schedule tick.** `processRecurringSchedules` created the job before advancing the schedule, so concurrent
+  processors each created one. The job id is now derived from the schedule and the tick, and created only when absent;
+  processors, and a retry after a crash between the job and the schedule's advance, converge on one job. The schedule is
+  advanced in its own tenant.
+- **No success after a lost claim.** `completeJob` ignored its version-checked update and always recorded success. A
+  worker whose claim was lost now records `job.completion_conflict` and reports `false`.
+- **No cross-tenant update.** `FeltDbJobStore.updateJob` checks the tenant before applying the update.
+
 ## 0.16.1
 
 Released with `@appport/runtime` 0.15.1 (depends on `^0.16.1`) and `create-appport` 0.1.26 (depends on
