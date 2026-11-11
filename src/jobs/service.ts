@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
   Job,
   JobSchedule,
@@ -234,8 +234,8 @@ export class JobService {
         { type: 'job', tenantId, id: claimed.id, attributes: { jobType: claimed.type } },
         { service: 'jobs', requestId: runId },
         (context) => handler(claimed, { principal, context, runId }));
-      await this.completeJob(claimed, principal.principalId, runId);
-      return true;
+      // Completed only if this worker still holds the job (its claim's version); otherwise not a success.
+      return await this.completeJob(claimed, principal.principalId, runId);
     } catch (error) {
       if (isServiceAuthorityError(error) && (error.code === 'DENIED' || error.code === 'UNAUTHENTICATED')) {
         await this.deny(claimed, `DENIED: ${error.message}`);
@@ -260,7 +260,10 @@ export class JobService {
     let created = 0;
 
     for (const schedule of dueSchedules) {
-      const jobId = randomUUID();
+      // One job per schedule tick, whoever processes it: its id is derived from the schedule and the tick it is for,
+      // and a job record is created only when absent. Two processors (or a retry after a crash between the job and the
+      // schedule's advance) converge on the same job instead of creating one each.
+      const jobId = tickJobId(schedule.tenantId, schedule.id, schedule.nextRunAt);
       const job: Job = {
         id: jobId,
         tenantId: schedule.tenantId,
@@ -276,12 +279,22 @@ export class JobService {
         __version: 1,
       };
 
-      await this.jobStore.create(job);
-      created++;
+      let mine = false;
+      if (!(await this.jobStore.get(schedule.tenantId, jobId))) {
+        try {
+          await this.jobStore.create(job);
+          mine = true;
+        } catch (error) {
+          // Another processor created it between the read and the create: the tick has its job.
+          if (!(await this.jobStore.get(schedule.tenantId, jobId))) throw error;
+        }
+      }
 
       const nextRunAt = this.nextRunTime(now, schedule.interval);
-      const updated = await this.scheduleStore.updateSchedule(tenantId, schedule.id, schedule.__version, { nextRunAt });
-      if (updated) {
+      // The schedule's own tenant (it is the schedule being advanced), at the version that was read.
+      await this.scheduleStore.updateSchedule(schedule.tenantId, schedule.id, schedule.__version, { nextRunAt });
+      if (mine) {
+        created++;
         await this.auditSink.record({
           id: randomUUID(),
           type: 'job.created_from_schedule',
@@ -408,17 +421,33 @@ export class JobService {
   private async executeLegacyHandler(job: Job, handler: JobHandler): Promise<boolean> {
     try {
       await handler(job, undefined as never);
-      await this.completeJob(job, job.principal?.principalId ?? 'system');
-      return true;
+      return await this.completeJob(job, job.principal?.principalId ?? 'system');
     } catch (error) {
       await this.recordExecutionFailure(job, job.principal?.principalId ?? 'system', error);
       return false;
     }
   }
 
-  private async completeJob(job: Job, principalId: string, runId?: string): Promise<void> {
+  /**
+   * Record a completion, only when this worker still holds the job at the version it claimed. A worker whose claim was lost
+   * (the job was handed out again, or changed) records that, not a success, and reports false.
+   */
+  private async completeJob(job: Job, principalId: string, runId?: string): Promise<boolean> {
     const completedAt = this.now().toISOString();
-    await this.jobStore.updateJob(job.tenantId, job.id, job.__version, { status: 'completed', completedAt });
+    const updated = await this.jobStore.updateJob(job.tenantId, job.id, job.__version, { status: 'completed', completedAt });
+    if (!updated) {
+      await this.auditSink.record({
+        id: randomUUID(),
+        type: 'job.completion_conflict',
+        jobId: job.id,
+        tenantId: job.tenantId,
+        principalId,
+        timestamp: completedAt,
+        result: 'failure',
+        details: { reason: 'the job changed after this worker claimed it; its completion was not recorded', claimedVersion: job.__version, ...(runId ? { runId } : {}) },
+      });
+      return false;
+    }
     await this.auditSink.record({
       id: randomUUID(),
       type: 'job.completed',
@@ -429,6 +458,7 @@ export class JobService {
       result: 'success',
       ...(runId ? { details: { runId } } : {}),
     });
+    return true;
   }
 
   private async recordExecutionFailure(job: Job, principalId: string, error: unknown): Promise<void> {
@@ -527,4 +557,10 @@ export class JobService {
 
 function assertApplicationJobType(type: string): void {
   if (type.startsWith(SYSTEM_JOB_TYPE_PREFIX)) throw new Error(`Job type "${type}" is reserved for AppPort Services`);
+}
+
+/** The job id for one tick of a schedule: the same for every processor, UUID-shaped (name-based, SHA-256). */
+function tickJobId(tenantId: string, scheduleId: string, tick: string): string {
+  const h = createHash('sha256').update(`${tenantId}\u0000${scheduleId}\u0000${tick}`).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16]!, 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
