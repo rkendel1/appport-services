@@ -2,6 +2,13 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.16.1
+
+Released with `@appport/runtime` 0.15.1 (depends on `^0.16.1`) and `create-appport` 0.1.26 (depends on
+`@appport/runtime` `^0.15.1`). Documentation only: `docs/intelligence.md` and the `IntelligenceRuntimeConfiguration`
+doc comment now name the actual model executor (FeltKit's ModelHost) and owners, and drop the FX/Chip/Attn ownership
+claims. No code or API changes.
+
 ## 0.16.0 — prepared, not published
 
 Released with `@appport/runtime` 0.15.0 (depends on `^0.16.0`) and `create-appport` 0.1.25 (depends on
