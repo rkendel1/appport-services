@@ -24,7 +24,7 @@ export type IntelligenceConfigurationView =
   };
 
 /**
- * The runtime form handed to the execution boundary (FX). It carries the
+ * The runtime form handed to the model executor (FeltKit's ModelHost). It carries the
  * credential reference, never the credential; custody resolves it.
  */
 export interface IntelligenceRuntimeConfiguration {

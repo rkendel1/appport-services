@@ -1,39 +1,45 @@
 # Intelligence configuration
 
 `@appport/services` is the one canonical authority for which model service an
-application uses: **provider, model, endpoint, credential**. Attn, Compute-configured
-and later FX all read and write this same configuration through AppPort. None of
-them keeps its own copy.
+application uses: **provider, model, endpoint, credential**. Applications, their setup
+screens (FeltKit Studio → Models) and the model executor all read and write this same
+configuration through AppPort. None of them keeps its own copy.
 
 ```
-   Attn Setup UI      Compute-configured UI
-          \              /
+   FeltKit Studio → Models / `feltkit model set` / other setup UIs
+          |
            AppPort capability   (services.invoke / intelligence.*)
                    |
           @appport/services     validates configuration, never calls a model
                    |
                 FeltDB          durable state (existing configuration collections)
                    |
-        provider/model/endpoint/credential-ref
+        provider/model/endpoint/credential-ref   (intelligence.resolve, runtime-internal)
                    |
-                  FX            executes the model call
-                   |
+       FeltKit ModelHost        executes the model call: decisions, and generation
+                   |            (streamed, with tool calls), inside custody's withSecret
              Model provider
 ```
 
 | Owner | Responsibility |
 | --- | --- |
-| `@appport/services` | owns and validates provider/model configuration |
-| FeltDB | owns durable state |
-| AppPort | owns capability transport |
-| FX | executes configured model/provider calls |
-| Chip | owns agent behavior |
-| Attn | owns human control and governance |
+| `@appport/services` | owns and validates provider/model configuration; holds credential references, never runs a model |
+| FeltDB | owns durable state, including the records of every model decision and generation |
+| AppPort | owns capability transport; a model's tool calls are AppPort capability invocations |
+| FeltKit (`ModelHost`) | executes configured model/provider calls and orchestrates agent work in an application (proposals, approvals, execution as the owner) |
+| Resolver | owns runtime references: when an application names `ref://…`, the model and its credential come from Resolver, validated against this catalog |
+| AuthBoundry | owns authority: every Services capability call is authorized there |
 
-**Provider credentials are Services configuration, not Attn state, Chip state, or FX state.**
-Services depends on neither Attn nor Chip, performs no inference, and has no
-provider SDK. Intelligence is optional: with nothing configured, `intelligence.read`
+**Provider credentials are Services configuration (a `credential-ref`), never application or
+executor state.** The executor uses the material only inside custody's `withSecret` callback for
+one call; it is not written to FeltDB, records, logs or errors. Services performs no inference
+and has no provider SDK. Intelligence is optional: with nothing configured, `intelligence.read`
 returns `{ configured: false }` and the rest of the platform is unaffected.
+
+There is no separate model-execution service: an earlier version of this page named one ("FX"),
+together with separate agent-behavior and governance components. Model execution and agent
+orchestration are FeltKit's (`docs/GENERATION.md`, `docs/AGENT-OPERATIONS.md` in
+`@feltdb/feltkit`); human approval is FeltKit's action lifecycle, authorized through AuthBoundry.
 
 ## Catalog is not configuration
 
@@ -57,7 +63,7 @@ with a verified principal. Every call is authorized by AuthBoundry; there is no
 | `intelligence.write` | set `{ provider, model, endpoint?, credentialRef? }` |
 | `intelligence.credential.set` | replace the credential reference |
 | `intelligence.credential.remove` | remove the credential (only where optional) |
-| `intelligence.resolve` | runtime-internal (not invocable); `provider, protocol, model, endpoint, credentialRef` for FX |
+| `intelligence.resolve` | runtime-internal (not invocable); `provider, protocol, model, endpoint, credentialRef` for the executor (FeltKit's ModelHost) |
 
 `endpoint` is omitted/`"default"` for the provider's standard endpoint, or a URL for providers
 that allow one (`ollama`, `opencode`, `custom`), e.g. `http://localhost:11434/v1`. URLs must be
