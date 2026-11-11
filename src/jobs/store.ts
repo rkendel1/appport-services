@@ -99,6 +99,11 @@ export class FeltDbJobStore implements JobStore {
   }
 
   async updateJob(tenantId: string, jobId: string, expectedVersion: number, updates: Partial<Job>): Promise<Job | null> {
+    // The tenant is checked before anything is written: another tenant's job is not this caller's to change.
+    const current = await this.jobs.get(jobId);
+    if (!current || current.tenantId !== tenantId) {
+      return null;
+    }
     const result = await this.jobs.updateIfVersion(jobId, expectedVersion, updates);
 
     if (!result.updated || !result.item) {
