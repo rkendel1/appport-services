@@ -38,6 +38,10 @@ const ENTRIES: readonly Entry[] = [
   ['webhooks.deliver', 'webhooks', 'deliverWebhook', 'consequential', 'webhook_delivery', false],
   ['webhooks.integrations.register', 'webhooks', 'registerIntegration', 'consequential', 'webhook_integration'],
   ['webhooks.receive', 'webhooks', 'receiveWebhook', 'consequential', 'webhook_integration', false],
+  ['webhooks.integrations.read', 'webhooks', 'listIntegrations', 'observation', 'webhook_integration'],
+  ['webhooks.integrations.remove', 'webhooks', 'disableIntegration', 'consequential', 'webhook_integration'],
+  ['webhooks.integrations.rotate', 'webhooks', 'rotateIntegrationCredential', 'consequential', 'webhook_integration'],
+  ['webhooks.inbound.retry', 'webhooks', 'retryInboundEvent', 'consequential', 'webhook_integration'],
 
   ['jobs.read', 'jobs', 'listJobs', 'observation', 'job'],
   ['jobs.create', 'jobs', 'enqueue', 'consequential', 'job'],

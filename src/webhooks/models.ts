@@ -102,7 +102,12 @@ export interface WebhookAuditEvent {
     | 'webhook.inbound.accepted'
     | 'webhook.inbound.rejected'
     /** An event queued in a transaction (TransactionContext.queueWebhookDeliveries). */
-    | 'webhook.event.emitted';
+    | 'webhook.event.emitted'
+    | 'webhook.inbound.failed'
+    | 'webhook.inbound.poisoned'
+    | 'webhook.inbound.released'
+    | 'webhook.integration.disabled'
+    | 'webhook.integration.rotated';
   readonly endpointId?: string;
   readonly deliveryId?: string;
   readonly integrationId?: string;

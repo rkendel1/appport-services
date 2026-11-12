@@ -22,12 +22,61 @@ export interface WebhookIntegrationStore {
   create(integration: WebhookIntegration): Promise<void>;
   get(id: string): Promise<WebhookIntegration | null>;
   list(tenantId: string): Promise<readonly WebhookIntegration[]>;
+  /** Compare-and-set: null when another writer moved the record past expectedVersion. Optional for older stores. */
+  update?(id: string, expectedVersion: number, changes: Partial<Omit<WebhookIntegration, 'id' | 'tenantId' | 'applicationId' | 'provider' | 'principalId' | 'createdAt' | 'createdBy' | '__version'>>): Promise<WebhookIntegration | null>;
 }
 
-/** Accepted inbound event identities. Durable, so replay protection survives restart. */
+/** The identity of one inbound event, as the receiver first saw it. */
+export interface InboundEventIdentity {
+  readonly id: string;
+  readonly integrationId: string;
+  readonly provider: string;
+  readonly eventId: string;
+  readonly eventTimestamp: string;
+  readonly acceptedAt: string;
+  readonly tenantId: string;
+}
+
+/**
+ * The processing state of one inbound event (durable). Receiving and processing are distinct:
+ *   processing  a handler attempt holds it until `leaseUntil` (a crashed attempt's lease expires)
+ *   failed      the last attempt failed; the next delivery runs it again
+ *   processed   a handler completed; recorded only after it did
+ *   dead        failed `maxAttempts` times: refused (poisoned) until an operator releases it
+ * A record without `state` was written before this lifecycle existed and counts as processed.
+ */
+export type InboundEventState = 'processing' | 'failed' | 'processed' | 'dead';
+
+export interface InboundEventRecord extends InboundEventIdentity {
+  readonly state?: InboundEventState;
+  readonly attempts?: number;
+  readonly leaseUntil?: string;
+  readonly lastAttemptAt?: string;
+  readonly processedAt?: string;
+  readonly deadAt?: string;
+  /** The most recent failures, newest last (at most 10): when, and the handler's error message (bounded). */
+  readonly failures?: readonly { readonly at: string; readonly attempt: number; readonly error: string }[];
+  readonly __version?: number;
+}
+
+export type InboundClaim =
+  | { readonly outcome: 'claimed'; readonly attempt: number; readonly version: number }
+  | { readonly outcome: 'processed' | 'in_progress' | 'poisoned' };
+
+/** Inbound event identities and their processing state. Durable, so replay protection survives restart. */
 export interface InboundWebhookReplayStore {
-  /** Returns false when the event identity was already accepted. */
-  accept(record: { readonly id: string; readonly integrationId: string; readonly provider: string; readonly eventId: string; readonly eventTimestamp: string; readonly acceptedAt: string; readonly tenantId: string }): Promise<boolean>;
+  /** Returns false when the event identity was already accepted. (The single-step form; `claim` supersedes it.) */
+  accept(record: InboundEventIdentity): Promise<boolean>;
+  /** Start a processing attempt: claimed (run the handler), or why not. */
+  claim?(record: InboundEventIdentity, options: { readonly now: Date; readonly leaseMs: number; readonly maxAttempts: number }): Promise<InboundClaim>;
+  /** The attempt's handler completed: processed. False when the attempt no longer holds the record. */
+  complete?(id: string, version: number, at: Date): Promise<boolean>;
+  /** The attempt's handler failed: failed, or dead after `maxAttempts`. */
+  fail?(id: string, version: number, at: Date, error: string, maxAttempts: number): Promise<'failed' | 'dead' | 'lost'>;
+  /** Events of an integration, newest first, optionally in one state. */
+  list?(tenantId: string, filter: { readonly integrationId: string; readonly state?: InboundEventState; readonly limit: number }): Promise<readonly InboundEventRecord[]>;
+  /** An operator releases a dead event: the next delivery runs it again (with a fresh attempt budget). */
+  release?(id: string): Promise<InboundEventRecord | null>;
 }
 
 export interface WebhookEndpointStore {
@@ -237,18 +286,85 @@ export class FeltDbWebhookIntegrationStore implements WebhookIntegrationStore {
   list(tenantId: string): Promise<readonly WebhookIntegration[]> {
     return this.integrations.find({ tenantId });
   }
+
+  async update(id: string, expectedVersion: number, changes: Parameters<NonNullable<WebhookIntegrationStore['update']>>[2]): Promise<WebhookIntegration | null> {
+    const result = await this.integrations.updateIfVersion(id, expectedVersion, { ...changes });
+    return result.updated ? (result.item ?? null) : null;
+  }
 }
 
 export class FeltDbInboundWebhookReplayStore implements InboundWebhookReplayStore {
-  constructor(private readonly db: StateFirstDB) {}
+  private readonly events;
 
-  async accept(record: Parameters<InboundWebhookReplayStore['accept']>[0]): Promise<boolean> {
+  constructor(private readonly db: StateFirstDB) {
+    this.events = db.collection<InboundEventRecord & { __version: number }>(INBOUND_WEBHOOK_EVENTS_COLLECTION);
+  }
+
+  async accept(record: InboundEventIdentity): Promise<boolean> {
     try {
-      await this.db.transaction({ operations: [{ collection: INBOUND_WEBHOOK_EVENTS_COLLECTION, id: record.id, requireAbsent: true, value: { ...record } }] });
+      await this.db.transaction({ operations: [{ collection: INBOUND_WEBHOOK_EVENTS_COLLECTION, id: record.id, requireAbsent: true, value: { ...record, state: 'processed', processedAt: record.acceptedAt } }] });
       return true;
     } catch (error) {
       if (error instanceof ConditionalConflictError) return false;
       throw error;
     }
+  }
+
+  async claim(record: InboundEventIdentity, options: { now: Date; leaseMs: number; maxAttempts: number }): Promise<InboundClaim> {
+    const now = options.now.getTime();
+    const leaseUntil = new Date(now + options.leaseMs).toISOString();
+    const lastAttemptAt = options.now.toISOString();
+    for (let round = 0; round < 3; round++) {
+      const current = await this.events.get(record.id);
+      if (!current) {
+        try {
+          await this.db.transaction({ operations: [{ collection: INBOUND_WEBHOOK_EVENTS_COLLECTION, id: record.id, requireAbsent: true, value: { ...record, state: 'processing', attempts: 1, leaseUntil, lastAttemptAt } }] });
+          return { outcome: 'claimed', attempt: 1, version: 1 };
+        } catch (error) {
+          if (error instanceof ConditionalConflictError) continue; // another receiver created it: read it again
+          throw error;
+        }
+      }
+      if (!current.state || current.state === 'processed') return { outcome: 'processed' };
+      if (current.state === 'dead') return { outcome: 'poisoned' };
+      if (current.state === 'processing' && current.leaseUntil && Date.parse(current.leaseUntil) > now) return { outcome: 'in_progress' };
+      // Failed, or an attempt whose lease expired (its process stopped): another attempt, if any are left.
+      const attempts = current.attempts ?? 1;
+      if (attempts >= options.maxAttempts) {
+        const dead = await this.events.updateIfVersion(record.id, current.__version, { state: 'dead', deadAt: lastAttemptAt, leaseUntil: undefined });
+        if (dead.updated) return { outcome: 'poisoned' };
+        continue;
+      }
+      const next = await this.events.updateIfVersion(record.id, current.__version, { state: 'processing', attempts: attempts + 1, leaseUntil, lastAttemptAt });
+      if (next.updated && next.item) return { outcome: 'claimed', attempt: attempts + 1, version: next.item.__version };
+    }
+    return { outcome: 'in_progress' };
+  }
+
+  async complete(id: string, version: number, at: Date): Promise<boolean> {
+    const result = await this.events.updateIfVersion(id, version, { state: 'processed', processedAt: at.toISOString(), leaseUntil: undefined });
+    return result.updated;
+  }
+
+  async fail(id: string, version: number, at: Date, error: string, maxAttempts: number): Promise<'failed' | 'dead' | 'lost'> {
+    const current = await this.events.get(id);
+    if (!current || current.__version !== version) return 'lost';
+    const attempts = current.attempts ?? 1;
+    const failures = [...(current.failures ?? []), { at: at.toISOString(), attempt: attempts, error: error.slice(0, 500) }].slice(-10);
+    const state = attempts >= maxAttempts ? 'dead' : 'failed';
+    const result = await this.events.updateIfVersion(id, version, { state, failures, leaseUntil: undefined, ...(state === 'dead' ? { deadAt: at.toISOString() } : {}) });
+    return result.updated ? state : 'lost';
+  }
+
+  async list(tenantId: string, filter: { integrationId: string; state?: InboundEventState; limit: number }): Promise<readonly InboundEventRecord[]> {
+    const rows = await this.events.find({ tenantId, integrationId: filter.integrationId, ...(filter.state ? { state: filter.state } : {}) });
+    return [...rows].sort((a, b) => (a.acceptedAt < b.acceptedAt ? 1 : a.acceptedAt > b.acceptedAt ? -1 : 0)).slice(0, filter.limit);
+  }
+
+  async release(id: string): Promise<InboundEventRecord | null> {
+    const current = await this.events.get(id);
+    if (!current || current.state !== 'dead') return current ?? null;
+    const result = await this.events.updateIfVersion(id, current.__version, { state: 'failed', attempts: 0, deadAt: undefined });
+    return result.updated ? (result.item ?? null) : null;
   }
 }

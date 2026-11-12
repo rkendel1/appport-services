@@ -12,7 +12,7 @@ import type { Job, JobAuditEvent, JobSchedule } from '../../src/jobs/models.js';
 import type { Notification, NotificationAuditEvent, NotificationDelivery } from '../../src/notifications/models.js';
 import type { Secret, SecretAuditEvent, SecretVersion } from '../../src/secrets/models.js';
 import type { ApiKeyPrefixRecord } from '../../src/storage/api-keys.js';
-import type { InboundWebhookReplayStore } from '../../src/storage/webhooks.js';
+import type { InboundEventRecord } from '../../src/storage/webhooks.js';
 import type { WebhookAuditEvent, WebhookDelivery, WebhookEndpoint, WebhookIntegration } from '../../src/webhooks/models.js';
 
 export interface StoredRecords {
@@ -35,7 +35,7 @@ export interface StoredRecords {
   webhook_deliveries: WebhookDelivery;
   webhook_audit_events: WebhookAuditEvent;
   webhook_integrations: WebhookIntegration;
-  inbound_webhook_events: Parameters<InboundWebhookReplayStore['accept']>[0];
+  inbound_webhook_events: InboundEventRecord;
   jobs: Job;
   job_schedules: JobSchedule;
   job_audit_events: JobAuditEvent;

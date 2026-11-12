@@ -2,6 +2,20 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## Unreleased
+
+- **Inbound event lifecycle.** Receiving is no longer processing: an attempt claims the event (`processing`, with a lease),
+  and only a handler that completed marks it `processed`. A failed handler leaves it `failed` with its reason, and the next
+  delivery runs it again; after `inboundMaxAttempts` (default 5) it is `dead` (poisoned), refused, audited and listed until an
+  operator releases it. A crashed attempt is retried after its lease (`inboundLeaseMs`, default 60 s). Concurrent duplicates
+  run the handler once (the second is `in_progress`, retryable). A non-JSON body is refused before anything is recorded.
+  `InboundWebhookReplayStore` gains optional `claim`, `complete`, `fail`, `list` and `release`; a store without them keeps
+  the previous single-step behavior.
+- **Inbound integration management.** `listIntegrations`, `listInboundEvents`, `disableIntegration`,
+  `rotateIntegrationCredential` and `retryInboundEvent`, with capabilities `webhooks.integrations.read`, `.remove`, `.rotate`
+  and `webhooks.inbound.retry`, and management routes under `/_appport/webhooks/integrations`. `WebhookIntegrationStore`
+  gains an optional compare-and-set `update`.
+
 ## 0.16.3
 
 Released with `@appport/runtime` 0.15.3 (depends on `^0.16.3`) and `create-appport` 0.1.28 (depends on

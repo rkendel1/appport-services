@@ -250,3 +250,33 @@ test('management API-key state remains durable across service recreation and rev
     await third.apiKeys.close();
   }
 });
+
+test('inbound integrations are managed through the management routes: each route is its own capability, tenant-scoped, and no secret is returned', async () => {
+  // alice (tenant-a) manages; bob (tenant-b) may only read.
+  const { services, server, base } = await startHost({ alice: ['webhooks.integrations.register', 'webhooks.integrations.read', 'webhooks.integrations.rotate', 'webhooks.integrations.remove'], bob: ['webhooks.integrations.read'] });
+  try {
+    const alice = { 'content-type': 'application/json', 'x-test-principal': 'alice' };
+    const bob = { 'content-type': 'application/json', 'x-test-principal': 'bob' };
+    const created = await fetch(`${base}/_appport/webhooks/integrations`, { method: 'POST', headers: alice, body: JSON.stringify({ provider: 'surface', signingCredentialRef: 'credential-ref:surface-events' }) });
+    assert.equal(created.status, 201);
+    const integration = await created.json() as { id: string; principalId: string; signingCredentialRef: string; tenantId: string };
+    assert.deepEqual([integration.principalId, integration.signingCredentialRef, integration.tenantId], ['integration:surface', 'credential-ref:surface-events', 'tenant-a']);
+    const listed = await fetch(`${base}/_appport/webhooks/integrations`, { headers: alice }).then((r) => r.json()) as { id: string }[];
+    assert.deepEqual(listed.map((i) => i.id), [integration.id]);
+    // Registering is its own capability: bob holds only read.
+    assert.equal((await fetch(`${base}/_appport/webhooks/integrations`, { method: 'POST', headers: bob, body: JSON.stringify({ provider: 'surface', signingCredentialRef: 'credential-ref:x' }) })).status, 403);
+    // Another tenant: alice's integration is not in bob's listing and does not exist for him.
+    assert.deepEqual(await fetch(`${base}/_appport/webhooks/integrations`, { headers: bob }).then((r) => r.json()), []);
+    assert.equal((await fetch(`${base}/_appport/webhooks/integrations/${integration.id}/events`, { headers: bob })).status, 404);
+    assert.equal((await fetch(`${base}/_appport/webhooks/integrations/${integration.id}`, { method: 'DELETE', headers: bob })).status, 404);
+    const rotated = await fetch(`${base}/_appport/webhooks/integrations/${integration.id}/rotate`, { method: 'POST', headers: alice, body: JSON.stringify({ signingCredentialRef: 'credential-ref:surface-events-2' }) });
+    assert.equal(rotated.status, 200);
+    assert.equal((await rotated.json() as { signingCredentialRef: string }).signingCredentialRef, 'credential-ref:surface-events-2');
+    assert.deepEqual(await fetch(`${base}/_appport/webhooks/integrations/${integration.id}/events`, { headers: alice }).then((r) => r.json()), []);
+    const disabled = await fetch(`${base}/_appport/webhooks/integrations/${integration.id}`, { method: 'DELETE', headers: alice });
+    assert.equal(disabled.status, 200);
+    assert.equal(typeof (await disabled.json() as { disabledAt?: string }).disabledAt, 'string');
+  } finally {
+    await stopHost(server, services);
+  }
+});

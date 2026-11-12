@@ -114,7 +114,8 @@ export const SERVICE_COLLECTIONS: Readonly<Record<string, ServicesContractCollec
     timestamp:text result:text reason:text eventType:text`),
   collection('webhook_integrations', `id:text tenantId:text applicationId:text provider:text principalId:text signingCredentialRef:text
     createdAt:text createdBy:text disabledAt:text`),
-  collection('inbound_webhook_events', 'id:text integrationId:text provider:text eventId:text eventTimestamp:text acceptedAt:text tenantId:text'),
+  collection('inbound_webhook_events', `id:text integrationId:text provider:text eventId:text eventTimestamp:text acceptedAt:text tenantId:text
+    state:text attempts:integer leaseUntil:text lastAttemptAt:text processedAt:text deadAt:text failures:json`),
   collection('jobs', `id:text tenantId:text applicationId:text type:text payload:json status:text runAt:text attemptCount:integer
     maxAttempts:integer createdAt:text startedAt:text completedAt:text nextAttemptAt:text leaseOwner:text leaseExpiresAt:text
     lastError:text principal:json`),

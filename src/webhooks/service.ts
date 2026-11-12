@@ -19,6 +19,8 @@ import type {
 } from './models.js';
 import { DEFAULT_WEBHOOK_DELIVERY_PAGE, MAX_WEBHOOK_DELIVERY_PAGE, WEBHOOK_DELIVERY_STATUSES } from './models.js';
 import type {
+  InboundEventRecord,
+  InboundEventState,
   InboundWebhookReplayStore,
   WebhookAuditSink,
   WebhookDeliveryStore,
@@ -36,6 +38,8 @@ import { mintVerifiedPrincipal, rejectCallerActor, toDurablePrincipal, requireVe
 const MAX_RETRY_ATTEMPTS = 5;
 const INITIAL_RETRY_DELAY_MS = 5000;
 const DEFAULT_INBOUND_TOLERANCE_MS = 5 * 60 * 1000;
+const DEFAULT_INBOUND_MAX_ATTEMPTS = 5;
+const DEFAULT_INBOUND_LEASE_MS = 60 * 1000;
 const PROVIDER = /^[a-z][a-z0-9_-]{0,63}$/;
 
 export interface InboundWebhookHandlerInput {
@@ -61,6 +65,10 @@ interface WebhookServiceOptions {
   readonly requestTimeoutMs?: number;
   readonly allowedEvents?: readonly string[];
   readonly inboundToleranceMs?: number;
+  /** Handler attempts per inbound event before it is dead (poisoned). Default 5. */
+  readonly inboundMaxAttempts?: number;
+  /** How long one handler attempt holds an inbound event; a crashed attempt's event is retried after it. Default 60 s. */
+  readonly inboundLeaseMs?: number;
   /** @deprecated Signing secrets are held in AuthBoundry custody; passing a local secret store is rejected. */
   readonly secretStore?: unknown;
 }
@@ -392,6 +400,108 @@ export class WebhookService {
       });
   }
 
+  /** The tenant's inbound integrations: who they run as and which credential reference verifies them (never the secret). */
+  async listIntegrations(input: { readonly tenantId?: string }, caller: VerifiedPrincipal): Promise<readonly WebhookIntegration[]> {
+    const principal = requireVerifiedPrincipal(caller);
+    rejectCallerActor(input, principal);
+    const tenantId = resolveTenant(input, principal);
+    const store = this.requireIntegrationStore();
+    return this.gateway().execute('webhooks.integrations.read', principal,
+      { type: 'webhook_integration', tenantId },
+      { service: 'webhooks' },
+      async () => (await store.list(tenantId)).filter((i) => i.applicationId === this.gateway().application));
+  }
+
+  /** One integration's inbound events, newest first: processing state, attempts and recent failures (poisoned ones included). */
+  async listInboundEvents(input: { readonly tenantId?: string; readonly integrationId: string; readonly state?: InboundEventState; readonly limit?: number }, caller: VerifiedPrincipal): Promise<readonly InboundEventRecord[]> {
+    const principal = requireVerifiedPrincipal(caller);
+    rejectCallerActor(input, principal);
+    const tenantId = resolveTenant(input, principal);
+    const integration = await this.ownIntegration(tenantId, input.integrationId);
+    if (input.state !== undefined && !['processing', 'failed', 'processed', 'dead'].includes(input.state)) throw new ServiceAuthorityError('INVALID_REQUEST', 'state must be processing, failed, processed or dead');
+    const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 200);
+    const replay = this.options.replayStore;
+    if (!replay?.list) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'This replay store cannot list inbound events');
+    return this.gateway().execute('webhooks.integrations.read', principal,
+      { type: 'webhook_integration', tenantId, id: integration.id },
+      { service: 'webhooks' },
+      async () => replay.list!(tenantId, { integrationId: integration.id, ...(input.state ? { state: input.state } : {}), limit }));
+  }
+
+  /** Disable an integration: every later delivery to it is refused (404), whatever its signature. */
+  async disableIntegration(input: { readonly tenantId?: string; readonly id: string }, caller: VerifiedPrincipal): Promise<WebhookIntegration> {
+    const principal = requireVerifiedPrincipal(caller);
+    rejectCallerActor(input, principal);
+    const tenantId = resolveTenant(input, principal);
+    const integration = await this.ownIntegration(tenantId, input.id);
+    if (integration.disabledAt) return integration;
+    const store = this.requireIntegrationStore();
+    if (!store.update) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'This integration store cannot change integrations');
+    return this.gateway().execute('webhooks.integrations.remove', principal,
+      { type: 'webhook_integration', tenantId, id: integration.id },
+      { service: 'webhooks', provider: integration.provider },
+      async () => {
+        const updated = await store.update!(integration.id, integration.__version, { disabledAt: this.now().toISOString() });
+        if (!updated) throw new ServiceAuthorityError('INVALID_REQUEST', 'The integration changed; read it again and retry');
+        await this.audit({ type: 'webhook.integration.disabled', integrationId: integration.id, tenantId, principalId: principal.principalId, result: 'success' });
+        return updated;
+      });
+  }
+
+  /**
+   * Rotate the credential that verifies an integration's deliveries: from now on only signatures made
+   * with the new credential's secret are accepted. The reference is checked like registration's.
+   */
+  async rotateIntegrationCredential(input: { readonly tenantId?: string; readonly id: string; readonly signingCredentialRef: string }, caller: VerifiedPrincipal): Promise<WebhookIntegration> {
+    const principal = requireVerifiedPrincipal(caller);
+    rejectCallerActor(input, principal);
+    const tenantId = resolveTenant(input, principal);
+    const integration = await this.ownIntegration(tenantId, input.id);
+    if (integration.disabledAt) throw new ServiceAuthorityError('INVALID_REQUEST', 'A disabled integration cannot be rotated');
+    const credentialRef = requireCredentialRef(input.signingCredentialRef, 'signingCredentialRef');
+    const store = this.requireIntegrationStore();
+    if (!store.update) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'This integration store cannot change integrations');
+    return this.gateway().execute('webhooks.integrations.rotate', principal,
+      { type: 'webhook_integration', tenantId, id: integration.id, attributes: { provider: integration.provider, credentialRef } },
+      { service: 'webhooks', provider: integration.provider, credentialRef },
+      async () => {
+        const updated = await store.update!(integration.id, integration.__version, { signingCredentialRef: credentialRef });
+        if (!updated) throw new ServiceAuthorityError('INVALID_REQUEST', 'The integration changed; read it again and retry');
+        await this.audit({ type: 'webhook.integration.rotated', integrationId: integration.id, tenantId, principalId: principal.principalId, result: 'success' });
+        return updated;
+      });
+  }
+
+  /** Release a poisoned (dead) inbound event: the sender's next delivery of it runs the handler again. */
+  async retryInboundEvent(input: { readonly tenantId?: string; readonly integrationId: string; readonly eventId: string }, caller: VerifiedPrincipal): Promise<InboundEventRecord> {
+    const principal = requireVerifiedPrincipal(caller);
+    rejectCallerActor(input, principal);
+    const tenantId = resolveTenant(input, principal);
+    const integration = await this.ownIntegration(tenantId, input.integrationId);
+    const replay = this.options.replayStore;
+    if (!replay?.release) throw new ServiceAuthorityError('AUTHORITY_UNAVAILABLE', 'This replay store cannot release inbound events');
+    if (typeof input.eventId !== 'string' || !input.eventId) throw new ServiceAuthorityError('INVALID_REQUEST', 'eventId is required');
+    const id = createHash('sha256').update(`${integration.id}:${input.eventId}`).digest('hex');
+    return this.gateway().execute('webhooks.inbound.retry', principal,
+      { type: 'webhook_integration', tenantId, id: integration.id, attributes: { eventId: input.eventId } },
+      { service: 'webhooks', provider: integration.provider },
+      async () => {
+        const released = await replay.release!(id);
+        if (!released) throw new ServiceAuthorityError('NOT_FOUND', 'No such inbound event');
+        if (released.state !== 'failed') throw new ServiceAuthorityError('INVALID_REQUEST', `Only a dead event can be released (this one is ${released.state ?? 'processed'})`);
+        await this.audit({ type: 'webhook.inbound.released', integrationId: integration.id, tenantId, principalId: principal.principalId, result: 'success', reason: input.eventId });
+        return released;
+      });
+  }
+
+  private async ownIntegration(tenantId: string, id: unknown): Promise<WebhookIntegration> {
+    if (typeof id !== 'string' || !id) throw new ServiceAuthorityError('INVALID_REQUEST', 'integration id is required');
+    const integration = await this.requireIntegrationStore().get(id);
+    // Another tenant's or application's integration does not exist for this caller.
+    if (!integration || integration.tenantId !== tenantId || integration.applicationId !== this.gateway().application) throw new ServiceAuthorityError('NOT_FOUND', 'Webhook integration not found');
+    return integration;
+  }
+
   registerInboundHandler(provider: string, handler: InboundWebhookHandler): void {
     if (!PROVIDER.test(provider)) throw new Error('provider must be a lowercase identifier');
     this.inboundHandlers.set(provider, handler);
@@ -441,7 +551,14 @@ export class WebhookService {
           const valid = await tools.withCredential(integration.signingCredentialRef, 'webhook.verify',
             (secret) => verifyWebhookSignature(signingSecretValue(secret.value), `${timestamp}.${request.rawBody}`, signature));
           if (!valid) throw new ServiceAuthorityError('DENIED', 'Inbound webhook signature is invalid', { reason: 'invalid_signature' });
-          const accepted = await replay.accept({
+          // A body that is not JSON is the sender's error, every time: refused before the event is recorded.
+          let payload: unknown;
+          try {
+            payload = JSON.parse(request.rawBody);
+          } catch {
+            throw new ServiceAuthorityError('INVALID_REQUEST', 'Inbound webhook body must be JSON');
+          }
+          const identity = {
             id: createHash('sha256').update(`${integration.id}:${eventId}`).digest('hex'),
             integrationId: integration.id,
             provider: integration.provider,
@@ -449,18 +566,38 @@ export class WebhookService {
             eventTimestamp: new Date(sentAt).toISOString(),
             acceptedAt: this.now().toISOString(),
             tenantId: integration.tenantId,
-          });
-          if (!accepted) throw new ServiceAuthorityError('DENIED', 'Inbound webhook event was already accepted', { reason: 'replayed' });
-          let payload: unknown;
-          try {
-            payload = JSON.parse(request.rawBody);
-          } catch {
-            throw new ServiceAuthorityError('INVALID_REQUEST', 'Inbound webhook body must be JSON');
-          }
+          };
           const handler = this.inboundHandlers.get(integration.provider);
-          const handled = handler
-            ? await handler({ event: { integrationId: integration.id, provider: integration.provider, eventId, timestamp: new Date(sentAt).toISOString(), payload }, principal, context })
-            : undefined;
+          const run = () => handler
+            ? handler({ event: { integrationId: integration.id, provider: integration.provider, eventId, timestamp: new Date(sentAt).toISOString(), payload }, principal, context })
+            : Promise.resolve(undefined);
+
+          // A store without the processing lifecycle: the event is recorded once, before the handler (as before).
+          if (!replay.claim || !replay.complete || !replay.fail) {
+            if (!(await replay.accept(identity))) throw new ServiceAuthorityError('DENIED', 'Inbound webhook event was already accepted', { reason: 'replayed' });
+            const handled = await run();
+            return { accepted: true, eventId, ...(handled === undefined ? {} : { result: handled }) };
+          }
+
+          // Received is not processed: an attempt claims the event, and only a completed handler marks it processed.
+          const maxAttempts = this.options.inboundMaxAttempts ?? DEFAULT_INBOUND_MAX_ATTEMPTS;
+          const claim = await replay.claim(identity, { now: this.now(), leaseMs: this.options.inboundLeaseMs ?? DEFAULT_INBOUND_LEASE_MS, maxAttempts });
+          if (claim.outcome !== 'claimed') {
+            if (claim.outcome === 'processed') throw new ServiceAuthorityError('DENIED', 'Inbound webhook event was already processed', { reason: 'replayed' });
+            if (claim.outcome === 'poisoned') throw new ServiceAuthorityError('DENIED', 'Inbound webhook event failed too many times; an operator must release it', { reason: 'poisoned' });
+            // Another attempt holds it right now: retryable (a 5xx to the sender), and it changes nothing here.
+            throw new ServiceAuthorityError('PROVIDER_ERROR', 'Inbound webhook event is being processed; retry later', { reason: 'in_progress' });
+          }
+          let handled: unknown;
+          try {
+            handled = await run();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const state = await replay.fail(identity.id, claim.version, this.now(), message, maxAttempts);
+            await this.audit({ type: state === 'dead' ? 'webhook.inbound.poisoned' : 'webhook.inbound.failed', integrationId: integration.id, tenantId: integration.tenantId, principalId: principal.principalId, result: 'failure', reason: `attempt ${claim.attempt}: ${message.slice(0, 200)}` }).catch(() => undefined);
+            throw error;
+          }
+          await replay.complete(identity.id, claim.version, this.now());
           return { accepted: true, eventId, ...(handled === undefined ? {} : { result: handled }) };
         });
       await this.audit({ type: 'webhook.inbound.accepted', integrationId: integration.id, tenantId: integration.tenantId, principalId: principal.principalId, result: 'success' });
