@@ -552,7 +552,13 @@ The delivery is signed with HMAC-SHA256. Each delivery includes:
 }
 ```
 
-Header: `X-AppPort-Signature: <hex-encoded-hmac-sha256>`
+Headers:
+
+- `X-AppPort-Signature: <hex(hmac-sha256(secret, body))>`: the consumer contract below.
+- `X-AppPort-Timestamp: <ISO-8601, this attempt>` and `X-AppPort-Signature-V2: <hex(hmac-sha256(secret, "<timestamp>.<body>"))>`:
+  the scheme AppPort inbound webhooks verify, so one AppPort application can deliver to another's
+  `POST /_appport/webhooks/inbound/:integrationId` with a shared signing secret. Each attempt is signed with
+  its own timestamp, so a retry stays inside the receiver's ±5 minute window.
 
 Applications read deliveries under `webhooks.deliveries.read` (bounded, at most 200 per call):
 

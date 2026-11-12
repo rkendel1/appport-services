@@ -104,7 +104,12 @@ handler runs as the integration principal; every effect it causes → AuthBoundr
   `webhooks.registerInboundHandler('stripe', handler)`. The HTTP runtime
   accepts `POST /_appport/webhooks/inbound/:integrationId`.
 - These required headers are verified together: `x-appport-event-id`,
-  `x-appport-timestamp` (within ±5 minutes), and `x-appport-signature`.
+  `x-appport-timestamp` (within ±5 minutes), and the signature over
+  `<timestamp>.<rawBody>`: `x-appport-signature-v2` when present, else
+  `x-appport-signature`. AppPort outbound deliveries carry `x-appport-signature-v2`
+  and `x-appport-timestamp` alongside the payload-only `x-appport-signature`, so an
+  AppPort application's delivery is accepted by another AppPort application's
+  inbound endpoint without an intermediary.
 - The payload cannot choose the principal, the tenant, or the credential.
   Fields such as `principal`, `actor`, `tenantId`, or
   `signingCredentialRef` in the body are plain data.

@@ -2,6 +2,15 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## Unreleased
+
+- **AppPort-to-AppPort webhooks.** Outbound deliveries signed only the body and sent no timestamp, while inbound
+  `receiveWebhook` requires `x-appport-timestamp` and a signature over `<timestamp>.<body>`, so one AppPort
+  application's delivery to another's inbound endpoint was always refused (400). Each delivery attempt now also sends
+  `X-AppPort-Timestamp` and `X-AppPort-Signature-V2` (HMAC over `<timestamp>.<body>`); inbound verifies
+  `x-appport-signature-v2` when present, else `x-appport-signature`. `X-AppPort-Signature` (HMAC over the body) is
+  unchanged for existing consumers.
+
 ## 0.16.2
 
 Released with `@appport/runtime` 0.15.2 (depends on `^0.16.2`) and `create-appport` 0.1.27 (depends on
