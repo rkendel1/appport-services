@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import test from 'node:test';
 
 import { ServiceAuthorityError } from '../src/authority/errors.js';
@@ -172,5 +173,48 @@ test('redirects are never followed, so a delivery cannot escape to a forbidden d
     await stack.close();
     await internal.close();
     await redirecting.close();
+  }
+});
+
+test('an AppPort outbound delivery is accepted by another AppPort application\'s inbound endpoint, once', async () => {
+  // Sender: one application emits and delivers an event, signing with a secret it shares with the receiver.
+  const senderAuthority = new TestAuthority();
+  for (const capability of ['webhooks.register', 'webhooks.emit', 'webhooks.deliver']) {
+    await senderAuthority.grant({ subject: 'alice', capability, tenantId: 'tenant-a' });
+  }
+  const senderCredentials = new TestCredentials();
+  const senderRef = senderCredentials.put('shared-signing', 'tenant-a', STRIPE_SECRET);
+  const sender = await openStack({ authorizer: senderAuthority, credentials: senderCredentials });
+  const destination = await receiver();
+  const { stack, ref, seen } = await inboundFixture();
+  try {
+    const alice = sender.services.identify({ principalId: 'alice', principalType: 'user', tenantId: 'tenant-a' })!;
+    await sender.services.webhooks.createWebhookEndpoint({ url: destination.url, events: ['invoice.created'], signingCredentialRef: senderRef }, alice);
+    const [delivery] = await sender.services.webhooks.emitWebhookEvent({ type: 'invoice.created', payload: { invoice: 'inv-1' } }, alice);
+    const result = await sender.services.webhooks.deliverWebhook('tenant-a', delivery.id);
+    assert.equal(result.success, true);
+    const sent = destination.requests[0];
+    // The documented payload-only signature is unchanged for existing consumers.
+    assert.equal(sent.headers['x-appport-signature'], createHmac('sha256', STRIPE_SECRET).update(sent.body).digest('hex'));
+    assert.ok(sent.headers['x-appport-timestamp']);
+    assert.ok(sent.headers['x-appport-signature-v2']);
+
+    // Receiver: the exact bytes and headers that reached the destination are verified by receiveWebhook.
+    const ops = stack.services.identify({ principalId: 'ops', principalType: 'user', tenantId: 'tenant-a' })!;
+    const integration = await stack.services.webhooks.registerIntegration({ provider: 'stripe', signingCredentialRef: ref }, ops);
+    const headers = Object.fromEntries(Object.entries(sent.headers).map(([k, v]) => [k, String(v)]));
+    const accepted = await stack.services.webhooks.receiveWebhook({ integrationId: integration.id, rawBody: sent.body, headers });
+    assert.equal(accepted.accepted, true);
+    assert.equal(seen.length, 1);
+    assert.equal((seen[0].payload as { data: { invoice: string } }).data.invoice, 'inv-1');
+    // The same delivery replayed is refused; a tampered body is refused.
+    await assert.rejects(stack.services.webhooks.receiveWebhook({ integrationId: integration.id, rawBody: sent.body, headers }), code('DENIED'));
+    const tampered = sent.body.replace('inv-1', 'inv-2');
+    await assert.rejects(stack.services.webhooks.receiveWebhook({ integrationId: integration.id, rawBody: tampered, headers: { ...headers, 'x-appport-event-id': 'evt_other' } }), code('DENIED'));
+    assert.equal(seen.length, 1);
+  } finally {
+    await destination.close();
+    await sender.close();
+    await stack.close();
   }
 });

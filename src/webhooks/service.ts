@@ -309,8 +309,16 @@ export class WebhookService {
           // Re-resolve and re-check the bound destination on every attempt so a DNS change cannot redirect it.
           const destination = await validateDestination(endpoint.url, this.options.destinationPolicy);
           const payload = deliveryBody(claimed);
-          const signature = await tools.withCredential(credentialRef, 'webhook.sign', (secret) => signWebhookPayload(signingSecretValue(secret.value), payload));
-          const outcome = await this.performHttpDelivery(destination, claimed, payload, signature);
+          // Each attempt is signed twice: over the payload (X-AppPort-Signature, the documented consumer
+          // contract) and over "<timestamp>.<payload>" with this attempt's timestamp (X-AppPort-Signature-V2,
+          // X-AppPort-Timestamp), the scheme inbound webhooks verify, so one AppPort application can
+          // deliver to another's inbound endpoint and a retried attempt stays inside its time window.
+          const timestamp = this.now().toISOString();
+          const signatures = await tools.withCredential(credentialRef, 'webhook.sign', (secret) => {
+            const key = signingSecretValue(secret.value);
+            return { payload: signWebhookPayload(key, payload), timestamped: signWebhookPayload(key, `${timestamp}.${payload}`) };
+          });
+          const outcome = await this.performHttpDelivery(destination, claimed, payload, signatures, timestamp);
           if (!outcome.success) throw Object.assign(new ServiceAuthorityError('PROVIDER_ERROR', outcome.error ?? 'Webhook delivery failed'), { outcome });
           return outcome;
         });
@@ -404,7 +412,9 @@ export class WebhookService {
 
     const eventId = header(request.headers, 'x-appport-event-id');
     const timestamp = header(request.headers, 'x-appport-timestamp');
-    const signature = header(request.headers, 'x-appport-signature');
+    // An AppPort Services delivery carries both signatures: prefer the timestamped one (V2). A sender
+    // that signs only "<timestamp>.<body>" sends it as X-AppPort-Signature, verified the same way.
+    const signature = header(request.headers, 'x-appport-signature-v2') ?? header(request.headers, 'x-appport-signature');
     if (!eventId || !timestamp || !signature || typeof request.rawBody !== 'string') {
       throw new ServiceAuthorityError('INVALID_REQUEST', 'Inbound webhook requires event id, timestamp, signature, and body');
     }
@@ -521,7 +531,7 @@ export class WebhookService {
    * POST to the validated address only. Redirects are never followed and the
    * connection is pinned to the address that passed destination policy.
    */
-  private performHttpDelivery(destination: ValidatedDestination, delivery: WebhookDelivery, payload: string, signature: string): Promise<WebhookDeliveryResult> {
+  private performHttpDelivery(destination: ValidatedDestination, delivery: WebhookDelivery, payload: string, signatures: { payload: string; timestamped: string }, timestamp: string): Promise<WebhookDeliveryResult> {
     const { url, address } = destination;
     const pinned: LookupFunction = (_hostname, options, callback) => {
       if ((options as { all?: boolean }).all) (callback as unknown as (error: null, addresses: { address: string; family: number }[]) => void)(null, [{ address: address.address, family: address.family }]);
@@ -540,7 +550,9 @@ export class WebhookService {
         ...(url.protocol === 'https:' ? { servername: url.hostname } : {}),
         headers: {
           'Content-Type': 'application/json',
-          'X-AppPort-Signature': signature,
+          'X-AppPort-Signature': signatures.payload,
+          'X-AppPort-Signature-V2': signatures.timestamped,
+          'X-AppPort-Timestamp': timestamp,
           'X-AppPort-Event-Id': delivery.eventId,
           'Content-Length': Buffer.byteLength(payload),
           Connection: 'close',
