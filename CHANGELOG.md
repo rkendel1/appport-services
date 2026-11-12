@@ -2,7 +2,10 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## Unreleased
+## 0.17.0
+
+Released with `@appport/runtime` 0.16.0 (depends on `^0.17.0`) and `create-appport` 0.1.29 (depends on
+`@appport/runtime` `^0.16.0`). Additive; stores without the new optional methods keep their previous behavior.
 
 - **Inbound event lifecycle.** Receiving is no longer processing: an attempt claims the event (`processing`, with a lease),
   and only a handler that completed marks it `processed`. A failed handler leaves it `failed` with its reason, and the next
