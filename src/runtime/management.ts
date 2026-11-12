@@ -56,7 +56,7 @@ export interface ManagementServices {
   readonly configuration?: ConfigurationService;
   readonly intelligence?: IntelligenceService;
   /** Delivery read routes (`webhooks.deliveries.read`) are mounted only when the service provides them. */
-  readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'> & Partial<Pick<WebhookService, 'readWebhookDeliveries' | 'readWebhookDelivery'>>;
+  readonly webhooks?: Pick<WebhookService, 'createWebhookEndpoint' | 'listWebhookEndpoints' | 'disableWebhookEndpoint'> & Partial<Pick<WebhookService, 'readWebhookDeliveries' | 'readWebhookDelivery' | 'registerIntegration' | 'listIntegrations' | 'listInboundEvents' | 'disableIntegration' | 'rotateIntegrationCredential' | 'retryInboundEvent'>>;
   readonly jobs?: Pick<JobService, 'enqueue' | 'listJobs' | 'retry'>;
   readonly notifications?: Pick<NotificationService, 'notify' | 'get' | 'list' | 'deliveries' | 'markRead' | 'acknowledge' | 'dismiss' | 'delete' | 'retryDelivery'>;
   readonly files?: Pick<FileService, 'create' | 'list' | 'update' | 'delete'>;
@@ -299,6 +299,21 @@ function mountExistingServiceRoutes(router: Router, services: ManagementServices
     if (hooks.readWebhookDelivery) {
       const delivery = hooks.readWebhookDelivery.bind(hooks);
       router.get('/_appport/webhooks/deliveries/:id', handler(async (req, principal) => ({ body: foundDelivery(await delivery({ id: req.params.id }, principal)) })));
+    }
+    // Inbound integrations: who may send this application events, verified by which credential
+    // reference (never its secret), and what became of each event. Each route is its own capability.
+    if (hooks.registerIntegration && hooks.listIntegrations && hooks.listInboundEvents && hooks.disableIntegration && hooks.rotateIntegrationCredential && hooks.retryInboundEvent) {
+      const h = hooks as Required<typeof hooks>;
+      router.get('/_appport/webhooks/integrations', handler(async (_req, principal) => ({ body: await h.listIntegrations({}, principal) })));
+      router.post('/_appport/webhooks/integrations', handler(async (req, principal) => ({ status: 201, body: await h.registerIntegration({ provider: requiredText(req.body?.provider, 'provider'), signingCredentialRef: requiredText(req.body?.signingCredentialRef, 'signingCredentialRef') }, principal) })));
+      router.delete('/_appport/webhooks/integrations/:id', handler(async (req, principal) => ({ body: await h.disableIntegration({ id: req.params.id }, principal) })));
+      router.post('/_appport/webhooks/integrations/:id/rotate', handler(async (req, principal) => ({ body: await h.rotateIntegrationCredential({ id: req.params.id, signingCredentialRef: requiredText(req.body?.signingCredentialRef, 'signingCredentialRef') }, principal) })));
+      router.get('/_appport/webhooks/integrations/:id/events', handler(async (req, principal) => ({ body: await h.listInboundEvents({
+        integrationId: req.params.id,
+        ...(typeof req.query.state === 'string' ? { state: req.query.state as never } : {}),
+        ...(typeof req.query.limit === 'string' ? { limit: Number(req.query.limit) } : {}),
+      }, principal) })));
+      router.post('/_appport/webhooks/integrations/:id/events/:eventId/retry', handler(async (req, principal) => ({ body: await h.retryInboundEvent({ integrationId: req.params.id, eventId: req.params.eventId }, principal) })));
     }
   }
   if (services.jobs) {

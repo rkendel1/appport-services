@@ -116,8 +116,40 @@ handler runs as the integration principal; every effect it causes → AuthBoundr
 
 ### Durable replay protection
 
-Accepted events are stored in the FeltDB collection `inbound_webhook_events`,
-keyed by `sha256(integrationId:eventId)`, using a `requireAbsent` insert.
-A second delivery of the same event is `DENIED`, including after a process
-restart. No other database is involved. Delivery is at most once: if a
-handler fails after acceptance, the event is not processed again.
+Events are stored in the FeltDB collection `inbound_webhook_events`, keyed by
+`sha256(integrationId:eventId)`. Receiving and processing are distinct, and
+each step is a compare-and-set on that record, so nothing outside FeltDB (no
+second queue or broker) is involved:
+
+| State | Meaning | A delivery of the same event |
+|---|---|---|
+| `processing` | an attempt holds it until `leaseUntil` | refused as `in_progress` (`PROVIDER_ERROR`, a 5xx: the sender retries) |
+| `failed` | the last attempt's handler threw; `failures` keeps the last 10 reasons | runs the handler again |
+| `processed` | a handler completed, recorded only after it did | `DENIED` (`replayed`) |
+| `dead` | `inboundMaxAttempts` attempts failed (default 5) | `DENIED` (`poisoned`), audited as `webhook.inbound.poisoned` |
+
+- A process that stops mid-handler leaves `processing`; once its lease
+  (`inboundLeaseMs`, default 60 s) expires, the next delivery is a new attempt.
+- A body that is not JSON is refused before anything is recorded.
+- Handlers must be idempotent: an attempt that ran its effects and then lost
+  its lease may run again.
+- Records written before this lifecycle (no `state`) count as processed.
+- A dead event stays visible (`webhooks.integrations.read`,
+  `GET /_appport/webhooks/integrations/:id/events?state=dead`) until an operator
+  releases it (`webhooks.inbound.retry`); the sender's next delivery runs it.
+
+### Managing inbound integrations
+
+| Route | Capability |
+|---|---|
+| `GET /_appport/webhooks/integrations` | `webhooks.integrations.read` |
+| `POST /_appport/webhooks/integrations` `{ provider, signingCredentialRef }` | `webhooks.integrations.register` |
+| `POST /_appport/webhooks/integrations/:id/rotate` `{ signingCredentialRef }` | `webhooks.integrations.rotate` |
+| `DELETE /_appport/webhooks/integrations/:id` | `webhooks.integrations.remove` |
+| `GET /_appport/webhooks/integrations/:id/events[?state=]` | `webhooks.integrations.read` |
+| `POST /_appport/webhooks/integrations/:id/events/:eventId/retry` | `webhooks.inbound.retry` |
+
+Integrations are tenant- and application-scoped (another tenant's is not
+found). Only credential references are returned, never secrets. Rotation makes
+only the new credential's signatures valid; a disabled integration refuses
+every delivery.
