@@ -2,7 +2,10 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## Unreleased
+## 0.16.3
+
+Released with `@appport/runtime` 0.15.3 (depends on `^0.16.3`) and `create-appport` 0.1.28 (depends on
+`@appport/runtime` `^0.15.3`). Additive; no API changes.
 
 - **AppPort-to-AppPort webhooks.** Outbound deliveries signed only the body and sent no timestamp, while inbound
   `receiveWebhook` requires `x-appport-timestamp` and a signature over `<timestamp>.<body>`, so one AppPort
