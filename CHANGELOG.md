@@ -2,6 +2,26 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## Unreleased
+
+- **`FileService.references(tenantId, storageKey, caller, { limit? })`** returns
+  `{ storageKey, live, complete }`: which live files of this application name a storage key.
+  - **Use:** the question a host asks before releasing a file's bytes. Several records may name the
+    same bytes, and a deleted record keeps its key.
+  - **Bounded lookup:** `FeltDbFileStore.findByStorageKey` reads the `storageKey` hash index (created
+    on first use; `files_by_storage_key` in the contract), in pages. It never scans the tenant's files.
+  - **Uncertainty is explicit:** `complete: false` means the answer is a lower bound (more live files
+    than `limit`, 1–100, or more than `FILE_REFERENCE_EXAMINATION_LIMIT` records naming the key).
+    A releasing caller must treat it as unknown.
+  - **Authorization:** as `files.read` on the tenant's files (`owner: "*"`, with `storageKey` as an
+    attribute).
+  - **Stores without the method:** a store written before it (the method is optional on `FileStore`)
+    is refused, never answered "no references".
+- **`FileService.list` no longer refuses above 1,000 files.** `FeltDbFileStore.list` reads in bounded
+  pages instead of one unbounded `find`. Same signature, same results.
+- **Contract version 3:** `files_by_storage_key` on `files.storageKey`
+  (`SERVICE_LOOKUP_INDEXES`). Additive; a promoted contract must add the index.
+
 ## 0.17.0
 
 Released with `@appport/runtime` 0.16.0 (depends on `^0.17.0`) and `create-appport` 0.1.29 (depends on

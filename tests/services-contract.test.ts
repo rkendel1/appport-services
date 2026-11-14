@@ -107,7 +107,8 @@ test('composition is deterministic: same services, same fragment, whatever the o
   assert.equal(new Set(names).size, names.length, 'no collection twice');
   assert.ok(names.includes('jobs'), 'schedules brings jobs');
   assert.ok(names.includes('service_effect_evidence'), 'evidence for every effect');
-  assert.deepEqual(a.indexes.map((i) => i.collection), names, 'an index per collection, in the same order');
+  // Each collection's tenant index, followed by its lookup indexes (files: by storage key), in collection order.
+  assert.deepEqual(a.indexes.map((i) => i.name), names.flatMap((n) => [`${n}_by_tenant`, ...(n === 'files' ? ['files_by_storage_key'] : [])]), 'the tenant index per collection, then its lookup indexes, in the same order');
   assert.deepEqual(servicesContract([]), { collections: [], indexes: [] });
   assert.deepEqual(servicesContract('all').collections.map((c) => c.name), Object.keys(SERVICE_COLLECTIONS).sort());
   assert.throws(() => servicesContract(['files', 'nope' as ServiceName]), /Unknown AppPort service "nope"/);

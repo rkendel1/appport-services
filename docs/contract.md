@@ -48,7 +48,10 @@ Indexes: every store reads within a tenant (`where tenantId = …`), and an appl
 FeltDB authority answers a query filtered on a tenant-scope field only through a
 schema-declared equality index (otherwise `INDEX_UNAVAILABLE`). So each collection declares
 `<collection>_by_tenant` on `["tenantId"]` (`SERVICE_INDEXES`), and the fragment carries the
-indexes of exactly the collections it carries, in the same order.
+indexes of exactly the collections it carries, in the same order. A collection a service also
+looks up by another field declares that index too, right after its tenant index
+(`SERVICE_LOOKUP_INDEXES`): `files_by_storage_key` on `["storageKey"]`, for
+`FileService.references` (contract version 3).
 
 ## How it is kept true
 
