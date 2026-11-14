@@ -50,3 +50,24 @@ export interface UpdateFileInput {
   readonly storageKey?: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
+
+/**
+ * Which live files of this application name a storage key (`FileService.references`). A file's
+ * bytes may be released only when no live file names them, and only on a `complete` answer.
+ */
+export interface FileReferences {
+  readonly storageKey: string;
+  /** Ids of live (not deleted) files naming `storageKey`, at most the requested `limit`. */
+  readonly live: readonly string[];
+  /**
+   * `true`: every record naming `storageKey` was examined, and `live` is all of the live ones.
+   * `false`: more live files exist than `limit`, or the lookup stopped at its examination bound;
+   * `live` is then a lower bound. A caller deciding to release bytes must treat `false` as "unknown".
+   */
+  readonly complete: boolean;
+}
+
+export interface FileReferenceOptions {
+  /** The most live ids to return: 1–100, default 100. */
+  readonly limit?: number;
+}

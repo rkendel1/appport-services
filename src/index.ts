@@ -172,7 +172,7 @@ export type {
   NotificationDeliveryStatus, CreateNotificationInput, NotificationListOptions, NotificationPage, NotificationResult, NotificationServiceOptions,
   NotificationChannel, NotificationDeliveryResult, BrowserNotificationMessage, BrowserNotificationTransport,
 } from './notifications/index.js';
-export type { File, FileAuditEvent, CreateFileInput, UpdateFileInput } from './files/index.js';
+export type { File, FileAuditEvent, CreateFileInput, UpdateFileInput, FileReferences, FileReferenceOptions } from './files/index.js';
 export type { Schedule, CreateScheduleInput } from './schedules/index.js';
 // HTTP integration
 export { authenticateBearerToken } from './runtime/api-keys.js';
@@ -198,6 +198,7 @@ export {
   servicesContract,
   SERVICE_COLLECTIONS,
   SERVICE_INDEXES,
+  SERVICE_LOOKUP_INDEXES,
   SERVICE_NAMES,
   SERVICE_REQUIREMENTS,
   SERVICES_CONTRACT_VERSION,

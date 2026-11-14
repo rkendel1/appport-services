@@ -59,8 +59,10 @@ export const SERVICE_NAMES: readonly ServiceName[] = Object.freeze(['files', 'no
  * Bumped when a declaration changes in a way a promoted contract must follow.
  * 2: `job_audit_events.jobType` and `webhook_audit_events.eventType`, written by the transaction
  * context (`queueJob`, `queueWebhookDeliveries`) and undeclared in 1.
+ * 3: `files_by_storage_key` on `files.storageKey`, which `FileService.references` queries (an
+ * application-scoped authority answers that query only through a declared index).
  */
-export const SERVICES_CONTRACT_VERSION = 2;
+export const SERVICES_CONTRACT_VERSION = 3;
 
 const collection = (name: string, spec: string): ServicesContractCollection => Object.freeze({
   name,
@@ -129,6 +131,14 @@ export const SERVICE_INDEXES: Readonly<Record<string, ServicesContractIndex>> = 
   Object.values(SERVICE_COLLECTIONS).map((c) => [c.name, Object.freeze({ name: `${c.name}_by_tenant`, collection: c.name, fields: Object.freeze(['tenantId']) })]),
 ));
 
+/**
+ * Indexes beyond the tenant index: what a service's bounded lookups read. Files are looked up by
+ * storage key before their bytes are released (`FileService.references`).
+ */
+export const SERVICE_LOOKUP_INDEXES: Readonly<Record<string, readonly ServicesContractIndex[]>> = Object.freeze({
+  files: Object.freeze([Object.freeze({ name: 'files_by_storage_key', collection: 'files', fields: Object.freeze(['storageKey']) })]),
+});
+
 /** Stored by every service: the gateway records evidence for each effect. */
 const SHARED = ['service_effect_evidence'] as const;
 
@@ -169,6 +179,6 @@ export function servicesContract(services: Iterable<ServiceName> | 'all'): Servi
   const sorted = [...names].sort();
   return Object.freeze({
     collections: Object.freeze(sorted.map((name) => SERVICE_COLLECTIONS[name]!)),
-    indexes: Object.freeze(sorted.map((name) => SERVICE_INDEXES[name]!)),
+    indexes: Object.freeze(sorted.flatMap((name) => [SERVICE_INDEXES[name]!, ...(SERVICE_LOOKUP_INDEXES[name] ?? [])])),
   });
 }

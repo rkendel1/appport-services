@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import type { FileAuditSink, FileStore } from '../storage/files.js';
-import type { CreateFileInput, File, UpdateFileInput } from './models.js';
+import type { CreateFileInput, File, FileReferenceOptions, FileReferences, UpdateFileInput } from './models.js';
+import { FILE_REFERENCE_EXAMINATION_LIMIT } from '../storage/files.js';
 import type { ServiceResource } from '../authority/context.js';
 import { ServiceAuthorityError } from '../authority/errors.js';
 import type { ServiceGateway } from '../authority/gateway.js';
@@ -67,6 +68,30 @@ export class FileService {
       (await this.options.store.list(tenant))
         .filter((item) => !item.deletedAt && this.owned(item) && (!options.owner || item.owner === options.owner))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)));
+  }
+
+  /**
+   * Which live files of this application name `storageKey`: the question to answer before a file's
+   * bytes are released (several records may name the same bytes; a deleted record keeps its key).
+   * A bounded lookup on the `storageKey` index, never a scan of the tenant's files. Authorized as
+   * `files.read` on the tenant's files (`owner: "*"`): it reveals which files exist.
+   *
+   * `complete: false` means the answer is a lower bound (more live files than `limit`, or more than
+   * FILE_REFERENCE_EXAMINATION_LIMIT records naming the key): treat it as "not known".
+   */
+  async references(tenantId: string, storageKey: string, caller: AuthenticatedPrincipal, options: FileReferenceOptions = {}): Promise<FileReferences> {
+    const principal = requireVerifiedPrincipal(caller);
+    const tenant = resolveTenant({ tenantId }, principal);
+    if (typeof storageKey !== 'string' || !storageKey.trim() || storageKey.length > 1024) throw new FileValidationError('storageKey is required');
+    const limit = options.limit ?? 100;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new FileValidationError('limit must be an integer from 1 to 100');
+    const find = this.options.store.findByStorageKey?.bind(this.options.store);
+    if (!find) throw new FileValidationError('This file store cannot look up references by storage key');
+    return this.gateway().execute('files.read', principal, { type: 'file', tenantId: tenant, attributes: { owner: '*', storageKey } }, { service: 'files' }, async () => {
+      const { records, exhausted } = await find(tenant, storageKey, FILE_REFERENCE_EXAMINATION_LIMIT);
+      const live = records.filter((item) => !item.deletedAt && this.owned(item)).map((item) => item.id);
+      return { storageKey, live: live.slice(0, limit), complete: exhausted && live.length <= limit };
+    });
   }
 
   async update(input: UpdateFileInput, caller: AuthenticatedPrincipal): Promise<File> {
