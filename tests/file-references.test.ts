@@ -112,3 +112,26 @@ test('a store without the lookup is refused, not answered as "no references"', a
     await t.runtime.db.close();
   }
 });
+
+test('every page of a lookup asks for the same limit: a managed authority binds its cursor to it', async () => {
+  const t = await setup();
+  try {
+    await t.fill(0, 'none');
+    const now = new Date().toISOString();
+    for (let i = 0; i < 2_100; i++) await t.store.create({ id: `same-${i}`, tenantId: 'tenant-a', applicationId: t.service['gateway']().application, owner: 'owner-a', name: 'f', size: 1, storageKey: 'blob/same', createdAt: now, updatedAt: now, __version: 1 } as File);
+    const db = t.runtime.db as unknown as { query: (request: { limit?: number }) => Promise<unknown> };
+    const limits: number[] = [];
+    const original = db.query.bind(db);
+    db.query = (request) => { limits.push(Number(request.limit)); return original(request); };
+    try {
+      const found = await t.store.findByStorageKey('tenant-a', 'blob/same', 2_500);
+      assert.deepEqual([found.records.length, found.exhausted], [2_100, true]);
+      assert.ok(limits.length >= 3, `paged: ${limits}`);
+      assert.equal(new Set(limits).size, 1, `one limit on every page, got ${limits}`);
+    } finally {
+      db.query = original;
+    }
+  } finally {
+    await t.runtime.db.close();
+  }
+});

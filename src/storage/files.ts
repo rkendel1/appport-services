@@ -64,7 +64,9 @@ export class FeltDbFileStore implements FileStore {
       const page = await this.db.query<File>({
         collection: FILES,
         where: [{ field: 'storageKey', eq: storageKey }, { field: 'tenantId', eq: tenantId }],
-        limit: Math.min(FELTDB_QUERY_PAGE_LIMIT, limit - records.length + 1),
+        // One page size for every page: a managed authority binds a cursor to the query's limit and
+        // refuses a continuation that changes it (INVALID_CURSOR).
+        limit: Math.min(FELTDB_QUERY_PAGE_LIMIT, limit + 1),
         ...(cursor ? { cursor } : {}),
       });
       records.push(...page.records.filter((item) => item.tenantId === tenantId && item.storageKey === storageKey));
@@ -85,6 +87,9 @@ export class FeltDbFileStore implements FileStore {
     if (this.storageKeyIndexed) return;
     this.storageKeyIndexed = true;
     try {
+      // A remote (managed) authority declares the index from the contract and refuses a runtime
+      // declaration (it writes an undeclared collection): don't ask, and don't log a refusal.
+      if ((this.db as { runtime?: () => { runtime?: string } }).runtime?.().runtime === 'remote') return;
       if (!this.collection.listIndexes().some((index) => index.field === 'storageKey')) {
         this.collection.createIndex({ name: 'files_by_storage_key', type: 'hash', field: 'storageKey' });
       }

@@ -17,6 +17,11 @@ All notable changes to `@appport/services`. Releases before 0.6.0 are described 
     attribute).
   - **Stores without the method:** a store written before it (the method is optional on `FileStore`)
     is refused, never answered "no references".
+- **Managed authority compatibility, verified on a real `feltdb-server`** (application-scoped,
+  contract version 3; plan: `files_by_storage_key`, 1 record examined at 5,000 files).
+  - Every page of a storage-key lookup asks for the same limit, because a managed authority binds
+    its cursor to the limit (`INVALID_CURSOR`).
+  - The store does not declare the index at runtime on a remote database; the contract declares it.
 - **`FileService.list` no longer refuses above 1,000 files.** `FeltDbFileStore.list` reads in bounded
   pages instead of one unbounded `find`. Same signature, same results.
 - **Contract version 3:** `files_by_storage_key` on `files.storageKey`
