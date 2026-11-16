@@ -2,7 +2,7 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## Unreleased
+## 0.18.0
 
 - **`FileService.references(tenantId, storageKey, caller, { limit? })`** returns
   `{ storageKey, live, complete }`: which live files of this application name a storage key.
