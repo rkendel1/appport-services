@@ -4,7 +4,9 @@
  * credential -> no provider credential.
  */
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { createServices } from '../src/index.js';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -170,6 +172,46 @@ test('no authorizer configured: every effect fails closed', async () => {
     await assert.rejects(stack.services.invoke('notifications.send', { recipient: 'bob', type: 't', title: 'x' }, { principal: alice }), code('AUTHORITY_UNAVAILABLE'));
     await assert.rejects(stack.services.apiKeys.createApiKey({ name: 'k' }, alice), code('AUTHORITY_UNAVAILABLE'));
     assert.equal((await stack.db.collection('notifications').list()).length, 0);
+  } finally {
+    await stack.close();
+  }
+});
+
+test('no authorizer configured: jobs and schedules fail closed too, and run nothing', async () => {
+  const stack = await openStack();
+  try {
+    const alice = stack.services.identify({ principalId: 'alice', principalType: 'user', tenantId: 'tenant-a' })!;
+    let ran = 0;
+    stack.services.jobs.register('report.build', async () => { ran += 1; });
+    await assert.rejects(stack.services.jobs.enqueue({ type: 'report.build', tenantId: 'tenant-b', payload: {} }), code('UNAUTHENTICATED'));
+    await assert.rejects(stack.services.jobs.enqueue({ type: 'report.build', tenantId: 'tenant-a', payload: {} }, alice), code('AUTHORITY_UNAVAILABLE'));
+    await assert.rejects(stack.services.invoke('jobs.create', { type: 'report.build', payload: {} }, { principal: alice }), code('AUTHORITY_UNAVAILABLE'));
+    await assert.rejects(stack.services.jobs.scheduleRecurring({ type: 'report.build', tenantId: 'tenant-a', interval: '1h', payload: {} }, alice), code('AUTHORITY_UNAVAILABLE'));
+    assert.equal((await stack.db.collection('jobs').list()).length, 0, 'a job was stored without authority');
+    assert.equal((await stack.db.collection('job_schedules').list()).length, 0, 'a schedule was stored without authority');
+    assert.equal(ran, 0);
+  } finally {
+    await stack.close();
+  }
+});
+
+test('trusted local jobs without an authorizer are an explicit opt-in', async () => {
+  const path = await mkdtemp(join(tmpdir(), 'appport-trusted-jobs-'));
+  const services = createServices({ mode: 'local', namespace: 'boundary', path, application: 'boundary-app', trustedLocalJobs: true });
+  try {
+    const job = await services.jobs.enqueue({ type: 'report.build', tenantId: 'tenant-a', payload: {} });
+    assert.equal(job.status, 'pending');
+  } finally {
+    await (services['_getDb'] as { close(): unknown }).close();
+  }
+});
+
+test('a host cannot claim a credential-bound (API key) identity: only API-key authentication binds one', async () => {
+  const stack = await openStack({ authorizer: new TestAuthority() });
+  try {
+    assert.throws(() => stack.services.identify({ principalId: 'key_forged', principalType: 'api_key', tenantId: 'tenant-a', credentialId: 'key_forged' } as never), code('DENIED'));
+    // The key's identity without a credential claim stays available to a host that checked the key itself.
+    assert.ok(stack.services.identify({ principalId: 'key_1', principalType: 'api_key', tenantId: 'tenant-a' }));
   } finally {
     await stack.close();
   }
