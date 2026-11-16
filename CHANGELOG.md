@@ -2,6 +2,26 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.19.0
+
+Released with `@appport/runtime` 0.18.0 (depends on `^0.19.0`) and `create-appport` 0.1.31 (depends on
+`@appport/runtime` `^0.18.0`).
+
+- **Behavior change: jobs and schedules fail closed without an authorizer.** `createServices` used to
+  run `enqueue`, `scheduleRecurring`, `retry`, `disableSchedule` and `executeJob` as `system` when no
+  authorizer was configured. They now always go through the gateway (`AUTHORITY_UNAVAILABLE` without an
+  authorizer, `UNAUTHENTICATED` without a principal), like every other service effect.
+  - **Migration:** configure an `authorizer`, or opt in to the previous trusted local mode with
+    `createServices({ trustedLocalJobs: true })` (local tools and single-user development only: any code
+    holding the services can enqueue work for any tenant).
+  - The config runtime `appport()` keeps its legacy jobs mode when no authority is configured, so
+    `create-appport` scaffolds are unaffected.
+- **`gateway.identify` refuses a host-supplied `credentialId`** (`DENIED`, `credential_claim_refused`).
+  Credential-bound identities come only from API-key authentication, which binds the live credential so
+  revocation and restrictions are re-checked on every effect.
+- **Dependencies:** dev dependency `@appport/sdk` `^1.9.0` (pulls `@appport/authorization` 1.2.0,
+  `@appport/core` 1.8.0, `@appport/server` 1.3.3, `@appport/mcp` 1.3.9 and the 1.0.16 transports).
+
 ## 0.18.0
 
 - **`FileService.references(tenantId, storageKey, caller, { limit? })`** returns

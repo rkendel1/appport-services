@@ -1,6 +1,6 @@
 {
   "name": "@appport/services",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "API keys, durable webhooks, background jobs, and provider-neutral secrets for AppPort applications",
   "type": "module",
   "exports": {
@@ -67,7 +67,7 @@
     "@feltdb/core": ">=0.16.1 <1.0.0"
   },
   "devDependencies": {
-    "@appport/sdk": "^1.8.1",
+    "@appport/sdk": "^1.9.0",
     "@feltdb/core": "^0.21.0",
     "@types/express": "^4.17.21",
     "@types/node": "22.10.2",
