@@ -3,11 +3,15 @@ import type { AuthenticatedPrincipal } from '../contract/principals.js';
 import type { Job } from '../jobs/models.js';
 import type { JobService } from '../jobs/service.js';
 import { systemJobs } from '../jobs/service.js';
-import type { NotificationAuditSink, NotificationDeliveryStore, NotificationStore } from '../storage/notifications.js';
+import {
+  NotificationStoreCursorError, type NotificationAuditSink, type NotificationDeliveryStore, type NotificationRecipientPage, type NotificationRecipientQuery,
+  type NotificationStore,
+} from '../storage/notifications.js';
 import { InAppNotificationChannel, NotificationChannelRegistry, type NotificationChannel, type NotificationDeliveryResult } from './channels.js';
 import type {
-  CreateNotificationInput, Notification, NotificationAuditType, NotificationDelivery, NotificationListOptions,
-  NotificationPage, NotificationPriority, NotificationResult, NotificationSource, NotificationStatus,
+  CreateNotificationInput, Notification, NotificationAuditType, NotificationDelivery, NotificationInboxOptions, NotificationListOptions,
+  NotificationMarkAllReadOptions, NotificationMarkAllReadResult, NotificationPage, NotificationPriority, NotificationResult, NotificationSource,
+  NotificationStatus, NotificationUnreadCount, NotificationUnreadCountOptions,
 } from './models.js';
 import { assertNoCredentials, isSensitiveValue, NotificationSensitiveDataError } from './sensitive.js';
 import type { ServiceResource } from '../authority/context.js';
@@ -38,6 +42,15 @@ const MAX_TEXT_LENGTH = 4_096;
 const PRIORITIES: readonly NotificationPriority[] = ['low', 'normal', 'high', 'urgent'];
 const STATUSES: readonly NotificationStatus[] = ['pending', 'delivered', 'failed', 'read', 'acknowledged', 'expired'];
 const INPUT_FIELDS = new Set(['tenantId', 'recipient', 'type', 'title', 'body', 'data', 'source', 'priority', 'channels', 'channel', 'idempotencyKey', 'expiresAt']);
+
+/** The most records `unreadCount` examines before it answers with `complete: false`. */
+export const NOTIFICATION_UNREAD_EXAMINATION_LIMIT = 5_000;
+/** The most notifications one `markAllRead` call marks before it answers with `complete: false`. */
+export const NOTIFICATION_MARK_ALL_READ_LIMIT = 1_000;
+/** Records per internal batch of `markAllRead`. */
+const MARK_ALL_READ_BATCH = 100;
+/** Storage pages one `markAllRead` call walks at most (each examines at most NOTIFICATION_PAGE_EXAMINATION_LIMIT records). */
+const MARK_ALL_READ_MAX_PAGES = 20;
 
 type AttemptMode = 'initial' | 'scheduled' | 'manual';
 
@@ -134,9 +147,81 @@ export class NotificationService {
     return { items: page, ...(filtered.length > limit ? { nextCursor: encodeCursor(page.at(-1)!) } : {}) };
   }
 
+  /**
+   * One page of one recipient's notifications (the caller's unless `recipient` is given), newest
+   * first: `createdAt` descending, then `id` ascending (FeltDB's tie order, so the order is total
+   * and the same in every runtime). A bounded read of the recipient's timeline
+   * index (`notifications_by_recipient`, or `notifications_by_recipient_type` with `type`), never a
+   * scan of the recipient's history. Authorized as `list` is (`notifications.read` with the
+   * recipient as an attribute). `nextCursor` is opaque and bound to the tenant, recipient, filters
+   * and `limit` that issued it; another query's cursor is refused (`Invalid cursor`). With `unread`,
+   * a page may hold fewer than `limit` items (even none) and still carry a `nextCursor`: the read
+   * stopped at its examination bound. Requires a store with `pageByRecipient`.
+   */
+  async inbox(tenantId: string, options: NotificationInboxOptions = {}, principal: AuthenticatedPrincipal): Promise<NotificationPage> {
+    const limit = options.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new NotificationValidationError('limit must be an integer from 1 to 100');
+    const type = optionalType(options.type);
+    const unread = options.unread === true;
+    if (options.cursor !== undefined && (typeof options.cursor !== 'string' || !options.cursor)) throw new NotificationValidationError('Invalid cursor');
+    const pager = this.recipientPager();
+    return this.authorizedRecipient('notifications.read', tenantId, options.recipient, principal, async (tenant, recipient) => {
+      const binding = this.cursorBinding(tenant, recipient, type, unread, limit);
+      const page = await pager(tenant, recipient, {
+        limit, type, unread, ...(options.cursor !== undefined ? { cursor: unwrapCursor(options.cursor, binding) } : {}),
+      });
+      const items = await Promise.all(page.records.map((item) => this.materialize(item)));
+      return { items, ...(page.nextCursor ? { nextCursor: wrapCursor(binding, page.nextCursor) } : {}) };
+    });
+  }
+
+  /**
+   * How many of one recipient's notifications are unread, counting at most `max` (1–500, default
+   * 100). FeltDB has no filtered count, so this reads the recipient's timeline index and checks
+   * `readAt` on each record, examining at most NOTIFICATION_UNREAD_EXAMINATION_LIMIT records;
+   * `complete: false` means the count is a lower bound. Authorized as `inbox` is.
+   */
+  async unreadCount(tenantId: string, options: NotificationUnreadCountOptions = {}, principal: AuthenticatedPrincipal): Promise<NotificationUnreadCount> {
+    const max = options.max ?? 100;
+    if (!Number.isInteger(max) || max < 1 || max > 500) throw new NotificationValidationError('max must be an integer from 1 to 500');
+    const type = optionalType(options.type);
+    const pager = this.recipientPager();
+    return this.authorizedRecipient('notifications.read', tenantId, options.recipient, principal, async (tenant, recipient) => {
+      const page = await pager(tenant, recipient, { limit: max + 1, type, unread: true, examine: NOTIFICATION_UNREAD_EXAMINATION_LIMIT });
+      return { count: Math.min(page.records.length, max), complete: !page.nextCursor && page.records.length <= max };
+    });
+  }
+
+  /**
+   * Marks read every unread notification addressed to the caller (of `type`, when given), in
+   * batches read from the caller's timeline index, each with the same version-checked write and
+   * `notification.read` audit as `markRead`. Authorized once as `notifications.update` with the
+   * caller as the `recipient` attribute; it touches only notifications addressed to the caller.
+   * At most NOTIFICATION_MARK_ALL_READ_LIMIT per call: `complete: false` means call again.
+   * Notifications created after the call began are not marked.
+   */
+  async markAllRead(tenantId: string, options: NotificationMarkAllReadOptions = {}, principal: AuthenticatedPrincipal): Promise<NotificationMarkAllReadResult> {
+    const type = optionalType(options.type);
+    const pager = this.recipientPager();
+    return this.authorizedRecipient('notifications.update', tenantId, undefined, principal, async (tenant, recipient) => {
+      let marked = 0;
+      let cursor: string | undefined;
+      for (let pages = 0; pages < MARK_ALL_READ_MAX_PAGES; pages++) {
+        const page = await pager(tenant, recipient, { limit: MARK_ALL_READ_BATCH, type, unread: true, ...(cursor ? { cursor } : {}) });
+        for (const item of page.records) {
+          if (marked >= NOTIFICATION_MARK_ALL_READ_LIMIT) return { marked, complete: false };
+          if (item.tenantId !== tenant || item.recipient !== recipient || !this.owned(item)) continue;
+          if (await this.markReadIfUnread(item, principal.principalId)) marked += 1;
+        }
+        if (!page.nextCursor) return { marked, complete: true };
+        cursor = page.nextCursor;
+      }
+      return { marked, complete: false };
+    });
+  }
+
   async markRead(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
-    return this.mutate('notification.read', tenantId, id, principal, (item, now) =>
-      item.readAt ? null : { readAt: now, ...(item.status === 'acknowledged' ? {} : { status: 'read' as const }) });
+    return this.mutate('notification.read', tenantId, id, principal, readChange);
   }
 
   async acknowledge(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
@@ -276,6 +361,63 @@ export class NotificationService {
     if (options.recipient && options.recipient !== principal.principalId && !readsAny) throw new NotificationAuthorizationError();
     const recipient = readsAny ? options.recipient : principal.principalId;
     return (await this.options.store.list(tenantId)).filter((item) => !recipient || item.recipient === recipient);
+  }
+
+  /** The store's bounded recipient read, or a refusal: a store without it is never answered as "nothing". */
+  private recipientPager(): (tenantId: string, recipient: string, query: NotificationRecipientQuery) => Promise<NotificationRecipientPage> {
+    const page = this.options.store.pageByRecipient?.bind(this.options.store);
+    if (!page) throw new NotificationValidationError('This notification store cannot page notifications by recipient');
+    const applicationId = this.options.authority ? this.gateway().application : undefined;
+    return async (tenantId, recipient, query) => {
+      try {
+        return await page(tenantId, recipient, { ...query, ...(applicationId !== undefined ? { applicationId } : {}) });
+      } catch (error) {
+        if (error instanceof NotificationStoreCursorError) throw new NotificationValidationError('Invalid cursor');
+        throw error;
+      }
+    };
+  }
+
+  /**
+   * Authorizes a read or update of one recipient's notifications as the existing operations do:
+   * through the gateway with the recipient as the resource attribute, or, without an authority,
+   * by the legacy scopes (another recipient's reads need `notifications.read:any`; updates are the
+   * caller's own only).
+   */
+  private async authorizedRecipient<T>(capability: 'notifications.read' | 'notifications.update', tenantId: string, requested: string | undefined, principal: AuthenticatedPrincipal, run: (tenant: string, recipient: string) => Promise<T>): Promise<T> {
+    if (requested !== undefined && (typeof requested !== 'string' || !requested)) throw new NotificationValidationError('recipient must be a non-empty string');
+    if (this.options.authority) {
+      const verified = requireVerifiedPrincipal(principal);
+      const tenant = resolveTenant({ tenantId }, verified);
+      const recipient = requested ?? verified.principalId;
+      return this.gateway().execute(capability, verified, { type: 'notification', tenantId: tenant, attributes: { recipient } }, { service: 'notifications' }, () => run(tenant, recipient));
+    }
+    this.authorizeTenant(principal, tenantId, capability === 'notifications.read' ? 'notifications.read' : 'notifications.write');
+    const recipient = requested ?? principal.principalId;
+    if (recipient !== principal.principalId && !hasScope(principal, 'notifications.read:any')) throw new NotificationAuthorizationError();
+    return run(tenantId, recipient);
+  }
+
+  /** `markRead`'s change, applied with a version check; false when it was already read. */
+  private async markReadIfUnread(item: Notification, principalId: string): Promise<boolean> {
+    let current: Notification | null = item;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (!current) return false;
+      const updates = readChange(current, this.now().toISOString());
+      if (!updates) return false;
+      const updated = await this.options.store.update(current.id, current.__version, updates);
+      if (updated) {
+        await this.audit('notification.read', updated, principalId);
+        return true;
+      }
+      current = await this.options.store.get(item.tenantId, item.id);
+    }
+    throw new NotificationValidationError('Notification was modified concurrently');
+  }
+
+  private cursorBinding(tenantId: string, recipient: string, type: string | undefined, unread: boolean, limit: number): string {
+    const application = this.options.authority ? this.gateway().application : null;
+    return createHash('sha256').update(JSON.stringify(['notifications.inbox', tenantId, application, recipient, type ?? null, unread, limit])).digest('base64url').slice(0, 22);
   }
 
   private async loadReadable(tenantId: string, id: string, principal: AuthenticatedPrincipal): Promise<Notification> {
@@ -596,6 +738,27 @@ function isSensitiveReason(reason: string): boolean {
 
 function sortDeliveries(deliveries: readonly NotificationDelivery[]): readonly NotificationDelivery[] {
   return [...deliveries].sort((a, b) => a.channel.localeCompare(b.channel));
+}
+
+function readChange(item: Notification, now: string): Partial<Notification> | null {
+  return item.readAt ? null : { readAt: now, ...(item.status === 'acknowledged' ? {} : { status: 'read' as const }) };
+}
+
+function optionalType(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !value || value.length > 128) throw new NotificationValidationError('type must be a non-empty string');
+  return value;
+}
+
+/** An inbox cursor: the store's continuation, bound to the query that issued it. */
+function wrapCursor(binding: string, storeCursor: string): string {
+  return Buffer.from(JSON.stringify({ v: 1, b: binding, s: storeCursor }), 'utf8').toString('base64url');
+}
+function unwrapCursor(cursor: string, binding: string): string {
+  let value: { v?: unknown; b?: unknown; s?: unknown };
+  try { value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as typeof value; } catch { throw new NotificationValidationError('Invalid cursor'); }
+  if (!value || value.v !== 1 || value.b !== binding || typeof value.s !== 'string' || !value.s) throw new NotificationValidationError('Invalid cursor');
+  return value.s;
 }
 
 function encodeCursor(item: Notification): string { return Buffer.from(JSON.stringify({ createdAt: item.createdAt, id: item.id }), 'utf8').toString('base64url'); }

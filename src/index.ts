@@ -87,10 +87,15 @@ export { WebhookService } from './webhooks/service.js';
 export { DEFAULT_WEBHOOK_DELIVERY_PAGE, MAX_WEBHOOK_DELIVERY_PAGE, WEBHOOK_DELIVERY_STATUSES } from './webhooks/models.js';
 export { JobService, JobWorker } from './jobs/index.js';
 export { NotificationService, NotificationAuthorizationError, NotificationValidationError, NotificationNotFoundError, NotificationSensitiveDataError, NOTIFICATION_DELIVERY_JOB } from './notifications/index.js';
+export { NOTIFICATION_UNREAD_EXAMINATION_LIMIT, NOTIFICATION_MARK_ALL_READ_LIMIT } from './notifications/index.js';
 export { NotificationChannelRegistry, InAppNotificationChannel, BrowserNotificationChannel, BROWSER_NOTIFICATION_EVENT, assertNoCredentials } from './notifications/index.js';
 export { EmailNotificationChannel, type EmailTransport, type EmailMessage, type EmailContent, type EmailChannelOptions } from './notifications/index.js';
 export { createNotificationRouter, notificationErrorHandler } from './notifications/index.js';
 export { FeltDbNotificationStore, FeltDbNotificationDeliveryStore, FeltDbNotificationAuditSink } from './storage/notifications.js';
+export {
+  NotificationStoreCursorError, NOTIFICATIONS_BY_RECIPIENT_INDEX, NOTIFICATIONS_BY_RECIPIENT_TYPE_INDEX, NOTIFICATION_PAGE_EXAMINATION_LIMIT,
+  type NotificationStore, type NotificationRecipientQuery, type NotificationRecipientPage,
+} from './storage/notifications.js';
 export { FileService, FileAuthorizationError, FileValidationError, FileNotFoundError } from './files/index.js';
 export { FeltDbFileStore, FeltDbFileAuditSink } from './files/index.js';
 export { ScheduleService, ScheduleAuthorizationError, ScheduleValidationError } from './schedules/index.js';
@@ -170,6 +175,7 @@ export type { AuthenticatedPrincipal } from './contract/principals.js';
 export type {
   Notification, NotificationDelivery, NotificationAuditEvent, NotificationAuditType, NotificationPriority, NotificationSource, NotificationStatus,
   NotificationDeliveryStatus, CreateNotificationInput, NotificationListOptions, NotificationPage, NotificationResult, NotificationServiceOptions,
+  NotificationInboxOptions, NotificationUnreadCountOptions, NotificationUnreadCount, NotificationMarkAllReadOptions, NotificationMarkAllReadResult,
   NotificationChannel, NotificationDeliveryResult, BrowserNotificationMessage, BrowserNotificationTransport,
 } from './notifications/index.js';
 export type { File, FileAuditEvent, CreateFileInput, UpdateFileInput, FileReferences, FileReferenceOptions } from './files/index.js';

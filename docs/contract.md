@@ -23,7 +23,7 @@ const contract = {
 | `SERVICE_COLLECTIONS` | Every collection the services store, by name, declared once: each field's FeltDB type, `required`, `nullable`. |
 | `SERVICE_REQUIREMENTS` | Per service: the collections it stores and the services it needs. |
 | `SERVICE_NAMES`, `ServiceName` | `files`, `notifications`, `configuration`, `apiKeys`, `webhooks`, `jobs`, `schedules`, `intelligence`. |
-| `SERVICES_CONTRACT_VERSION` | Bumped when a declaration changes in a way a promoted contract must follow. 2 (0.13.1): `job_audit_events.jobType` and `webhook_audit_events.eventType`, written by the transaction context. |
+| `SERVICES_CONTRACT_VERSION` | Bumped when a declaration changes in a way a promoted contract must follow. 2 (0.13.1): `job_audit_events.jobType` and `webhook_audit_events.eventType`, written by the transaction context. 3 (0.18.0): `files_by_storage_key`. 4 (unreleased): `notifications_by_recipient` and `notifications_by_recipient_type`. |
 
 What a service stores:
 
@@ -51,7 +51,12 @@ schema-declared equality index (otherwise `INDEX_UNAVAILABLE`). So each collecti
 indexes of exactly the collections it carries, in the same order. A collection a service also
 looks up by another field declares that index too, right after its tenant index
 (`SERVICE_LOOKUP_INDEXES`): `files_by_storage_key` on `["storageKey"]`, for
-`FileService.references` (contract version 3).
+`FileService.references` (contract version 3); `notifications_by_recipient` on
+`["tenantId", "recipient", "createdAt"]` and `notifications_by_recipient_type` on
+`["tenantId", "recipient", "type", "createdAt"]`, for `NotificationService.inbox`,
+`unreadCount` and `markAllRead`, which read them newest first (contract version 4). The contract
+format carries no index direction (and no `id`: the record id is FeltDB's tie order, ascending);
+a local `FeltDbNotificationStore` creates them with `createdAt` descending.
 
 ## How it is kept true
 

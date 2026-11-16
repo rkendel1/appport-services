@@ -15,6 +15,37 @@ export function createNotificationRouter(service: NotificationService): Router {
   router.get('/', async (req, res, next) => {
     try { res.json(await service.list(req.auth!.tenantId, notificationListOptions(req.query), req.auth!)); } catch (error) { next(error); }
   });
+  // One recipient's timeline, newest first, from the recipient index (registered before '/:id').
+  router.get('/inbox', async (req, res, next) => {
+    try {
+      const text = (name: string): string | undefined => typeof req.query[name] === 'string' ? req.query[name] as string : undefined;
+      const limit = text('limit');
+      res.json(await service.inbox(req.auth!.tenantId, {
+        ...(text('recipient') !== undefined ? { recipient: text('recipient') } : {}),
+        ...(text('type') !== undefined ? { type: text('type') } : {}),
+        ...(text('cursor') !== undefined ? { cursor: text('cursor') } : {}),
+        ...(limit !== undefined ? { limit: Number(limit) } : {}),
+        unread: req.query.unread === 'true',
+      }, req.auth!));
+    } catch (error) { next(error); }
+  });
+  router.get('/unread-count', async (req, res, next) => {
+    try {
+      const text = (name: string): string | undefined => typeof req.query[name] === 'string' ? req.query[name] as string : undefined;
+      const max = text('max');
+      res.json(await service.unreadCount(req.auth!.tenantId, {
+        ...(text('recipient') !== undefined ? { recipient: text('recipient') } : {}),
+        ...(text('type') !== undefined ? { type: text('type') } : {}),
+        ...(max !== undefined ? { max: Number(max) } : {}),
+      }, req.auth!));
+    } catch (error) { next(error); }
+  });
+  router.post('/read-all', async (req, res, next) => {
+    try {
+      const body = req.body === undefined || req.body === null || (typeof req.body === 'object' && Object.keys(req.body).length === 0) ? {} : objectBody(req.body);
+      res.json(await service.markAllRead(req.auth!.tenantId, body.type !== undefined ? { type: body.type as string } : {}, req.auth!));
+    } catch (error) { next(error); }
+  });
   router.get('/:id', async (req, res, next) => { try { res.json(await service.get(req.auth!.tenantId, req.params.id, req.auth!)); } catch (error) { next(error); } });
   router.get('/:id/deliveries', async (req, res, next) => { try { res.json({ items: await service.deliveries(req.auth!.tenantId, req.params.id, req.auth!) }); } catch (error) { next(error); } });
   router.post('/:id/read', async (req, res, next) => { try { res.json(await service.markRead(req.auth!.tenantId, req.params.id, req.auth!)); } catch (error) { next(error); } });

@@ -142,3 +142,51 @@ export interface NotificationPage {
   readonly items: readonly Notification[];
   readonly nextCursor?: string;
 }
+
+/**
+ * One recipient's notifications, newest first (`createdAt` descending, then `id` ascending), read
+ * page by page from the recipient's timeline index. See `NotificationService.inbox`.
+ */
+export interface NotificationInboxOptions {
+  /** Whose notifications. Defaults to the caller; another recipient is authorized as `list` is. */
+  readonly recipient?: string;
+  /** Only notifications not yet read. */
+  readonly unread?: boolean;
+  /** Only this notification type. */
+  readonly type?: string;
+  /** 1–100, default 50. A cursor is bound to the limit (and filters) of the page that issued it. */
+  readonly limit?: number;
+  /** `nextCursor` of the previous page. */
+  readonly cursor?: string;
+}
+
+export interface NotificationUnreadCountOptions {
+  readonly recipient?: string;
+  readonly type?: string;
+  /** Count at most this many (1–1000, default 100). */
+  readonly max?: number;
+}
+
+export interface NotificationUnreadCount {
+  readonly count: number;
+  /**
+   * False when `count` is a lower bound: there are more than `max` unread notifications, or the
+   * count stopped after `NOTIFICATION_UNREAD_EXAMINATION_LIMIT` records (show it as "max+").
+   */
+  readonly complete: boolean;
+}
+
+export interface NotificationMarkAllReadOptions {
+  /** Only this notification type. */
+  readonly type?: string;
+}
+
+export interface NotificationMarkAllReadResult {
+  /** Notifications this call marked read. */
+  readonly marked: number;
+  /**
+   * False when the call stopped at `NOTIFICATION_MARK_ALL_READ_LIMIT` marks or at the examination
+   * bound with notifications possibly still unread: call again to continue.
+   */
+  readonly complete: boolean;
+}
