@@ -125,6 +125,13 @@ export interface CreateServicesOptions extends FeltDBOptions {
   /** AuthBoundry client. Without it every service effect fails closed. */
   authorizer?: ServiceAuthorizer;
   /**
+   * Run jobs and schedules without an authorizer, as the trusted `system` principal (local tools
+   * and single-user development only). Off by default: without an authorizer, jobs and schedules
+   * fail closed like every other service effect. Opting in is explicit because it means any code
+   * that holds these services can enqueue work for any tenant.
+   */
+  trustedLocalJobs?: boolean;
+  /**
    * Credential custody, supplied by the host. A `ScopedSecretsResolver` only
    * resolves credentials for authorized effects. A `SecretCustody` (a resolver
    * with `store` and `status`, see `isSecretCustody`) also lets
@@ -209,13 +216,16 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     authority,
   });
 
+  // Jobs and schedules always go through the gateway (which, without an authorizer, refuses with
+  // AUTHORITY_UNAVAILABLE), unless the host explicitly opts into trusted local jobs.
+  const jobAuthority = authority ?? (options.trustedLocalJobs ? undefined : gateway);
   const jobService = new JobService({
     jobStore: new FeltDbJobStore(db),
     scheduleStore: new FeltDbJobScheduleStore(db),
     auditSink: new FeltDbJobAuditSink(db),
-    ...(authority ? { authority } : {}),
+    ...(jobAuthority ? { authority: jobAuthority } : {}),
   });
-  const scheduleService = new ScheduleService({ jobs: jobService, ...(authority ? { authority } : {}) });
+  const scheduleService = new ScheduleService({ jobs: jobService, ...(jobAuthority ? { authority: jobAuthority } : {}) });
   const configurationStore = new FeltDbConfigurationStore(db);
   const configurationService = new ConfigurationService({
     store: configurationStore,

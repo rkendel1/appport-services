@@ -116,6 +116,12 @@ export class ServiceGateway {
     if (claims.applicationId && claims.applicationId !== this.application) {
       throw new ServiceAuthorityError('DENIED', 'Identity belongs to a different application', { reason: 'application_mismatch' });
     }
+    // A credential-bound identity is minted only by API-key authentication, which binds the live
+    // credential so every effect re-checks revocation and restrictions. A host-asserted credentialId
+    // would carry the credential's name without that check.
+    if ((claims as { credentialId?: unknown }).credentialId !== undefined) {
+      throw new ServiceAuthorityError('DENIED', 'A credential-bound identity must come from API-key authentication', { reason: 'credential_claim_refused' });
+    }
     return mintVerifiedPrincipal(claims, 'host');
   }
 
