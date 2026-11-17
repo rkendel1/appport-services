@@ -2,9 +2,11 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
-## Unreleased
+## 0.20.0
 
-Additive. Not yet released; `package.json` is unchanged.
+Additive. Released with `@appport/runtime` 0.19.0 (depends on `^0.20.0`) and `create-appport` 0.1.32 (depends on
+`@appport/runtime` `^0.19.0`). Development and test dependency `@feltdb/core` moves to `^0.21.0` → `^0.22.0`; the
+peer range (`>=0.16.1 <1.0.0`) is unchanged.
 
 - **Notification inbox paging (FRAME-GAP-08).** `NotificationService.inbox(tenantId, { recipient?, unread?, type?, limit?, cursor? }, principal)`
   returns `{ items, nextCursor? }`: one recipient's notifications (the caller's by default), newest first
