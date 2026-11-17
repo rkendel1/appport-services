@@ -2,6 +2,48 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## Unreleased
+
+Additive. Not yet released; `package.json` is unchanged.
+
+- **Notification inbox paging (FRAME-GAP-08).** `NotificationService.inbox(tenantId, { recipient?, unread?, type?, limit?, cursor? }, principal)`
+  returns `{ items, nextCursor? }`: one recipient's notifications (the caller's by default), newest first
+  (`createdAt` descending, then `id` ascending, a total order: FeltDB breaks ties by record id ascending in every
+  runtime, and a contract index can declare neither `id` nor a direction, so `id` descending could not be
+  index-backed on a managed authority).
+  - **Bounded, index-backed:** `FeltDbNotificationStore.pageByRecipient` reads `notifications_by_recipient`
+    (`tenantId, recipient, createdAt`), or `notifications_by_recipient_type` with `type`; a page examines
+    about `limit` records, never the recipient's history. Created on first use locally; on a remote database the
+    contract declares them. Every storage page of a walk asks for the same limit, because a managed authority
+    binds its cursor to the limit.
+  - **Cursors** are opaque and bound to tenant, application, recipient, filters and `limit`: another recipient's,
+    another query's, or a tampered cursor is refused (`NotificationValidationError: Invalid cursor`). `limit` is
+    1–100 (default 50), integers only.
+  - **`unread`** is checked on the records read (at most `NOTIFICATION_PAGE_EXAMINATION_LIMIT`, 1,000, per page):
+    a page may be short, even empty, and still carry `nextCursor`.
+- **`NotificationService.unreadCount(tenantId, { recipient?, type?, max? }, principal)`** returns
+  `{ count, complete }` (`max` 1–500, default 100). FeltDB has no filtered count: it reads the recipient's
+  timeline index, stopping at `max + 1` unread or `NOTIFICATION_UNREAD_EXAMINATION_LIMIT` (5,000) records;
+  `complete: false` means a lower bound.
+- **`NotificationService.markAllRead(tenantId, { type? }, principal)`** returns `{ marked, complete }`: marks the
+  caller's unread notifications read in batches of 100, each with `markRead`'s version-checked write and
+  `notification.read` audit, at most `NOTIFICATION_MARK_ALL_READ_LIMIT` (1,000) per call (`complete: false`:
+  call again). Not atomic across notifications.
+- **Authorization** as the existing operations: `inbox`/`unreadCount` as `list` (`notifications.read` with the
+  `recipient` attribute; legacy scopes: another recipient needs `notifications.read:any`), `markAllRead` as
+  `notifications.update` with the caller as `recipient` (legacy: `notifications.write`), once per call.
+- **HTTP:** `GET /notifications/inbox`, `GET /notifications/unread-count`, `POST /notifications/read-all`.
+- **Stores without the method:** `pageByRecipient` is optional on `NotificationStore`; without it the three
+  methods refuse (`This notification store cannot page notifications by recipient`), never answer empty.
+  `list` is unchanged.
+- **Contract version 4:** `notifications_by_recipient` and `notifications_by_recipient_type`
+  (`SERVICE_LOOKUP_INDEXES`). Additive; a promoted contract must add both indexes.
+- **Exports:** `NotificationStore`, `NotificationRecipientQuery`, `NotificationRecipientPage`,
+  `NotificationStoreCursorError`, `NOTIFICATIONS_BY_RECIPIENT_INDEX`, `NOTIFICATIONS_BY_RECIPIENT_TYPE_INDEX`,
+  `NOTIFICATION_PAGE_EXAMINATION_LIMIT`, `NOTIFICATION_UNREAD_EXAMINATION_LIMIT`, `NOTIFICATION_MARK_ALL_READ_LIMIT`,
+  and the option/result types `NotificationInboxOptions`, `NotificationUnreadCountOptions`, `NotificationUnreadCount`,
+  `NotificationMarkAllReadOptions`, `NotificationMarkAllReadResult`.
+
 ## 0.19.0
 
 Released with `@appport/runtime` 0.18.0 (depends on `^0.19.0`) and `create-appport` 0.1.31 (depends on

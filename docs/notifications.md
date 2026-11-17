@@ -132,6 +132,65 @@ the AppPort runtime under `/_appport/notifications`.
 List query parameters: `recipient`, `status`, `type`, `priority`, `sourceType`, `createdAfter`,
 `createdBefore`, `unread=true`, `unacknowledged=true`, `cursor`, `limit` (1–100, default 50).
 
+`GET /notifications` filters in memory over the tenant's notifications; for an inbox, use the
+bounded recipient routes below.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `GET` | `/notifications/inbox` | `{ items, nextCursor? }`: `inbox` (query: `recipient`, `type`, `unread=true`, `cursor`, `limit` 1–100, default 50) |
+| `GET` | `/notifications/unread-count` | `{ count, complete }`: `unreadCount` (query: `recipient`, `type`, `max` 1–500, default 100) |
+| `POST` | `/notifications/read-all` | `{ marked, complete }`: `markAllRead` (body: `{}` or `{ "type": "…" }`) |
+
+## Inbox paging
+
+A recipient's notifications are read newest first from their timeline index, one bounded page at
+a time, never by loading the recipient's whole history:
+
+```ts
+// First page, then the next one. Order: createdAt descending, then id ascending (a total order,
+// so equal timestamps never make a page skip or repeat a notification).
+const first = await app.notifications.inbox('tenant-a', { limit: 20, unread: true }, principal);
+const next = first.nextCursor
+  ? await app.notifications.inbox('tenant-a', { limit: 20, unread: true, cursor: first.nextCursor }, principal)
+  : undefined;
+
+const { count, complete } = await app.notifications.unreadCount('tenant-a', { max: 99 }, principal); // "99+" when !complete
+const { marked, complete: done } = await app.notifications.markAllRead('tenant-a', {}, principal);  // call again while !done
+```
+
+| Method | Signature | Notes |
+| --- | --- | --- |
+| `inbox` | `(tenantId, { recipient?, unread?, type?, limit?, cursor? }, principal) → { items, nextCursor? }` | `limit` 1–100 (default 50). `recipient` defaults to the caller. |
+| `unreadCount` | `(tenantId, { recipient?, type?, max? }, principal) → { count, complete }` | `max` 1–500 (default 100). |
+| `markAllRead` | `(tenantId, { type? }, principal) → { marked, complete }` | The caller's own notifications only. |
+
+- **Index-backed.** `inbox` reads `notifications_by_recipient` (`tenantId, recipient, createdAt`),
+  or `notifications_by_recipient_type` with `type`; each page examines about `limit` records. The
+  `FeltDbNotificationStore` creates both indexes on first use on a local database; on a remote
+  (managed) database the services contract declares them (contract version 4). Every storage page
+  of a walk asks for the same limit, because a managed authority binds its cursor to the limit.
+- **Order.** Ties on `createdAt` are broken by `id` ascending, FeltDB's tie order in every runtime
+  (a contract index can declare neither `id` nor a direction). `list` keeps its own order
+  (`id` descending on ties); do not mix cursors or pages of the two.
+- **Cursors are opaque and bound** to the tenant, application, recipient, filters and `limit` that
+  issued them. Another recipient's cursor, a cursor with a different `limit` or filter, or a
+  tampered cursor is refused (`NotificationValidationError: Invalid cursor`, HTTP `400`). Keep
+  `limit` and the filters the same for every page of one walk.
+- **`unread` is checked on the records read**, at most `NOTIFICATION_PAGE_EXAMINATION_LIMIT`
+  (1,000) per page: when unread notifications are sparse, a page can hold fewer than `limit` items,
+  even none, and still carry a `nextCursor`. Only a page without `nextCursor` is the end.
+- **`unreadCount` is not an index count.** FeltDB has no filtered count, so it reads the recipient's
+  timeline and checks `readAt`, stopping at `max + 1` unread or `NOTIFICATION_UNREAD_EXAMINATION_LIMIT`
+  (5,000) records examined. `complete: false` means `count` is a lower bound.
+- **`markAllRead` works in batches of 100** from the same index, applying `markRead`'s
+  version-checked write and `notification.read` audit to each unread notification, at most
+  `NOTIFICATION_MARK_ALL_READ_LIMIT` (1,000) per call; `complete: false` means call again.
+  It is not one atomic write: a crash leaves some marked and the rest unread, and the next call
+  finishes. Notifications created after the call began are left unread.
+- **Stores.** `pageByRecipient` is optional on `NotificationStore`; a store without it makes these
+  three methods refuse (`This notification store cannot page notifications by recipient`) rather
+  than answer with an empty page or a zero count. `list` is unchanged.
+
 Errors: `400` validation or credential content, `403` authorization, `404` not found.
 
 ## Idempotency
@@ -223,10 +282,15 @@ Notification operations use the existing principal and scope model (`Authenticat
 | Operation | Requirement |
 | --- | --- |
 | Create | Same tenant and `notifications.create` |
-| Get, list, deliveries | Same tenant and `notifications.read`, and recipient is the principal, unless it holds `notifications.read:any` |
+| Get, list, deliveries, inbox, unread count | Same tenant and `notifications.read`, and recipient is the principal, unless it holds `notifications.read:any` |
 | Read, acknowledge, dismiss | Same tenant and `notifications.write`, and recipient is the principal, unless it holds `notifications.admin` |
+| Mark all read | Same tenant and `notifications.write`; only the principal's own notifications |
 | Delete | Same tenant and `notifications.delete`, and recipient is the principal, unless it holds `notifications.admin` |
 | Retry a delivery | Same tenant and `notifications.admin` |
+
+With an AuthBoundry authority, `inbox` and `unreadCount` are authorized as `list` is
+(`notifications.read` on `{ type: 'notification', attributes: { recipient } }`), and `markAllRead`
+as `notifications.update` on the same resource with the caller as `recipient`, once per call.
 
 `notifications.read:any` grants reading only. Acknowledgement requires authority over the
 notification itself. A missing, empty, or malformed principal is rejected (fail closed). There is no

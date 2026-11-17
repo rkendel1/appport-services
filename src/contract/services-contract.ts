@@ -61,8 +61,11 @@ export const SERVICE_NAMES: readonly ServiceName[] = Object.freeze(['files', 'no
  * context (`queueJob`, `queueWebhookDeliveries`) and undeclared in 1.
  * 3: `files_by_storage_key` on `files.storageKey`, which `FileService.references` queries (an
  * application-scoped authority answers that query only through a declared index).
+ * 4: `notifications_by_recipient` on `notifications.[tenantId, recipient, createdAt]` and
+ * `notifications_by_recipient_type` on `notifications.[tenantId, recipient, type, createdAt]`,
+ * which `NotificationService.inbox`, `unreadCount` and `markAllRead` read (newest first).
  */
-export const SERVICES_CONTRACT_VERSION = 3;
+export const SERVICES_CONTRACT_VERSION = 4;
 
 const collection = (name: string, spec: string): ServicesContractCollection => Object.freeze({
   name,
@@ -133,10 +136,15 @@ export const SERVICE_INDEXES: Readonly<Record<string, ServicesContractIndex>> = 
 
 /**
  * Indexes beyond the tenant index: what a service's bounded lookups read. Files are looked up by
- * storage key before their bytes are released (`FileService.references`).
+ * storage key before their bytes are released (`FileService.references`). A recipient's
+ * notifications are paged newest first from their timeline (`NotificationService.inbox`).
  */
 export const SERVICE_LOOKUP_INDEXES: Readonly<Record<string, readonly ServicesContractIndex[]>> = Object.freeze({
   files: Object.freeze([Object.freeze({ name: 'files_by_storage_key', collection: 'files', fields: Object.freeze(['storageKey']) })]),
+  notifications: Object.freeze([
+    Object.freeze({ name: 'notifications_by_recipient', collection: 'notifications', fields: Object.freeze(['tenantId', 'recipient', 'createdAt']) }),
+    Object.freeze({ name: 'notifications_by_recipient_type', collection: 'notifications', fields: Object.freeze(['tenantId', 'recipient', 'type', 'createdAt']) }),
+  ]),
 });
 
 /** Stored by every service: the gateway records evidence for each effect. */
