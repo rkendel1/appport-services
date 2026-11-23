@@ -2,6 +2,62 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.21.0
+
+Additive (one behavior change in webhook replay, below). Released with `@appport/runtime` 0.20.0 (depends on
+`^0.21.0`) and `create-appport` 0.1.33 (depends on `@appport/runtime` `^0.20.0`). Contract version 5.
+
+- **Jobs that run as the application (service principal).** `createServices({ servicePrincipal: { principalId } })`.
+  `enqueue({ ..., runAs: 'service' })` (capability `jobs.create.service`) and `schedules.create({ ..., runAs: 'service' })`
+  (`schedules.create.service`) create work that runs as the service principal (subject `{ kind: 'service', id }`,
+  `verified_by: 'service'`, `context.enqueued_by`), not as the enqueuer, so it survives the enqueuer's session.
+  Creator-scoped jobs stay the default. The durable `principal` still records and attests the enqueuer; evidence rows
+  carry `principalType: 'service'` and the new `enqueuedBy`. `JobExecution` gains `runAs` and `enqueuedBy`; `VerifiedPrincipal`
+  gains `enqueuedBy`; `PrincipalVerification` gains `'service'`. `tx.queueJob` accepts a `jobs.create.service` context.
+  Without `servicePrincipal`, service-run work is refused; `identify()` refuses the configured service principal id.
+- **Clearer job refusals (FeltKit S12, Handoff J1).** A `DENIED` from AuthBoundry now names the decision's reason in its
+  message (`AuthBoundry denied jobs.execute (no_session)`) and carries `details.principalId`. A refused run records
+  `Job.refusal = { code, capability?, reason?, decisionId?, principalId, message, refusedAt }`. A handler error with
+  `code: 'FORBIDDEN'` / `status: 403`, or the new `JobTerminalError`, fails the job at once instead of being retried.
+- **Idempotent enqueue (Handoff J2).** `enqueue({ ..., idempotencyKey })`: same key and input → the original job; a
+  different input → new failure code `CONFLICT` (409, reason `idempotency_conflict`). Concurrency-safe (deterministic id,
+  conditional create). `tx.queueJob({ idempotencyKey })` fails the transaction on a repeated key.
+- **Files: bytes, object storage, resumable uploads, quotas, lifecycle (docs/files.md).** `FileService.upload`, `download`,
+  `createUploadUrl` / `confirmUpload`, `createDownloadUrl`, `beginUpload` / `uploadPart` / `createPartUploadUrl` /
+  `uploadStatus` / `completeUpload` / `abortUpload`, `usage`, `sweep`. Default store `FeltDbObjectStore` (chunked, under the
+  1 MiB request cap); `S3ObjectStore` for S3/R2/MinIO with SigV4 implemented in-package (`signAwsRequest`, `presignAwsUrl`,
+  `verifyAwsSignature`, checked against AWS's published examples). Per-tenant quotas (`files: { quota }`) are enforced
+  before writes (new failure code `QUOTA_EXCEEDED`, 413). `retainUntil` blocks deletion; `expiresAt` + `sweep` delete and
+  release bytes. `File` gains `objectStore`, `status`, `uploadId`, `retainUntil`, `expiresAt`. Pending uploads are not served.
+- **Intelligence: speech to text and embeddings with metering (docs/intelligence.md).** `modality: 'transcription' | 'embeddings'`
+  on the configuration operations; `intelligence.transcribe`, `intelligence.embed`, `intelligence.usage.read`;
+  `OpenAICompatibleProvider` built in, host adapters via `intelligenceProviders`; per-tenant usage records with cost from
+  `intelligencePrices`. Catalog providers gain `modalities`.
+- **Outbound HTTP connectors (docs/connectors.md).** `createServices({ connectors })`, `services.connectors.request` /
+  `list` (`connectors.request`, `connectors.read`): allowlisted hosts, credential by reference, evidence. Shared outbound
+  client `sendOutboundRequest`; `outboundDestinationPolicy` (defaults to `webhookDestinationPolicy`).
+- **Notifications to non-users.** `notify({ contact: { email?, device?, name? }, ... })` (recipient `contact:<digest>`,
+  attributes `recipientKind: 'contact'`); `PushNotificationChannel` + `PushTransport`; `EmailNotificationChannel` delivers
+  to `contact.email` and its `address` option is now optional; `RecordingEmailTransport`, `RecordingPushTransport`.
+- **Config import keeps a schedule's `runAs`** (`ConfigurationExportSchedule.runAs`). Schedules were already exported and
+  imported since 0.10.
+- **`credential.remove` (FeltKit S9a).** `ConfigurationService.removeCredential({ ref, provider?, kind?, name?, environment? })`:
+  calls `SecretCustody.remove` inside the authorized effect, marks the secret metadata revoked (`secret.revoked`), optionally
+  detaches the binding (`credential.detach`). `CUSTODY_READ_ONLY` when custody cannot remove.
+- **`services.credentialBindings({ tenantId?, environment?, limit? })` (FeltKit S3b).** Counts-free, evidence-free host read of
+  binding names and references.
+- **Webhook deliveries per application (FeltKit S3a).** Deliveries carry `applicationId`; `health()` counts this application's
+  deliveries (`webhookDeliveryScope: 'namespace'` restores the old count). Deliveries created before 0.21.0 are not counted
+  in the default scope.
+- **Behavior change: webhook replay keeps the owner (FeltKit S8).** `replayWebhookDelivery` no longer makes the replayer the
+  delivery's principal (it records `replayedBy` / `replayedAt`) and refuses a `delivered` or `delivering` delivery
+  (`INVALID_REQUEST`, reason `delivery_delivered`).
+- **Capabilities:** `jobs.create.service`, `schedules.create.service`, `credential.remove`, `connectors.read`,
+  `connectors.request`, `intelligence.transcribe`, `intelligence.embed`, `intelligence.usage.read` (manifest digest changes;
+  conformance corpus `services-manifest-1` re-blessed). Discovery gains `connectors`.
+- **Contract version 5:** collections `file_objects`, `file_object_chunks`, `file_uploads` (+ `file_uploads_by_status`),
+  `file_usage`, `intelligence_usage`; fields listed in `SERVICES_CONTRACT_VERSION`'s comment.
+
 ## 0.20.0
 
 Additive. Released with `@appport/runtime` 0.19.0 (depends on `^0.20.0`) and `create-appport` 0.1.32 (depends on
