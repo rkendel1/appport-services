@@ -103,3 +103,44 @@ operator identity and an authorizer. Set `APPPORT_AUTHORITY` to a module
 exporting `{ authorizer, identify }`, or set `APPPORT_API_KEY`. Use
 `--delegation <id>` to run a job under an AuthBoundry delegation.
 `--created-by` is rejected.
+
+## Running as the application (`runAs: "service"`)
+
+A creator-scoped job is re-authorized as its creator on every run, so a job
+enqueued from a session stops when that session ends (by design: revoking a
+person stops their work). Work that belongs to the application, such as a
+post-meeting summary or a nightly sweep, is enqueued with `runAs: "service"`:
+
+```ts
+const services = createServices({ authorizer, servicePrincipal: { principalId: 'service:meetings' } });
+await services.jobs.enqueue({ type: 'meeting.summary', payload, runAs: 'service' }, host);   // needs jobs.create.service
+await services.schedules.create({ type: 'reminders.sweep', interval: '5m', payload: {}, runAs: 'service' }, host); // schedules.create.service
+// in a transaction: tx.queueJob(input, await services.authorize('jobs.create.service', host, { type: 'job', attributes: { jobType, runAs: 'service' } }))
+```
+
+- The job's durable `principal` still records (and attests) who enqueued it;
+  a creator-scoped record changed to `runAs: "service"` does not attest.
+- Each run is authorized as `jobs.execute` for the service principal with
+  `enqueued_by` in the request context and `runAs`/`enqueuedBy` resource
+  attributes; `JobExecution.principal` is the service principal (with
+  `enqueuedBy`), and every effect the handler causes is authorized as it.
+- Without `servicePrincipal`, service-run work is refused (`INVALID_REQUEST`).
+- Config export/import carries a schedule's `runAs`.
+
+## Refusals and terminal failures
+
+A run refused by AuthBoundry (or attestation) fails at once with
+`lastError: "DENIED: AuthBoundry denied jobs.execute (<reason>)"` and a
+`refusal` record `{ code, capability, reason, decisionId, principalId, message, refusedAt }`.
+A handler that throws `JobTerminalError`, or an error with `code: "FORBIDDEN"`
+or `status: 403`, fails the job without retrying (`refusal.code` is that code).
+`retry()` clears the refusal.
+
+## Idempotent enqueue
+
+`enqueue({ ..., idempotencyKey })` derives the job id from tenant, application,
+job type and key and creates it with a conditional write, so concurrent or
+retried enqueues create one job. The same key with the same input returns the
+original job; a different input is refused with `CONFLICT`
+(`reason: "idempotency_conflict"`). In a transaction, `tx.queueJob({ idempotencyKey })`
+makes a repeated key fail the whole transaction.

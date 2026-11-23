@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type {
   Job,
+  JobRefusal,
+  JobRunAs,
   JobSchedule,
   CreateJobInput,
   ScheduleRecurringInput,
@@ -33,8 +35,16 @@ interface JobServiceOptions {
 
 /** What a running job is allowed to act as. Every effect it causes is authorized again. */
 export interface JobExecution {
-  /** The job's durable principal for this run (with delegation and run id). */
+  /**
+   * Who this run acts as: the job's durable principal (with delegation and run
+   * id), or, for a job enqueued with `runAs: "service"`, the application's
+   * service principal (its `enqueuedBy` names the enqueuer).
+   */
   readonly principal: VerifiedPrincipal;
+  /** `creator` or `service` (see `Job.runAs`). */
+  readonly runAs: JobRunAs;
+  /** The principal that enqueued the job (or created its schedule). */
+  readonly enqueuedBy?: string;
   /** The jobs.execute authorization for this run. */
   readonly context: ServiceExecutionContext;
   readonly runId: string;
@@ -93,10 +103,18 @@ export class JobService {
   async enqueue(input: CreateJobInput, caller?: VerifiedPrincipal): Promise<Job> {
     assertApplicationJobType(input.type);
     this.assertAllowedType(input.type, Boolean(this.options.authority));
-    if (!this.options.authority) return this.createJobRecord(input, 'system');
+    if (!this.options.authority) {
+      if (input.runAs === 'service') throw new Error('runAs "service" needs an AuthBoundry authority and a service principal');
+      return this.createJobRecord(input, 'system');
+    }
     const principal = requireVerifiedPrincipal(caller);
     rejectCallerActor(input, principal);
     const tenantId = resolveTenant(input, principal);
+    if (this.runAsOf(input) === 'service') {
+      this.gateway().servicePrincipal(tenantId);
+      return this.gateway().execute('jobs.create.service', principal, { type: 'job', tenantId, attributes: { jobType: input.type, runAs: 'service' } }, { service: 'jobs' },
+        (context) => this.createJobRecord({ ...input, tenantId, runAs: 'service' }, principal.principalId, this.gateway().application, principal, context.authorization.decisionId));
+    }
     const delegationId = input.delegationId ?? principal.delegationId;
     return this.gateway().execute('jobs.create', principal, { type: 'job', tenantId, attributes: { jobType: input.type, ...(delegationId ? { delegationId } : {}) } }, { service: 'jobs' },
       (context) => this.createJobRecord({ ...input, tenantId }, principal.principalId, this.gateway().application, principal, context.authorization.decisionId));
@@ -114,10 +132,18 @@ export class JobService {
     this.nextRunTime(this.now().toISOString(), input.interval);
     assertApplicationJobType(input.type);
     this.assertAllowedType(input.type, Boolean(this.options.authority));
-    if (!this.options.authority) return this.createScheduleRecord(input, input.createdBy ?? 'system');
+    if (!this.options.authority) {
+      if (input.runAs === 'service') throw new Error('runAs "service" needs an AuthBoundry authority and a service principal');
+      return this.createScheduleRecord(input, input.createdBy ?? 'system');
+    }
     const principal = requireVerifiedPrincipal(caller);
     rejectCallerActor(input, principal);
     const tenantId = resolveTenant(input, principal);
+    if (this.runAsOf(input) === 'service') {
+      this.gateway().servicePrincipal(tenantId);
+      return this.gateway().execute('schedules.create.service', principal, { type: 'schedule', tenantId, attributes: { jobType: input.type, runAs: 'service' } }, { service: 'jobs' },
+        (context) => this.createScheduleRecord({ ...input, tenantId, runAs: 'service' }, principal.principalId, this.gateway().application, principal, context.authorization.decisionId));
+    }
     const delegationId = input.delegationId ?? principal.delegationId;
     return this.gateway().execute('schedules.create', principal, { type: 'schedule', tenantId, attributes: { jobType: input.type, ...(delegationId ? { delegationId } : {}) } }, { service: 'jobs' },
       (context) => this.createScheduleRecord({ ...input, tenantId }, principal.principalId, this.gateway().application, principal, context.authorization.decisionId));
@@ -219,26 +245,42 @@ export class JobService {
       return false;
     }
 
+    // A service-run job must have been created by a service-run enqueue (or schedule): a creator-scoped
+    // record changed to runAs "service" later does not attest.
+    const runAs: JobRunAs = claimed.runAs === 'service' ? 'service' : 'creator';
     try {
-      await this.gateway().attest(claimed.principal, ['jobs.create', 'schedules.create']);
+      await this.gateway().attest(claimed.principal, runAs === 'service' ? ['jobs.create.service', 'schedules.create.service'] : ['jobs.create', 'schedules.create']);
     } catch (error) {
-      await this.deny(claimed, `DENIED: ${error instanceof Error ? error.message : String(error)}`);
+      await this.deny(claimed, `DENIED: ${error instanceof Error ? error.message : String(error)}`, error);
       return false;
     }
 
     const runId = `${claimed.id}:${claimed.attemptCount + 1}`;
-    const principal = mintVerifiedPrincipal({ ...claimed.principal, runId }, 'job');
+    let principal: VerifiedPrincipal;
+    try {
+      principal = runAs === 'service'
+        ? this.gateway().servicePrincipal(tenantId, { runId, enqueuedBy: claimed.principal.principalId })
+        : mintVerifiedPrincipal({ ...claimed.principal, runId }, 'job');
+    } catch (error) {
+      await this.deny(claimed, `DENIED: ${error instanceof Error ? error.message : String(error)}`, error);
+      return false;
+    }
 
     try {
       await this.gateway().execute('jobs.execute', principal,
-        { type: 'job', tenantId, id: claimed.id, attributes: { jobType: claimed.type } },
+        { type: 'job', tenantId, id: claimed.id, attributes: { jobType: claimed.type, ...(runAs === 'service' ? { runAs, enqueuedBy: claimed.principal.principalId } : {}) } },
         { service: 'jobs', requestId: runId },
-        (context) => handler(claimed, { principal, context, runId }));
+        (context) => handler(claimed, { principal, context, runId, runAs, enqueuedBy: claimed.principal!.principalId }));
       // Completed only if this worker still holds the job (its claim's version); otherwise not a success.
       return await this.completeJob(claimed, principal.principalId, runId);
     } catch (error) {
       if (isServiceAuthorityError(error) && (error.code === 'DENIED' || error.code === 'UNAUTHENTICATED')) {
-        await this.deny(claimed, `DENIED: ${error.message}`);
+        // The authorizer's reason is part of the message ("AuthBoundry denied jobs.execute (no_session)") and the audit.
+        await this.deny(claimed, `DENIED: ${error.message}`, error, principal.principalId);
+        return false;
+      }
+      if (isTerminalHandlerError(error)) {
+        await this.deny(claimed, `${terminalCode(error)}: ${error instanceof Error ? error.message : String(error)}`, error, principal.principalId);
         return false;
       }
       if (isServiceAuthorityError(error) && (error.code === 'AUTHORITY_UNAVAILABLE' || error.code === 'AUTHORIZATION_TIMEOUT')) {
@@ -276,6 +318,7 @@ export class JobService {
         maxAttempts: DEFAULT_MAX_ATTEMPTS,
         createdAt: now,
         ...(schedule.principal ? { principal: schedule.principal } : {}),
+        ...(schedule.runAs === 'service' ? { runAs: 'service' as const } : {}),
         __version: 1,
       };
 
@@ -318,10 +361,16 @@ export class JobService {
     principal?: VerifiedPrincipal,
     authorizedBy?: string,
   ): Promise<Job> {
-    const id = randomUUID();
+    const key = idempotencyKeyOf(input.idempotencyKey);
+    const id = key ? idempotentJobId(input.tenantId!, applicationId ?? '', input.type, key) : randomUUID();
+    const inputHash = key ? enqueueDigest(input) : undefined;
     const now = this.now().toISOString();
     const runAt = input.runAt ?? now;
     const status = runAt <= now ? 'pending' : 'scheduled';
+    if (key) {
+      const existing = await this.jobStore.get(input.tenantId!, id);
+      if (existing) return this.sameEnqueue(existing, inputHash!, key);
+    }
     const job: Job = {
       id,
       tenantId: input.tenantId!,
@@ -333,10 +382,19 @@ export class JobService {
       attemptCount: 0,
       maxAttempts: input.maxAttempts ?? this.maxRetryAttempts,
       createdAt: now,
-      ...(principal && authorizedBy ? { principal: toDurablePrincipal(principal, input.delegationId ?? principal.delegationId, authorizedBy) } : {}),
+      ...(principal && authorizedBy ? { principal: toDurablePrincipal(principal, input.runAs === 'service' ? undefined : input.delegationId ?? principal.delegationId, authorizedBy) } : {}),
+      ...(input.runAs === 'service' ? { runAs: 'service' as const } : {}),
+      ...(key ? { idempotencyKey: key, inputHash } : {}),
       __version: 1,
     };
-    await this.jobStore.create(job);
+    try {
+      await this.jobStore.create(job);
+    } catch (error) {
+      // A concurrent enqueue with the same key won the conditional create (requireAbsent): answer with its job.
+      const winner = key ? await this.jobStore.get(input.tenantId!, id) : null;
+      if (!winner) throw error;
+      return this.sameEnqueue(winner, inputHash!, key!);
+    }
     await this.auditSink.record({
       id: randomUUID(),
       type: 'job.created',
@@ -345,7 +403,7 @@ export class JobService {
       principalId,
       timestamp: now,
       result: 'success',
-      details: { jobType: job.type },
+      details: { jobType: job.type, ...(job.runAs === 'service' ? { runAs: 'service' } : {}) },
     });
     return job;
   }
@@ -371,7 +429,8 @@ export class JobService {
       enabled: true,
       createdAt: now,
       createdBy: principalId,
-      ...(principal && authorizedBy ? { principal: toDurablePrincipal(principal, input.delegationId ?? principal.delegationId, authorizedBy) } : {}),
+      ...(principal && authorizedBy ? { principal: toDurablePrincipal(principal, input.runAs === 'service' ? undefined : input.delegationId ?? principal.delegationId, authorizedBy) } : {}),
+      ...(input.runAs === 'service' ? { runAs: 'service' as const } : {}),
       __version: 1,
     };
     await this.scheduleStore.create(schedule);
@@ -403,6 +462,7 @@ export class JobService {
       attemptCount: 0,
       nextAttemptAt: undefined,
       lastError: undefined,
+      refusal: undefined,
     });
     if (updated) {
       await this.auditSink.record({
@@ -502,8 +562,19 @@ export class JobService {
     });
   }
 
-  private async deny(job: Job, reason: string): Promise<void> {
-    await this.jobStore.updateJob(job.tenantId, job.id, job.__version, { status: 'failed', lastError: reason });
+  /** Fail the job without retrying: a refusal (or a handler's terminal error) does not change by trying again. */
+  private async deny(job: Job, reason: string, error?: unknown, principalId?: string): Promise<void> {
+    const details = isServiceAuthorityError(error) ? error.details : undefined;
+    const refusal: JobRefusal = {
+      code: isServiceAuthorityError(error) ? error.code : isTerminalHandlerError(error) ? terminalCode(error) : reason.split(':')[0] || 'DENIED',
+      ...(details?.capability ? { capability: details.capability } : {}),
+      ...(details?.reason ? { reason: details.reason } : {}),
+      ...(details?.decisionId ? { decisionId: details.decisionId } : {}),
+      principalId: details?.principalId ?? principalId ?? job.principal?.principalId ?? 'anonymous',
+      message: reason,
+      refusedAt: this.now().toISOString(),
+    };
+    await this.jobStore.updateJob(job.tenantId, job.id, job.__version, { status: 'failed', lastError: reason, refusal });
     await this.auditSink.record({
       id: randomUUID(),
       type: 'job.denied',
@@ -512,8 +583,27 @@ export class JobService {
       principalId: job.principal?.principalId ?? 'anonymous',
       timestamp: this.now().toISOString(),
       result: 'failure',
-      details: { reason },
+      details: {
+        reason,
+        ...(isServiceAuthorityError(error) ? { code: error.code } : isTerminalHandlerError(error) ? { code: terminalCode(error) } : {}),
+        ...(details?.reason ? { authorizerReason: details.reason } : {}),
+        ...(details?.decisionId ? { decisionId: details.decisionId } : {}),
+        ...(job.runAs === 'service' ? { runAs: 'service' } : {}),
+      },
     });
+  }
+
+  /** The original job for a repeated idempotent enqueue, or CONFLICT when the input differs. */
+  private sameEnqueue(existing: Job, inputHash: string, key: string): Job {
+    if (existing.idempotencyKey === key && existing.inputHash === inputHash) return existing;
+    throw new ServiceAuthorityError('CONFLICT', `Idempotency key "${key}" was already used for a different ${existing.type} job`, { capability: 'jobs.create', reason: 'idempotency_conflict' });
+  }
+
+  private runAsOf(input: { readonly runAs?: unknown; readonly delegationId?: unknown }): JobRunAs {
+    if (input.runAs === undefined || input.runAs === 'creator') return 'creator';
+    if (input.runAs !== 'service') throw new ServiceAuthorityError('INVALID_REQUEST', 'runAs must be "creator" or "service"');
+    if (input.delegationId !== undefined) throw new ServiceAuthorityError('INVALID_REQUEST', 'delegationId does not apply to a job that runs as the service principal');
+    return 'service';
   }
 
   private async recordScheduleAudit(type: string, schedule: JobSchedule, principalId: string): Promise<void> {
@@ -555,8 +645,47 @@ export class JobService {
   }
 }
 
+/** A handler failure that retrying cannot fix: `JobTerminalError`, or an error coded FORBIDDEN / status 403. */
+function isTerminalHandlerError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || isServiceAuthorityError(error)) return false;
+  const candidate = error as { terminal?: unknown; code?: unknown; status?: unknown; statusCode?: unknown };
+  return candidate.terminal === true || candidate.code === 'FORBIDDEN' || candidate.status === 403 || candidate.statusCode === 403;
+}
+
+function terminalCode(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : 'FORBIDDEN';
+}
+
 function assertApplicationJobType(type: string): void {
   if (type.startsWith(SYSTEM_JOB_TYPE_PREFIX)) throw new Error(`Job type "${type}" is reserved for AppPort Services`);
+}
+
+function idempotencyKeyOf(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.length < 1 || value.length > 200 || /[\u0000-\u001f]/.test(value)) {
+    throw new ServiceAuthorityError('INVALID_REQUEST', 'idempotencyKey must be 1 to 200 printable characters');
+  }
+  return value;
+}
+
+/** Same scope (tenant, application, job type, key) → same job id: the store's conditional create makes the enqueue idempotent. */
+export function idempotentJobId(tenantId: string, applicationId: string, type: string, key: string): string {
+  return uuidFrom(`idempotent\u0000${tenantId}\u0000${applicationId}\u0000${type}\u0000${key}`);
+}
+
+function enqueueDigest(input: CreateJobInput): string {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value as object).sort().map((k) => [k, canonical((value as Record<string, unknown>)[k])])) : value;
+  return createHash('sha256').update(JSON.stringify(canonical({
+    type: input.type, payload: input.payload ?? null, runAt: input.runAt ?? null, maxAttempts: input.maxAttempts ?? null,
+    runAs: input.runAs === 'service' ? 'service' : 'creator', delegationId: input.delegationId ?? null,
+  }))).digest('hex');
+}
+
+function uuidFrom(seed: string): string {
+  const h = createHash('sha256').update(seed).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16]!, 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
 /** The job id for one tick of a schedule: the same for every processor, UUID-shaped (name-based, SHA-256). */

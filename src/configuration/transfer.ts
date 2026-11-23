@@ -46,7 +46,13 @@ export interface ConfigurationExportDocument {
 export interface ConfigurationExportVariable { readonly name: string; readonly value: string; readonly required: boolean }
 export interface ConfigurationExportSecret { readonly name: string; readonly required: boolean; readonly credentialRef: string }
 export interface ConfigurationExportWebhookEndpoint { readonly url: string; readonly events: readonly string[]; readonly signingCredentialRef?: string }
-export interface ConfigurationExportSchedule { readonly type: string; readonly interval: string; readonly payload: Record<string, unknown> }
+export interface ConfigurationExportSchedule {
+  readonly type: string;
+  readonly interval: string;
+  readonly payload: Record<string, unknown>;
+  /** `service`: the schedule's jobs run as the application's service principal (imported with `schedules.create.service`). Absent: as the importer. */
+  readonly runAs?: 'service';
+}
 
 export interface ConfigurationExportOptions {
   /** The verified caller. Reads are authorized as `configuration.read`, `webhooks.read` and `schedules.read`. */
@@ -139,7 +145,7 @@ export async function exportConfiguration(deps: ConfigurationTransferDependencie
       .map((endpoint) => ({ url: endpoint.url, events: [...endpoint.events].sort(), ...(endpoint.signingCredentialRef ? { signingCredentialRef: endpoint.signingCredentialRef } : {}) }))
       .sort(byKey((item) => item.url)),
     schedules: schedules.filter((schedule) => schedule.enabled)
-      .map((schedule) => ({ type: schedule.type, interval: schedule.interval, payload: payloadOf(schedule.payload) }))
+      .map((schedule) => ({ type: schedule.type, interval: schedule.interval, payload: payloadOf(schedule.payload), ...(schedule.runAs === 'service' ? { runAs: 'service' as const } : {}) }))
       .sort(byKey(scheduleKey)),
   };
 }
@@ -224,11 +230,13 @@ export async function importConfiguration(deps: ConfigurationTransferDependencie
     for (const schedule of document.schedules) {
       const key = scheduleKey(schedule);
       const sameSlot = schedules.filter((candidate) => scheduleKey(candidate) === key);
-      if (sameSlot.some((candidate) => stableJson(payloadOf(candidate.payload)) === stableJson(schedule.payload))) { await apply({ kind: 'schedule', key, action: 'unchanged' }, async () => undefined); continue; }
-      if (sameSlot.length === 0) { await apply({ kind: 'schedule', key, action: 'create' }, () => scheduler.create({ type: schedule.type, interval: schedule.interval, payload: schedule.payload }, principal)); continue; }
-      if (!overwrite) { await apply({ kind: 'schedule', key, action: 'conflict', reason: 'the target has this schedule with a different payload' }, async () => undefined); continue; }
+      const runAs = schedule.runAs === 'service' ? 'service' : 'creator';
+      const input = { type: schedule.type, interval: schedule.interval, payload: schedule.payload, ...(runAs === 'service' ? { runAs: 'service' as const } : {}) };
+      if (sameSlot.some((candidate) => stableJson(payloadOf(candidate.payload)) === stableJson(schedule.payload) && (candidate.runAs === 'service' ? 'service' : 'creator') === runAs)) { await apply({ kind: 'schedule', key, action: 'unchanged' }, async () => undefined); continue; }
+      if (sameSlot.length === 0) { await apply({ kind: 'schedule', key, action: 'create', ...(runAs === 'service' ? { reason: 'runs as the application service principal' } : {}) }, () => scheduler.create(input, principal)); continue; }
+      if (!overwrite) { await apply({ kind: 'schedule', key, action: 'conflict', reason: 'the target has this schedule with a different payload or runAs' }, async () => undefined); continue; }
       await apply({ kind: 'schedule', key, action: 'update', reason: 'creates the schedule and cancels the one it replaces' }, async () => {
-        await scheduler.create({ type: schedule.type, interval: schedule.interval, payload: schedule.payload }, principal);
+        await scheduler.create(input, principal);
         for (const replaced of sameSlot) await scheduler.disable(principal.tenantId, replaced.id, principal);
       });
     }
@@ -276,11 +284,15 @@ export function parseExportDocument(input: unknown): ConfigurationExportDocument
     const events = Array.isArray(entry.events) && entry.events.length && entry.events.every((event) => typeof event === 'string' && event) ? entry.events as string[] : fail(`webhookEndpoints[${index}].events must be a non-empty array of event names`);
     return { url: text(entry.url, `webhookEndpoints[${index}].url`), events, ...(entry.signingCredentialRef === undefined ? {} : { signingCredentialRef: ref(entry.signingCredentialRef, `webhookEndpoints[${index}].signingCredentialRef`) }) };
   });
-  const schedules = array('schedules').map((entry, index) => ({
-    type: text(entry.type, `schedules[${index}].type`),
-    interval: text(entry.interval, `schedules[${index}].interval`),
-    payload: entry.payload === undefined ? {} : isObject(entry.payload) ? entry.payload : fail(`schedules[${index}].payload must be an object`),
-  }));
+  const schedules = array('schedules').map((entry, index) => {
+    if (entry.runAs !== undefined && entry.runAs !== 'creator' && entry.runAs !== 'service') fail(`schedules[${index}].runAs must be "creator" or "service"`);
+    return {
+      type: text(entry.type, `schedules[${index}].type`),
+      interval: text(entry.interval, `schedules[${index}].interval`),
+      payload: entry.payload === undefined ? {} : isObject(entry.payload) ? entry.payload : fail(`schedules[${index}].payload must be an object`),
+      ...(entry.runAs === 'service' ? { runAs: 'service' as const } : {}),
+    };
+  });
   return {
     format: CONFIGURATION_EXPORT_FORMAT,
     formatVersion: CONFIGURATION_EXPORT_FORMAT_VERSION,
