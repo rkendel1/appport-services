@@ -1,7 +1,7 @@
 import { ServiceAuthorityError, ServiceMigrationError } from './errors.js';
 
 /** How the identity was established. None of these values grants authority. */
-export type PrincipalVerification = 'api_key' | 'host' | 'job' | 'delivery' | 'integration';
+export type PrincipalVerification = 'api_key' | 'host' | 'job' | 'delivery' | 'integration' | 'service';
 
 /**
  * An identity that an authentication path established. It says who is
@@ -21,6 +21,12 @@ export interface VerifiedPrincipal {
   readonly delegationId?: string;
   /** Durable run identity for job executions. */
   readonly runId?: string;
+  /**
+   * Set only on the application's service principal while it runs a job:
+   * the principal that enqueued the job (or created its schedule). Recorded in
+   * evidence and sent to AuthBoundry as `enqueued_by`. Never grants anything.
+   */
+  readonly enqueuedBy?: string;
   readonly verifiedBy: PrincipalVerification;
 }
 
@@ -59,6 +65,29 @@ export function mintVerifiedPrincipal(claims: PrincipalClaims, verifiedBy: Princ
   verified.add(principal);
   return principal;
 }
+
+/**
+ * @internal Only the gateway mints the application's service principal, for a
+ * job or schedule that was enqueued to run as the application. Its identity is
+ * the host-configured service principal id; AuthBoundry authorizes it as the
+ * application (`verified_by: "service"`), never as an administrator.
+ */
+export function mintServicePrincipal(input: { readonly principalId: string; readonly tenantId: string; readonly applicationId: string; readonly runId?: string; readonly enqueuedBy?: string }): VerifiedPrincipal {
+  const principal = mintVerifiedPrincipal({
+    principalId: input.principalId,
+    principalType: SERVICE_PRINCIPAL_TYPE,
+    tenantId: input.tenantId,
+    applicationId: input.applicationId,
+    ...(input.runId ? { runId: input.runId } : {}),
+  }, 'service');
+  if (!input.enqueuedBy) return principal;
+  const withEnqueuer = Object.freeze({ ...principal, enqueuedBy: input.enqueuedBy });
+  verified.add(withEnqueuer);
+  return withEnqueuer;
+}
+
+/** `principalType` of the application's service principal. */
+export const SERVICE_PRINCIPAL_TYPE = 'service';
 
 export function isVerifiedPrincipal(value: unknown): value is VerifiedPrincipal {
   return typeof value === 'object' && value !== null && verified.has(value);

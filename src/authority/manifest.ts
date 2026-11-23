@@ -45,11 +45,14 @@ const ENTRIES: readonly Entry[] = [
 
   ['jobs.read', 'jobs', 'listJobs', 'observation', 'job'],
   ['jobs.create', 'jobs', 'enqueue', 'consequential', 'job'],
+  // Enqueue a job that runs as the application's service principal (runAs: "service").
+  ['jobs.create.service', 'jobs', 'enqueue', 'consequential', 'job'],
   ['jobs.retry', 'jobs', 'retry', 'consequential', 'job'],
   ['jobs.execute', 'jobs', 'executeJob', 'consequential', 'job', false],
 
   ['schedules.read', 'schedules', 'list', 'observation', 'schedule'],
   ['schedules.create', 'schedules', 'create', 'consequential', 'schedule'],
+  ['schedules.create.service', 'schedules', 'create', 'consequential', 'schedule'],
   ['schedules.cancel', 'schedules', 'disable', 'consequential', 'schedule'],
 
   ['notifications.read', 'notifications', 'list', 'observation', 'notification'],
@@ -69,6 +72,10 @@ const ENTRIES: readonly Entry[] = [
   ['credential.detach', 'configuration', 'delete', 'consequential', 'credential'],
   ['credential.store', 'configuration', 'storeCredential', 'consequential', 'credential'],
   ['credential.status', 'configuration', 'credentialStatus', 'observation', 'credential'],
+  ['credential.remove', 'configuration', 'removeCredential', 'consequential', 'credential'],
+
+  ['connectors.read', 'connectors', 'list', 'observation', 'connector'],
+  ['connectors.request', 'connectors', 'request', 'consequential', 'connector'],
 
   ['intelligence.catalog', 'intelligence', 'catalog', 'observation', 'intelligence'],
   ['intelligence.read', 'intelligence', 'get', 'observation', 'intelligence'],
@@ -76,6 +83,9 @@ const ENTRIES: readonly Entry[] = [
   ['intelligence.credential.set', 'intelligence', 'setCredential', 'consequential', 'credential'],
   ['intelligence.credential.remove', 'intelligence', 'removeCredential', 'consequential', 'credential'],
   ['intelligence.resolve', 'intelligence', 'resolveRuntime', 'observation', 'intelligence', false],
+  ['intelligence.transcribe', 'intelligence', 'transcribe', 'consequential', 'intelligence'],
+  ['intelligence.embed', 'intelligence', 'embed', 'consequential', 'intelligence'],
+  ['intelligence.usage.read', 'intelligence', 'usage', 'observation', 'intelligence'],
 ];
 
 function freezeCapability([name, service, operation, effect, resource, invocable = true]: Entry): ServiceCapability {
