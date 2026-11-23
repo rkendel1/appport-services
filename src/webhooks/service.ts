@@ -195,6 +195,7 @@ export class WebhookService {
         const deliveries: WebhookDelivery[] = matching.map((endpoint) => ({
           id: randomUUID(),
           tenantId,
+          applicationId: context.application,
           endpointId: endpoint.id,
           eventId,
           eventType: input.type,
@@ -345,10 +346,17 @@ export class WebhookService {
     const endpoint = await this.endpointStore.get(delivery.endpointId);
     if (!endpoint || endpoint.disabledAt || endpoint.applicationId !== this.gateway().application) return null;
 
+    // A delivery that succeeded (or is being attempted) is not replayed: replaying it would send the event twice.
+    if (delivery.status === 'delivered' || delivery.status === 'delivering') {
+      throw new ServiceAuthorityError('INVALID_REQUEST', `Webhook delivery is ${delivery.status}; only a failed, pending or retrying delivery can be replayed`, { reason: `delivery_${delivery.status}` });
+    }
+
     return this.gateway().execute('webhooks.replay', principal,
-      { type: 'webhook_delivery', tenantId, id: delivery.id, attributes: { endpointId: endpoint.id } },
+      { type: 'webhook_delivery', tenantId, id: delivery.id, attributes: { endpointId: endpoint.id, ...(delivery.principal ? { owner: delivery.principal.principalId } : {}) } },
       { service: 'webhooks' },
-      async (context) => {
+      async () => {
+        // The delivery keeps its durable principal (who emitted the event): every attempt is still
+        // authorized as that principal. The replayer is recorded, never made the owner.
         const updated = await this.deliveryStore.updateDelivery(deliveryId, delivery.__version, {
           status: 'pending',
           attemptCount: 0,
@@ -357,7 +365,8 @@ export class WebhookService {
           deliveredAt: undefined,
           lastStatusCode: undefined,
           lastError: undefined,
-          principal: toDurablePrincipal(principal, undefined, context.authorization.decisionId),
+          replayedBy: principal.principalId,
+          replayedAt: this.now().toISOString(),
         });
         if (updated) {
           await this.audit({ type: 'webhook.delivery.replayed', deliveryId: updated.id, endpointId: updated.endpointId, tenantId, principalId: principal.principalId, result: 'success' });
@@ -735,7 +744,7 @@ function failureResult(error: unknown): WebhookDeliveryResult {
   const outcome = (error as { outcome?: WebhookDeliveryResult }).outcome;
   if (outcome) return outcome;
   if (isServiceAuthorityError(error)) {
-    const code = error.code === 'UNAUTHENTICATED' || error.code === 'NOT_FOUND' ? 'DENIED' : error.code === 'CUSTODY_READ_ONLY' ? 'AUTHORITY_UNAVAILABLE' : error.code;
+    const code = error.code === 'UNAUTHENTICATED' || error.code === 'NOT_FOUND' ? 'DENIED' : error.code === 'CUSTODY_READ_ONLY' ? 'AUTHORITY_UNAVAILABLE' : error.code === 'QUOTA_EXCEEDED' || error.code === 'CONFLICT' ? 'INVALID_REQUEST' : error.code;
     return { success: false, error: error.message, code };
   }
   return { success: false, error: error instanceof Error ? error.message : String(error), code: 'PROVIDER_ERROR' };

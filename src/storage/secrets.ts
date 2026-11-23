@@ -16,6 +16,17 @@ export interface SecretMetadataStore {
   recordStored(input: SecretStoredRecord): Promise<{ readonly created: boolean }>;
   /** Record a refused or failed store (no version). */
   recordFailure(input: SecretFailureRecord): Promise<void>;
+  /** Record that the material was removed from custody (`credential.remove`). Optional for older stores. */
+  recordRemoved?(input: SecretRemovedRecord): Promise<void>;
+}
+
+export interface SecretRemovedRecord {
+  readonly tenantId: string;
+  readonly secretId: string;
+  readonly provider?: string;
+  readonly removedAt: string;
+  readonly principalId: string;
+  readonly purpose: string;
 }
 
 export interface SecretStoredRecord {
@@ -95,6 +106,22 @@ export class FeltDbSecretMetadataStore implements SecretMetadataStore {
     };
     await this.audit.insert(event, event.id);
     return { created: !existing };
+  }
+
+  async recordRemoved(input: SecretRemovedRecord): Promise<void> {
+    const [existing] = await this.secrets.find({ tenantId: input.tenantId, name: input.secretId });
+    if (existing) {
+      await this.secrets.update(existing.id, { ...existing, status: 'revoked', revokedAt: input.removedAt });
+      for (const version of await this.versions.find({ secretId: existing.id, status: 'active' })) {
+        await this.versions.update(version.id, { ...version, status: 'revoked', revokedAt: input.removedAt });
+      }
+    }
+    const event: SecretAuditEvent = {
+      id: randomUUID(), type: 'secret.revoked', secretId: existing?.id ?? input.secretId, ...(existing ? { version: existing.currentVersion } : {}),
+      tenantId: input.tenantId, principalId: input.principalId, timestamp: input.removedAt, result: 'success', purpose: input.purpose,
+      ...(input.provider ? { provider: input.provider } : {}),
+    };
+    await this.audit.insert(event, event.id);
   }
 
   async recordFailure(input: SecretFailureRecord): Promise<void> {
