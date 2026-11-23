@@ -7,6 +7,7 @@ import type { JobService } from '../jobs/service.js';
 import type { NotificationService } from '../notifications/service.js';
 import type { ScheduleService } from '../schedules/service.js';
 import type { WebhookService } from '../webhooks/service.js';
+import type { ConnectorService } from '../connectors/service.js';
 import { ServiceAuthorityError } from '../authority/errors.js';
 import type { ServiceGateway } from '../authority/gateway.js';
 import { getServiceCapability } from '../authority/manifest.js';
@@ -22,6 +23,7 @@ export interface InvokableServices {
   readonly files?: FileService;
   readonly configuration?: ConfigurationService;
   readonly intelligence?: IntelligenceService;
+  readonly connectors?: ConnectorService;
 }
 
 export interface InvokeOptions {
@@ -58,6 +60,12 @@ export function ownedBy(application: string, value: unknown): unknown {
 function need<T>(service: T | undefined, name: string): T {
   if (!service) throw new ServiceAuthorityError('INVALID_REQUEST', `The ${name} capability is not enabled for this application`);
   return service;
+}
+
+function text(input: Input, field: string): string {
+  const value = input[field];
+  if (typeof value !== 'string' || !value) throw new ServiceAuthorityError('INVALID_REQUEST', `${field} is required`);
+  return value;
 }
 
 function id(input: Input): string {
@@ -101,10 +109,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   'jobs.read': (s, input, p) => { const jobs = need(s.jobs, 'jobs'); return observe(s, 'jobs.read', 'job', input, p, (t) => typeof input.id === 'string' ? jobs.getJob(t, input.id) : jobs.listJobs(t)); },
   'jobs.create': (s, input, p) => need(s.jobs, 'jobs').enqueue(input as never, p),
+  'jobs.create.service': (s, input, p) => need(s.jobs, 'jobs').enqueue({ ...input, runAs: 'service' } as never, p),
   'jobs.retry': (s, input, p) => need(s.jobs, 'jobs').retry(resolveTenant(input, p), id(input), p),
 
   'schedules.read': (s, input, p) => { const schedules = need(s.schedules, 'jobs'); return typeof input.id === 'string' ? schedules.get(resolveTenant(input, p), input.id, p) : schedules.list(resolveTenant(input, p), p, typeof input.createdBy === 'string' ? { createdBy: input.createdBy } : {}); },
   'schedules.create': (s, input, p) => need(s.schedules, 'jobs').create(input as never, p),
+  'schedules.create.service': (s, input, p) => need(s.schedules, 'jobs').create({ ...input, runAs: 'service' } as never, p),
   'schedules.cancel': (s, input, p) => need(s.schedules, 'jobs').disable(resolveTenant(input, p), id(input), p),
 
   'notifications.read': (s, input, p) => { const n = need(s.notifications, 'notifications'); return typeof input.id === 'string' ? n.get(resolveTenant(input, p), input.id, p) : n.list(resolveTenant(input, p), input as never, p); },
@@ -112,9 +122,39 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'notifications.update': (s, input, p) => { const n = need(s.notifications, 'notifications'); return input.action === 'dismiss' ? n.dismiss(resolveTenant(input, p), id(input), p) : n.markRead(resolveTenant(input, p), id(input), p); },
   'notifications.delete': (s, input, p) => need(s.notifications, 'notifications').delete(resolveTenant(input, p), id(input), p),
 
-  'files.read': (s, input, p) => { const f = need(s.files, 'files'); return typeof input.id === 'string' ? f.get(resolveTenant(input, p), input.id, p) : f.list(resolveTenant(input, p), p, typeof input.owner === 'string' ? { owner: input.owner } : {}); },
-  'files.write': (s, input, p) => { const f = need(s.files, 'files'); return typeof input.id === 'string' ? f.update(input as never, p) : f.create(input as never, p); },
-  'files.delete': (s, input, p) => need(s.files, 'files').delete(resolveTenant(input, p), id(input), p),
+  'files.read': async (s, input, p) => {
+    const f = need(s.files, 'files');
+    const tenant = resolveTenant(input, p);
+    switch (input.operation) {
+      case 'download': { const { file, bytes } = await f.download(tenant, id(input), p); return { file, dataBase64: Buffer.from(bytes).toString('base64') }; }
+      case 'presign-download': return f.createDownloadUrl(tenant, id(input), p, { ...(typeof input.expiresInSeconds === 'number' ? { expiresInSeconds: input.expiresInSeconds } : {}), ...(typeof input.filename === 'string' ? { filename: input.filename } : {}) });
+      case 'upload-status': return f.uploadStatus(tenant, text(input, 'uploadId'), p);
+      case 'usage': return f.usage(tenant, p);
+      case undefined: return typeof input.id === 'string' ? f.get(tenant, input.id, p) : f.list(tenant, p, typeof input.owner === 'string' ? { owner: input.owner } : {});
+      default: throw new ServiceAuthorityError('INVALID_REQUEST', 'Unknown files.read operation');
+    }
+  },
+  'files.write': (s, input, p) => {
+    const f = need(s.files, 'files');
+    const { operation, ...rest } = input;
+    switch (operation) {
+      case 'upload': return f.upload(rest as never, p);
+      case 'presign-upload': return f.createUploadUrl(rest as never, p);
+      case 'confirm-upload': return f.confirmUpload(resolveTenant(input, p), id(input), p);
+      case 'begin-upload': return f.beginUpload(rest as never, p);
+      case 'upload-part': return f.uploadPart(resolveTenant(input, p), text(input, 'uploadId'), Number(input.partNumber), text(input, 'dataBase64'), p);
+      case 'presign-part': return f.createPartUploadUrl(resolveTenant(input, p), text(input, 'uploadId'), Number(input.partNumber), p, typeof input.expiresInSeconds === 'number' ? { expiresInSeconds: input.expiresInSeconds } : {});
+      case 'complete-upload': return f.completeUpload(resolveTenant(input, p), text(input, 'uploadId'), p, Array.isArray(input.parts) ? { parts: input.parts as never } : {});
+      case 'abort-upload': return f.abortUpload(resolveTenant(input, p), text(input, 'uploadId'), p);
+      case undefined: return typeof input.id === 'string' ? f.update(input as never, p) : f.create(input as never, p);
+      default: throw new ServiceAuthorityError('INVALID_REQUEST', 'Unknown files.write operation');
+    }
+  },
+  'files.delete': (s, input, p) => {
+    const f = need(s.files, 'files');
+    if (input.operation === 'sweep') return f.sweep(resolveTenant(input, p), p, typeof input.limit === 'number' ? { limit: input.limit } : {});
+    return f.delete(resolveTenant(input, p), id(input), p);
+  },
 
   'configuration.read': (s, input, p) => need(s.configuration, 'configuration').list(input as never, p),
   'configuration.write': (s, input, p) => { const c = need(s.configuration, 'configuration'); return input.operation === 'update' ? c.updateVariable(input as never, p) : c.createVariable(input as never, p); },
@@ -124,6 +164,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'credential.detach': (s, input, p) => need(s.configuration, 'configuration').delete({ ...input, kind: 'secret' } as never, p),
   'credential.store': (s, input, p) => need(s.configuration, 'configuration').storeCredential(input as never, p),
   'credential.status': (s, input, p) => need(s.configuration, 'configuration').credentialStatus(input as never, p),
+  'credential.remove': (s, input, p) => need(s.configuration, 'configuration').removeCredential(input as never, p),
+
+  'connectors.read': (s, input, p) => need(s.connectors, 'connectors').list(input as never, p),
+  'connectors.request': (s, input, p) => {
+    const { bodyBase64, ...rest } = input;
+    return need(s.connectors, 'connectors').request({ ...rest, ...(typeof bodyBase64 === 'string' ? { body: new Uint8Array(Buffer.from(bodyBase64, 'base64')) } : {}) } as never, p);
+  },
 
   'intelligence.catalog': (s, input, p) => need(s.intelligence, 'intelligence').catalog(input as never, p),
   'intelligence.read': (s, input, p) => need(s.intelligence, 'intelligence').get(input as never, p),
@@ -131,4 +178,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'intelligence.credential.set': (s, input, p) => need(s.intelligence, 'intelligence').setCredential(input as never, p),
   'intelligence.credential.remove': (s, input, p) => need(s.intelligence, 'intelligence').removeCredential(input as never, p),
   'intelligence.resolve': (s, input, p) => need(s.intelligence, 'intelligence').resolveRuntime(input as never, p),
+  'intelligence.transcribe': (s, input, p) => need(s.intelligence, 'intelligence').transcribe(input as never, p),
+  'intelligence.embed': (s, input, p) => need(s.intelligence, 'intelligence').embed(input as never, p),
+  'intelligence.usage.read': (s, input, p) => need(s.intelligence, 'intelligence').usage(input as never, p),
 };

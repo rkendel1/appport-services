@@ -8,6 +8,7 @@ export type CapabilityCatalogId =
   | 'configuration'
   | 'credentials'
   | 'intelligence'
+  | 'connectors'
   | 'secrets'
   | 'runtime-events';
 
@@ -47,7 +48,7 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     id: 'jobs',
     name: 'Jobs',
     contractVersion: 1,
-    operations: Object.freeze(['create', 'read', 'execute', 'retry']),
+    operations: Object.freeze(['create', 'createAsService', 'read', 'execute', 'retry']),
     durable: true,
     async: true,
     dependencies: Object.freeze(['ServiceGateway', 'FeltDB']),
@@ -56,7 +57,7 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     id: 'schedules',
     name: 'Schedules',
     contractVersion: 1,
-    operations: Object.freeze(['create', 'read', 'cancel', 'materialize']),
+    operations: Object.freeze(['create', 'createAsService', 'read', 'cancel', 'materialize']),
     durable: true,
     async: true,
     dependencies: Object.freeze(['jobs', 'ServiceGateway', 'FeltDB']),
@@ -74,7 +75,7 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     id: 'files',
     name: 'Files',
     contractVersion: 1,
-    operations: Object.freeze(['create', 'read', 'update', 'delete']),
+    operations: Object.freeze(['create', 'read', 'update', 'delete', 'upload', 'download', 'presign', 'resumableUpload', 'usage', 'sweep']),
     durable: true,
     async: false,
     dependencies: Object.freeze(['ServiceGateway', 'FeltDB']),
@@ -92,7 +93,7 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     id: 'credentials',
     name: 'Credentials',
     contractVersion: 1,
-    operations: Object.freeze(['attach', 'rotate', 'detach', 'store', 'status']),
+    operations: Object.freeze(['attach', 'rotate', 'detach', 'store', 'status', 'remove']),
     durable: true,
     async: false,
     dependencies: Object.freeze(['configuration', 'ServiceGateway', 'FeltDB', 'SecretCustody']),
@@ -101,10 +102,19 @@ const DESCRIPTORS: Readonly<Record<CapabilityCatalogId, Descriptor>> = Object.fr
     id: 'intelligence',
     name: 'Intelligence',
     contractVersion: 1,
-    operations: Object.freeze(['catalog', 'read', 'write', 'credential.set', 'credential.remove', 'resolve']),
+    operations: Object.freeze(['catalog', 'read', 'write', 'credential.set', 'credential.remove', 'resolve', 'transcribe', 'embed', 'usage']),
     durable: true,
     async: false,
     dependencies: Object.freeze(['configuration', 'ServiceGateway', 'FeltDB']),
+  }),
+  connectors: Object.freeze({
+    id: 'connectors',
+    name: 'Connectors',
+    contractVersion: 1,
+    operations: Object.freeze(['read', 'request']),
+    durable: false,
+    async: false,
+    dependencies: Object.freeze(['ServiceGateway', 'ScopedSecretsResolver']),
   }),
   secrets: Object.freeze({
     id: 'secrets',
