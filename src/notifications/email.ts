@@ -35,11 +35,12 @@ export interface EmailChannelOptions {
   /** Sender identity for every message. Default `"system"`. */
   readonly identity?: string;
   /**
-   * The address for a notification's recipient (a principal id). Notifications
-   * address principals, never raw addresses, so the host maps one to the other.
-   * `null`: the recipient has no address, and the delivery fails without retry.
+   * The address for a notification's recipient (a principal id): the host maps
+   * principals to addresses. Not consulted for a notification addressed to a
+   * contact (`contact.email`), which is delivered to that address. `null` or
+   * absent: the recipient has no address, and the delivery fails without retry.
    */
-  address(notification: Notification): string | null | Promise<string | null>;
+  address?(notification: Notification): string | null | Promise<string | null>;
   /**
    * The message for a notification. Default: the title as subject, the body as
    * text. A host renders here what must not be stored in the notification,
@@ -61,7 +62,7 @@ export class EmailNotificationChannel implements NotificationChannel {
   constructor(private readonly options: EmailChannelOptions) {}
 
   async deliver(notification: Notification, delivery: NotificationDelivery): Promise<NotificationDeliveryResult> {
-    const to = await this.options.address(notification);
+    const to = notification.contact?.email ?? (notification.contact ? null : await this.options.address?.(notification) ?? null);
     if (!to || !ADDRESS.test(to)) return { status: 'failed', reason: 'no_email_address', retryable: false };
     const content = this.options.render
       ? await this.options.render(notification, delivery)

@@ -4,3 +4,5 @@ export * from './channels.js';
 export * from './email.js';
 export { assertNoCredentials, isSensitiveKey, isSensitiveValue } from './sensitive.js';
 export { createNotificationRouter, notificationErrorHandler, notificationListOptions } from './http.js';
+export * from './push.js';
+export { RecordingEmailTransport, RecordingPushTransport } from './testing.js';

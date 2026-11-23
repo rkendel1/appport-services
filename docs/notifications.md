@@ -349,3 +349,23 @@ AppPort Services does not yet have a principal or user preference resource, so t
 notification preference model. When one exists, notification preferences (enabled channels,
 channel-specific settings, quiet hours) belong on it. Importance ("healthcare matters more than
 shopping") will never live here; it belongs to the application and to Attn.
+
+## Recipients who are not users (0.21.0)
+
+A guest or invitee has no principal. Address them with `contact` instead of `recipient`:
+
+```ts
+await services.notifications.notify({ contact: { email: 'guest@example.com', name: 'Guest' }, type: 'meeting.invite', title: 'You are invited', channels: ['email'] }, host);
+await services.notifications.notify({ contact: { device: pushSubscriptionId }, type: 'meeting.reminder', title: 'Starting soon', channels: ['push'] }, host);
+```
+
+- The notification's `recipient` is `contact:<digest of the address>` and `contact` is stored with it
+  (retries deliver to the same address). `notifications.send` is authorized with the attributes
+  `recipientKind: "contact"` and `contactChannels` (`email`, `push`), so policy can allow or refuse
+  messages to non-users separately. A plain `recipient` may not start with `contact:`.
+- `EmailNotificationChannel` delivers to `contact.email` (its `address()` lookup is now optional and is
+  used only for principals). `PushNotificationChannel({ transport, devices?, render? })` delivers to
+  `contact.device`, or to the devices `devices(notification)` returns for a principal.
+- Transports are the host's: `EmailTransport.send(message)` (Mailerport-shaped) and
+  `PushTransport.send({ device, title, body?, data, idempotencyKey })`. No vendor is built in.
+  `RecordingEmailTransport` and `RecordingPushTransport` record messages for tests and local development.

@@ -17,12 +17,31 @@ export interface NotificationSource {
   readonly eventId?: string;
 }
 
+/**
+ * How to reach a recipient who is not a user of the application (a guest, an
+ * invitee): an e-mail address and/or a push device. A notification with a
+ * contact is addressed to `contact:<digest>` (no principal), and the e-mail and
+ * push channels deliver to the contact directly.
+ */
+export interface NotificationContact {
+  readonly email?: string;
+  /** A push device or subscription identifier, as the host's push transport understands it. */
+  readonly device?: string;
+  /** Display name, for the message. */
+  readonly name?: string;
+}
+
+/** Prefix of the recipient of a notification addressed to a contact (not a principal). */
+export const CONTACT_RECIPIENT_PREFIX = 'contact:';
+
 export interface Notification {
   readonly id: string;
   readonly tenantId: string;
   /** Owning application. Records without one (created before application scoping) are not served. */
   readonly applicationId?: string;
   readonly recipient: string;
+  /** Set when the recipient is not a principal: where e-mail and push deliver. */
+  readonly contact?: NotificationContact;
   readonly type: string;
   readonly title: string;
   readonly body?: string;
@@ -98,7 +117,10 @@ export interface NotificationAuditEvent {
 export interface CreateNotificationInput {
   /** Optional; must equal the caller's tenant. */
   readonly tenantId?: string;
-  readonly recipient: string;
+  /** A principal id. Optional with `contact`: the recipient is then `contact:<digest of the address>`. */
+  readonly recipient?: string;
+  /** Reach a non-user directly (e-mail address, push device). Authorized with `recipientKind: "contact"`. */
+  readonly contact?: NotificationContact;
   readonly type: string;
   readonly title: string;
   readonly body?: string;
