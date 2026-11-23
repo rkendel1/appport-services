@@ -56,6 +56,27 @@ export interface CredentialStatusInput {
   readonly applicationId?: string;
 }
 
+/** `credential.remove` input. */
+export interface CredentialRemoveInput {
+  readonly ref: string;
+  readonly provider?: string;
+  readonly kind?: string;
+  /** Also detach this configuration binding (`credential.detach`) when it points at `ref`. */
+  readonly name?: string;
+  readonly environment?: ConfigurationScope['environment'];
+  readonly tenantId?: string;
+  readonly applicationId?: string;
+}
+
+/** `credential.remove` result. */
+export interface CredentialRemoveResult {
+  readonly ref: CredentialRef;
+  readonly removed: true;
+  readonly removedAt: string;
+  /** The binding name detached with it, when `name` was given and pointed at `ref`. */
+  readonly detached?: string;
+}
+
 /** One reference's custody status. Never the value. */
 export interface CredentialStatusView extends SecretCustodyStatus {
   readonly ref: CredentialRef;
@@ -247,6 +268,44 @@ export class ConfigurationService {
         async (_context, tools) => ({ ref, ...await tools.credentialStatus(ref, { purpose: 'credential.status', ...(provider ? { provider } : {}) }) })));
     }
     return results;
+  }
+
+  /**
+   * Remove a credential's material from the host's custody (`credential.remove`,
+   * consequential, audited): `SecretCustody.remove` is called inside the
+   * authorized effect, evidence records the reference, and the value-free secret
+   * metadata marks the secret and its versions revoked (`secret.revoked`).
+   * With `name`, the binding is detached too when it points at `ref`
+   * (authorized separately as `credential.detach` before anything is removed).
+   * Refuses with CUSTODY_READ_ONLY when the custody cannot remove.
+   */
+  async removeCredential(input: CredentialRemoveInput, caller: AuthenticatedPrincipal): Promise<CredentialRemoveResult> {
+    if (!input || typeof input !== 'object') throw new ServiceAuthorityError('INVALID_REQUEST', 'credential.remove input must be an object');
+    rejectRawSecret(input);
+    const ref = requireCredentialRef(input.ref, 'ref');
+    const provider = optionalLabel(input.provider, 'provider');
+    const kind = optionalLabel(input.kind, 'kind');
+    if (input.name !== undefined) validateName(input.name);
+    const { principal, owned } = this.own({ ...input, environment: input.environment ?? 'production' }, caller);
+    const gateway = this.gateway();
+    return gateway.execute('credential.remove', principal, resource(owned, input.name, 'credential', ref), { service: 'configuration', credentialRef: ref, ...(provider ? { provider } : {}) }, async (_context, tools) => {
+      const binding = input.name !== undefined ? await this.options.store.getSecret(owned, input.name) : null;
+      const detach = binding && binding.credentialRef === ref ? binding : null;
+      const detachContext = detach ? await gateway.authorize('credential.detach', principal, resource(owned, detach.name, 'credential')) : undefined;
+      await tools.removeCredential(ref, { purpose: 'credential.remove', ...(provider ? { provider } : {}), ...(kind ? { kind } : {}) });
+      const removedAt = this.now().toISOString();
+      await this.options.secretMetadata?.recordRemoved?.({
+        tenantId: owned.tenantId, secretId: ref.slice('credential-ref:'.length), ...(provider ? { provider } : {}),
+        removedAt, principalId: principal.principalId, purpose: 'credential.remove',
+      });
+      if (detach && detachContext) {
+        await gateway.run(detachContext, { service: 'configuration' }, async () => {
+          await this.options.store.deleteSecret(detach);
+          await this.record('secret.deleted', detach, 'secret', principal.principalId, 'deleted', 'deleted');
+        });
+      }
+      return { ref, removed: true as const, removedAt, ...(detach ? { detached: detach.name } : {}) };
+    });
   }
 
   /** Create or re-point a binding; the caller has already authorized the change. */

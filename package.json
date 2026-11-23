@@ -1,6 +1,6 @@
 {
   "name": "@appport/services",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "API keys, durable webhooks, background jobs, and provider-neutral secrets for AppPort applications",
   "type": "module",
   "exports": {
@@ -33,6 +33,8 @@
     "docs/capability-authority.md",
     "docs/management.md",
     "docs/notifications.md",
+    "docs/files.md",
+    "docs/connectors.md",
     "docs/health.md",
     "docs/feedback-store.md",
     "CHANGELOG.md",

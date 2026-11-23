@@ -14,7 +14,11 @@ export type ServiceFailureCode =
   | 'UNAUTHENTICATED'
   | 'NOT_FOUND'
   /** The host's credential custody cannot store values (resolver-only, or `status().writable` is false). */
-  | 'CUSTODY_READ_ONLY';
+  | 'CUSTODY_READ_ONLY'
+  /** A per-tenant quota would be exceeded; nothing was written. */
+  | 'QUOTA_EXCEEDED'
+  /** The request conflicts with existing state (for example an idempotency key reused with different input). */
+  | 'CONFLICT';
 
 const STATUS: Readonly<Record<ServiceFailureCode, number>> = {
   DENIED: 403,
@@ -25,6 +29,8 @@ const STATUS: Readonly<Record<ServiceFailureCode, number>> = {
   UNAUTHENTICATED: 401,
   NOT_FOUND: 404,
   CUSTODY_READ_ONLY: 409,
+  QUOTA_EXCEEDED: 413,
+  CONFLICT: 409,
 };
 
 export class ServiceAuthorityError extends Error {
@@ -33,7 +39,7 @@ export class ServiceAuthorityError extends Error {
   constructor(
     readonly code: ServiceFailureCode,
     message: string,
-    readonly details: { readonly capability?: string; readonly decisionId?: string; readonly reason?: string } = {},
+    readonly details: { readonly capability?: string; readonly decisionId?: string; readonly reason?: string; readonly principalId?: string } = {},
   ) {
     super(message);
     this.name = 'ServiceAuthorityError';

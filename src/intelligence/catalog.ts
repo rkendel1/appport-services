@@ -21,21 +21,27 @@ export interface IntelligenceProvider {
   readonly endpoints: readonly IntelligenceEndpoint[];
   readonly customEndpoint: boolean;
   readonly credential: CredentialRequirement;
+  /**
+   * What the provider can be configured for: `chat` (executed by the host's
+   * model executor), `transcription` and `embeddings` (executed by
+   * `intelligence.transcribe` / `intelligence.embed` through a provider adapter).
+   */
+  readonly modalities: readonly ('chat' | 'transcription' | 'embeddings')[];
 }
 
 const frozen = <T extends object>(value: T): T => Object.freeze(value);
-const provider = (value: IntelligenceProvider): IntelligenceProvider => frozen({ ...value, models: frozen([...value.models].map(frozen)), endpoints: frozen([...value.endpoints].map(frozen)) });
+const provider = (value: IntelligenceProvider): IntelligenceProvider => frozen({ ...value, models: frozen([...value.models].map(frozen)), endpoints: frozen([...value.endpoints].map(frozen)), modalities: frozen([...value.modalities]) });
 
 export const CUSTOM_PROVIDER_ID = 'custom';
 
 export const INTELLIGENCE_CATALOG: readonly IntelligenceProvider[] = frozen([
   provider({
-    id: 'openai', displayName: 'OpenAI', protocol: 'openai', modelSelection: 'free', credential: 'required', customEndpoint: false,
+    id: 'openai', displayName: 'OpenAI', protocol: 'openai', modelSelection: 'free', credential: 'required', customEndpoint: false, modalities: ['chat', 'transcription', 'embeddings'],
     models: [{ id: 'gpt-4o', displayName: 'GPT-4o' }, { id: 'gpt-4o-mini', displayName: 'GPT-4o mini' }],
     endpoints: [{ id: 'default', displayName: 'Default', url: 'https://api.openai.com/v1' }],
   }),
   provider({
-    id: 'anthropic', displayName: 'Anthropic', protocol: 'anthropic', modelSelection: 'catalog', credential: 'required', customEndpoint: false,
+    id: 'anthropic', displayName: 'Anthropic', protocol: 'anthropic', modelSelection: 'catalog', credential: 'required', customEndpoint: false, modalities: ['chat'],
     models: [
       { id: 'claude-fable-5-1', displayName: 'Claude Fable 5.1' },
       { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5' },
@@ -45,15 +51,15 @@ export const INTELLIGENCE_CATALOG: readonly IntelligenceProvider[] = frozen([
     endpoints: [{ id: 'default', displayName: 'Default', url: 'https://api.anthropic.com' }],
   }),
   provider({
-    id: 'opencode', displayName: 'OpenCode', protocol: 'openai-compatible', modelSelection: 'free', credential: 'required', customEndpoint: true,
+    id: 'opencode', displayName: 'OpenCode', protocol: 'openai-compatible', modelSelection: 'free', credential: 'required', customEndpoint: true, modalities: ['chat'],
     models: [], endpoints: [{ id: 'default', displayName: 'Default', url: 'https://opencode.ai/zen/v1' }],
   }),
   provider({
-    id: 'ollama', displayName: 'Ollama (local)', protocol: 'openai-compatible', modelSelection: 'free', credential: 'optional', customEndpoint: true,
+    id: 'ollama', displayName: 'Ollama (local)', protocol: 'openai-compatible', modelSelection: 'free', credential: 'optional', customEndpoint: true, modalities: ['chat', 'embeddings'],
     models: [], endpoints: [{ id: 'default', displayName: 'Local', url: 'http://localhost:11434/v1' }],
   }),
   provider({
-    id: CUSTOM_PROVIDER_ID, displayName: 'Custom (OpenAI-compatible)', protocol: 'openai-compatible', modelSelection: 'free', credential: 'optional', customEndpoint: true,
+    id: CUSTOM_PROVIDER_ID, displayName: 'Custom (OpenAI-compatible)', protocol: 'openai-compatible', modelSelection: 'free', credential: 'optional', customEndpoint: true, modalities: ['chat', 'transcription', 'embeddings'],
     models: [], endpoints: [],
   }),
 ]);

@@ -31,6 +31,8 @@ export interface ServiceAuthorizationRequest {
     readonly delegation_id?: string;
     readonly run_id?: string;
     readonly credential_id?: string;
+    /** Present when the subject is the application's service principal running a job: who enqueued it. */
+    readonly enqueued_by?: string;
     readonly verified_by: string;
   };
 }

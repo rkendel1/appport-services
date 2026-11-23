@@ -7,7 +7,14 @@ import type { ServiceAuthorizer } from '../authority/authorizer.js';
 import type { ServiceExecutionContext, ServiceResource } from '../authority/context.js';
 import type { WebhookDestinationPolicy } from '../authority/destination.js';
 import { FeltDbEffectEvidenceStore, createEvidenceReader, type EffectEvidenceReader } from '../authority/evidence.js';
-import { ServiceGateway } from '../authority/gateway.js';
+import { ServiceGateway, type ServicePrincipalOptions } from '../authority/gateway.js';
+import { ConnectorService, type ConnectorDefinition } from '../connectors/service.js';
+import { readCredentialBindings, type CredentialBindingsOptions, type CredentialBindingsResult } from '../configuration/bindings.js';
+import { FeltDbObjectStore, type FileObjectStore } from '../files/objects.js';
+import { FeltDbFileUploadStore, FeltDbFileUsageStore } from '../files/uploads.js';
+import type { FileQuotaPolicy } from '../files/service.js';
+import type { IntelligenceProviderAdapter } from '../intelligence/providers.js';
+import { FeltDbIntelligenceUsageStore, type IntelligencePrice } from '../intelligence/usage.js';
 import { SERVICE_CAPABILITY_MANIFEST, type ServiceCapability } from '../authority/manifest.js';
 import { defineServicesExtensions, extensionCapabilities, registerServicesExtension, type RegisteredServicesExtension, type ServicesExtension } from '../extensions/extension.js';
 import { requireVerifiedPrincipal, type PrincipalClaims, type VerifiedPrincipal } from '../authority/principal.js';
@@ -48,6 +55,8 @@ export interface AppPortServices {
   readonly notifications: NotificationService;
   readonly files: FileService;
   readonly schedules: ScheduleService;
+  /** Outbound HTTP through the gateway (`connectors.request`), to the hosts the host's connectors allow. */
+  readonly connectors: ConnectorService;
   /** The Policy Enforcement Point every service effect passes through. */
   readonly gateway: ServiceGateway;
   /** The registered management extensions, bound to this instance (empty without any). */
@@ -79,6 +88,14 @@ export interface AppPortServices {
    * only, never records. See docs/health.md.
    */
   health(options?: ServiceHealthOptions): Promise<AppPortServicesHealth>;
+
+  /**
+   * Credential binding names and their references (`credential-ref:<id>`), for
+   * a host that checks them against its own custody. A trusted, in-process
+   * host API like `health()`: not authorized per caller, writes no evidence,
+   * returns no counts and no material. One bounded query.
+   */
+  credentialBindings(options?: CredentialBindingsOptions): Promise<CredentialBindingsResult>;
 
   /** The safe service API: AuthBoundry authorizes, then the effect runs. */
   invoke(capability: string, input: Record<string, unknown>, options: { readonly principal: VerifiedPrincipal }): Promise<unknown>;
@@ -159,6 +176,34 @@ export interface CreateServicesOptions extends FeltDBOptions {
    * second Services instance, database or authorizer is created for them.
    */
   extensions?: readonly ServicesExtension[];
+  /**
+   * The application's service principal (`{ principalId: 'service:<app>' }`). Jobs and schedules
+   * enqueued with `runAs: "service"` (capabilities `jobs.create.service`, `schedules.create.service`)
+   * run as it, authorized by AuthBoundry as the application, instead of as the principal that
+   * enqueued them. Without it, service-run work is refused. Creator-scoped jobs stay the default.
+   */
+  servicePrincipal?: ServicePrincipalOptions;
+  /** Outbound HTTP integrations the host trusts (`services.connectors`, `connectors.request`). */
+  connectors?: readonly ConnectorDefinition[];
+  /**
+   * Destination policy for connectors, intelligence providers and object-store calls. Trusted host
+   * code only (local development, tests). Defaults to `webhookDestinationPolicy`.
+   */
+  outboundDestinationPolicy?: WebhookDestinationPolicy;
+  /** File bytes, uploads, quotas. */
+  files?: {
+    /** Where bytes live. Default: `FeltDbObjectStore` on the services' FeltDB instance. `false`: metadata only. */
+    readonly objectStore?: FileObjectStore | false;
+    /** Per-tenant quota (fixed, or looked up per tenant). Enforced before every write. */
+    readonly quota?: FileQuotaPolicy;
+    readonly presignExpiresSeconds?: number;
+    readonly uploadExpiresSeconds?: number;
+    readonly partSize?: number;
+  };
+  /** Speech-to-text and embedding provider adapters, beside the built-in OpenAI-compatible one. */
+  intelligenceProviders?: readonly IntelligenceProviderAdapter[];
+  /** Prices for intelligence usage metering. */
+  intelligencePrices?: readonly IntelligencePrice[];
 }
 
 /**
@@ -180,7 +225,12 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
 
   // Create one FeltDB runtime shared by all services
   // Extract FeltDB options (exclude config)
-  const { config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, configurationDeclarations, notificationChannels, extensions: extensionInput, ...feltdbOptions } = options;
+  const {
+    config: _unused, application, authorizer, credentials, authorizationTimeoutMs, webhookDestinationPolicy, apiKeyVerifierKey, configurationDeclarations, notificationChannels,
+    extensions: extensionInput, servicePrincipal, connectors, outboundDestinationPolicy, files: filesOptions, intelligenceProviders, intelligencePrices, trustedLocalJobs: _trustedLocalJobs,
+    ...feltdbOptions
+  } = options;
+  const outboundPolicy = outboundDestinationPolicy ?? webhookDestinationPolicy;
   // Validated before anything is opened: a bad declaration never leaves a half-built host.
   const extensions = defineServicesExtensions(extensionInput ?? []);
   const extensionManifest = extensions.flatMap(extensionCapabilities);
@@ -194,6 +244,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     evidence: evidenceStore,
     authorizationTimeoutMs,
     ...(extensionManifest.length ? { extensionCapabilities: extensionManifest } : {}),
+    ...(servicePrincipal ? { servicePrincipal } : {}),
   });
   const authority = authorizer || credentials ? gateway : undefined;
 
@@ -234,7 +285,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     secretMetadata: new FeltDbSecretMetadataStore(db),
     ...(authority ? { authority } : {}),
   });
-  const intelligenceService = new IntelligenceService({ store: configurationStore, ...(authority ? { authority } : {}) });
+  const objectStore = filesOptions?.objectStore === false ? undefined : filesOptions?.objectStore ?? new FeltDbObjectStore(db);
   const notificationService = new NotificationService({
     store: new FeltDbNotificationStore(db),
     deliveryStore: new FeltDbNotificationDeliveryStore(db),
@@ -247,6 +298,30 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     store: new FeltDbFileStore(db),
     auditSink: new FeltDbFileAuditSink(db),
     ...(authority ? { authority } : {}),
+    ...(objectStore ? { objectStore, uploads: new FeltDbFileUploadStore(db) } : {}),
+    usage: new FeltDbFileUsageStore(db),
+    ...(filesOptions?.quota ? { quota: filesOptions.quota } : {}),
+    ...(outboundPolicy ? { destinationPolicy: outboundPolicy } : {}),
+    ...(filesOptions?.presignExpiresSeconds ? { presignExpiresSeconds: filesOptions.presignExpiresSeconds } : {}),
+    ...(filesOptions?.uploadExpiresSeconds ? { uploadExpiresSeconds: filesOptions.uploadExpiresSeconds } : {}),
+    ...(filesOptions?.partSize ? { partSize: filesOptions.partSize } : {}),
+  });
+  const intelligenceService = new IntelligenceService({
+    store: configurationStore,
+    ...(authority ? { authority } : {}),
+    usage: new FeltDbIntelligenceUsageStore(db),
+    ...(intelligenceProviders?.length ? { providers: intelligenceProviders } : {}),
+    ...(intelligencePrices?.length ? { prices: intelligencePrices } : {}),
+    ...(outboundPolicy ? { destinationPolicy: outboundPolicy } : {}),
+    ...(objectStore ? { files: async (tenantId, fileId, caller) => {
+      const { file, bytes } = await fileService.download(tenantId, fileId, caller);
+      return { bytes, name: file.name, ...(file.contentType ? { contentType: file.contentType } : {}) };
+    } } : {}),
+  });
+  const connectorService = new ConnectorService({
+    ...(connectors?.length ? { connectors } : {}),
+    ...(authority ? { authority } : {}),
+    ...(outboundPolicy ? { destinationPolicy: outboundPolicy } : {}),
   });
   const invokable = {
     gateway,
@@ -258,6 +333,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
     notifications: notificationService,
     files: fileService,
     schedules: scheduleService,
+    connectors: connectorService,
   };
 
   const services: AppPortServices = {
@@ -275,6 +351,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
       configuration: true,
       credentials: true,
       intelligence: true,
+      connectors: true,
       secrets: false,
       'runtime-events': false,
     }),
@@ -291,6 +368,7 @@ export function createServices(options: CreateServicesOptions = {}): AppPortServ
       ...(isSecretCustody(credentials) ? { custody: credentials } : {}),
       declarations: configurationService.declarations,
     }, healthOptions),
+    credentialBindings: (bindingOptions) => readCredentialBindings(db, gateway.application, bindingOptions),
     invoke: (capability, input, invokeOptions) => invokeService(invokable, capability, input, invokeOptions),
     authorize: (capability, principal, resource) => {
       const verified = requireVerifiedPrincipal(principal);

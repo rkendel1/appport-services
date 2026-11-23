@@ -180,6 +180,44 @@ export type {
 } from './notifications/index.js';
 export type { File, FileAuditEvent, CreateFileInput, UpdateFileInput, FileReferences, FileReferenceOptions } from './files/index.js';
 export type { Schedule, CreateScheduleInput } from './schedules/index.js';
+
+// 0.21.0: service principal jobs, file bytes and object storage, intelligence execution and metering,
+// outbound connectors, contact notifications, credential removal and binding references.
+export type { JobRunAs } from './jobs/index.js';
+export { JobTerminalError } from './jobs/index.js';
+export type { ServicePrincipalOptions } from './authority/gateway.js';
+export { SERVICE_PRINCIPAL_TYPE } from './authority/principal.js';
+export { sendOutboundRequest, DEFAULT_OUTBOUND_TIMEOUT_MS, DEFAULT_OUTBOUND_MAX_RESPONSE_BYTES } from './authority/outbound.js';
+export type { OutboundHttpRequest, OutboundHttpResponse } from './authority/outbound.js';
+export {
+  FileQuotaExceededError, MAX_INLINE_UPLOAD_BYTES, MAX_UPLOAD_PARTS,
+  FeltDbObjectStore, DEFAULT_FELTDB_CHUNK_BYTES, S3ObjectStore, FeltDbFileUploadStore, FeltDbFileUsageStore,
+  signAwsRequest, presignAwsUrl, verifyAwsSignature, sha256Hex,
+} from './files/index.js';
+export type {
+  FileServiceOptions, FileQuotaPolicy, FileBytesInput, UploadFileInput, CreateUploadUrlInput, BeginUploadInput, FileUploadView, FileUsageView, FileSweepResult,
+  FileObjectStore, ObjectStoreContext, PresignedRequest, ObjectPart, S3ObjectStoreOptions,
+  FileUpload, FileUploadStatus, FileUploadStore, FileUsage, FileUsageStore, FileQuota,
+  SigV4Credentials, SigV4Scope, SigV4Signature, SignRequestInput, PresignInput,
+} from './files/index.js';
+export {
+  OpenAICompatibleProvider, INTELLIGENCE_MODALITIES, INTELLIGENCE_CONFIGURATION_NAMES, INTELLIGENCE_SELECTION_NAME, INTELLIGENCE_CREDENTIAL_NAME,
+  MAX_TRANSCRIPTION_BYTES, MAX_EMBEDDING_INPUTS, MAX_EMBEDDING_INPUT_LENGTH, FeltDbIntelligenceUsageStore, INTELLIGENCE_USAGE_EXAMINATION_LIMIT,
+} from './intelligence/index.js';
+export type {
+  IntelligenceModality, IntelligenceProviderAdapter, IntelligenceProviderIO, TranscriptionRequest, TranscriptionResult, TranscriptionSegment,
+  EmbeddingRequest, EmbeddingResult, TranscribeInput, TranscribeResult, EmbedInput, EmbedResult, IntelligenceCallUsage, IntelligenceUsageQuery,
+  IntelligenceUsageRecord, IntelligenceUsageStore, IntelligenceUsageSummary, IntelligenceUsageTotal, IntelligenceUsageUnit, IntelligencePrice,
+  IntelligenceServiceOptions, IntelligenceFileReader,
+} from './intelligence/index.js';
+export { ConnectorService } from './connectors/index.js';
+export type { ConnectorAuth, ConnectorDefinition, ConnectorView, ConnectorRequestInput, ConnectorResponse, ConnectorServiceOptions } from './connectors/index.js';
+export { PushNotificationChannel, RecordingEmailTransport, RecordingPushTransport, CONTACT_RECIPIENT_PREFIX, contactRecipient, normalizeContact } from './notifications/index.js';
+export type { PushTransport, PushMessage, PushChannelOptions, NotificationContact } from './notifications/index.js';
+export { readCredentialBindings, DEFAULT_CREDENTIAL_BINDINGS_LIMIT, MAX_CREDENTIAL_BINDINGS_LIMIT } from './configuration/bindings.js';
+export type { CredentialBindingReference, CredentialBindingsOptions, CredentialBindingsResult } from './configuration/bindings.js';
+export type { CredentialRemoveInput, CredentialRemoveResult } from './configuration/service.js';
+export type { SecretRemovedRecord } from './storage/secrets.js';
 // HTTP integration
 export { authenticateBearerToken } from './runtime/api-keys.js';
 export {

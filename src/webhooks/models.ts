@@ -42,6 +42,8 @@ export type WebhookDeliveryStatus = 'pending' | 'delivering' | 'delivered' | 're
 export interface WebhookDelivery {
   readonly id: string;
   readonly tenantId: string;
+  /** Owning application (from 0.21.0). Deliveries created before it carry none. */
+  readonly applicationId?: string;
   readonly endpointId: string;
   readonly eventId: string;
   readonly eventType: string;
@@ -56,6 +58,9 @@ export interface WebhookDelivery {
   readonly lastError?: string;
   /** Principal that emitted the event. Every delivery attempt is authorized as this principal. */
   readonly principal?: DurablePrincipal;
+  /** The principal that last replayed the delivery. Replay never changes `principal`. */
+  readonly replayedBy?: string;
+  readonly replayedAt?: string;
   readonly __version: number;
 }
 

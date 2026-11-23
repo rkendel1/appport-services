@@ -3,110 +3,248 @@
     "id": "apikeys",
     "name": "API Keys",
     "contractVersion": 1,
-    "operations": ["create", "read", "update", "rotate", "revoke", "revokeAll", "audit", "authenticate"],
+    "operations": [
+      "create",
+      "read",
+      "update",
+      "rotate",
+      "revoke",
+      "revokeAll",
+      "audit",
+      "authenticate"
+    ],
     "durable": true,
     "async": false,
-    "dependencies": ["ServiceGateway", "FeltDB"],
+    "dependencies": [
+      "ServiceGateway",
+      "FeltDB"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "webhooks",
     "name": "Webhooks",
     "contractVersion": 1,
-    "operations": ["register", "read", "readDeliveries", "disable", "deliver", "retry", "replay", "receive", "registerIntegration"],
+    "operations": [
+      "register",
+      "read",
+      "readDeliveries",
+      "disable",
+      "deliver",
+      "retry",
+      "replay",
+      "receive",
+      "registerIntegration"
+    ],
     "durable": true,
     "async": true,
-    "dependencies": ["ServiceGateway", "FeltDB", "ScopedSecretsResolver"],
+    "dependencies": [
+      "ServiceGateway",
+      "FeltDB",
+      "ScopedSecretsResolver"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "jobs",
     "name": "Jobs",
     "contractVersion": 1,
-    "operations": ["create", "read", "execute", "retry"],
+    "operations": [
+      "create",
+      "createAsService",
+      "read",
+      "execute",
+      "retry"
+    ],
     "durable": true,
     "async": true,
-    "dependencies": ["ServiceGateway", "FeltDB"],
+    "dependencies": [
+      "ServiceGateway",
+      "FeltDB"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "schedules",
     "name": "Schedules",
     "contractVersion": 1,
-    "operations": ["create", "read", "cancel", "materialize"],
+    "operations": [
+      "create",
+      "createAsService",
+      "read",
+      "cancel",
+      "materialize"
+    ],
     "durable": true,
     "async": true,
-    "dependencies": ["jobs", "ServiceGateway", "FeltDB"],
+    "dependencies": [
+      "jobs",
+      "ServiceGateway",
+      "FeltDB"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "notifications",
     "name": "Notifications",
     "contractVersion": 1,
-    "operations": ["create", "read", "deliver", "retry", "acknowledge", "dismiss", "delete"],
+    "operations": [
+      "create",
+      "read",
+      "deliver",
+      "retry",
+      "acknowledge",
+      "dismiss",
+      "delete"
+    ],
     "durable": true,
     "async": true,
-    "dependencies": ["ServiceGateway", "FeltDB", "jobs"],
+    "dependencies": [
+      "ServiceGateway",
+      "FeltDB",
+      "jobs"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "files",
     "name": "Files",
     "contractVersion": 1,
-    "operations": ["create", "read", "update", "delete"],
+    "operations": [
+      "create",
+      "read",
+      "update",
+      "delete",
+      "upload",
+      "download",
+      "presign",
+      "resumableUpload",
+      "usage",
+      "sweep"
+    ],
     "durable": true,
     "async": false,
-    "dependencies": ["ServiceGateway", "FeltDB"],
+    "dependencies": [
+      "ServiceGateway",
+      "FeltDB"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "configuration",
     "name": "Configuration",
     "contractVersion": 1,
-    "operations": ["read", "write", "delete"],
+    "operations": [
+      "read",
+      "write",
+      "delete"
+    ],
     "durable": true,
     "async": false,
-    "dependencies": ["ServiceGateway", "FeltDB"],
+    "dependencies": [
+      "ServiceGateway",
+      "FeltDB"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "credentials",
     "name": "Credentials",
     "contractVersion": 1,
-    "operations": ["attach", "rotate", "detach", "store", "status"],
+    "operations": [
+      "attach",
+      "rotate",
+      "detach",
+      "store",
+      "status",
+      "remove"
+    ],
     "durable": true,
     "async": false,
-    "dependencies": ["configuration", "ServiceGateway", "FeltDB", "SecretCustody"],
+    "dependencies": [
+      "configuration",
+      "ServiceGateway",
+      "FeltDB",
+      "SecretCustody"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "intelligence",
     "name": "Intelligence",
     "contractVersion": 1,
-    "operations": ["catalog", "read", "write", "credential.set", "credential.remove", "resolve"],
+    "operations": [
+      "catalog",
+      "read",
+      "write",
+      "credential.set",
+      "credential.remove",
+      "resolve",
+      "transcribe",
+      "embed",
+      "usage"
+    ],
     "durable": true,
     "async": false,
-    "dependencies": ["configuration", "ServiceGateway", "FeltDB"],
+    "dependencies": [
+      "configuration",
+      "ServiceGateway",
+      "FeltDB"
+    ],
+    "runtimeMounted": true
+  },
+  {
+    "id": "connectors",
+    "name": "Connectors",
+    "contractVersion": 1,
+    "operations": [
+      "read",
+      "request"
+    ],
+    "durable": false,
+    "async": false,
+    "dependencies": [
+      "ServiceGateway",
+      "ScopedSecretsResolver"
+    ],
     "runtimeMounted": true
   },
   {
     "id": "secrets",
     "name": "Secrets",
     "contractVersion": 1,
-    "operations": ["register", "describe", "list", "rotate", "revoke", "retire", "resolve"],
+    "operations": [
+      "register",
+      "describe",
+      "list",
+      "rotate",
+      "revoke",
+      "retire",
+      "resolve"
+    ],
     "durable": true,
     "async": false,
-    "dependencies": ["AuthBoundry", "AppBoundry", "FeltDB"],
+    "dependencies": [
+      "AuthBoundry",
+      "AppBoundry",
+      "FeltDB"
+    ],
     "runtimeMounted": false
   },
   {
     "id": "runtime-events",
     "name": "Runtime Events",
     "contractVersion": 1,
-    "operations": ["publish", "subscribe", "stream"],
+    "operations": [
+      "publish",
+      "subscribe",
+      "stream"
+    ],
     "durable": false,
     "async": true,
-    "dependencies": ["AppPortEvents"],
+    "dependencies": [
+      "AppPortEvents"
+    ],
     "runtimeMounted": false
   }
 ]

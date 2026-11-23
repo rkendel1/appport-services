@@ -19,6 +19,12 @@ export interface EffectEvidence {
   readonly principalType: string;
   readonly delegationId?: string;
   readonly runId?: string;
+  /**
+   * When the effect ran as the application's service principal (a job or
+   * schedule enqueued with `runAs: "service"`): the principal that enqueued it.
+   * `principalId` / `principalType` are then the service principal's.
+   */
+  readonly enqueuedBy?: string;
   readonly capability: string;
   readonly capabilityVersion: number;
   readonly resource: string;

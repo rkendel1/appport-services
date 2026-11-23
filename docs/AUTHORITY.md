@@ -169,11 +169,13 @@ AuthBoundry a stable hash to pin.
 | --- | --- |
 | API keys | `apikeys.read`, `apikeys.create`, `apikeys.update`, `apikeys.rotate`, `apikeys.revoke`, `apikeys.audit` |
 | Webhooks | `webhooks.read`, `webhooks.deliveries.read`, `webhooks.register`, `webhooks.remove`, `webhooks.emit`, `webhooks.replay`, `webhooks.integrations.register`, `webhooks.deliver`*, `webhooks.receive`* |
-| Jobs | `jobs.read`, `jobs.create`, `jobs.retry`, `jobs.execute`* |
-| Schedules | `schedules.read`, `schedules.create`, `schedules.cancel` |
+| Jobs | `jobs.read`, `jobs.create`, `jobs.create.service`, `jobs.retry`, `jobs.execute`* |
+| Schedules | `schedules.read`, `schedules.create`, `schedules.create.service`, `schedules.cancel` |
 | Notifications | `notifications.read`, `notifications.send`, `notifications.update`, `notifications.delete` |
 | Files | `files.read`, `files.write`, `files.delete` |
-| Configuration | `configuration.read`, `configuration.write`, `configuration.delete`, `credential.attach`, `credential.rotate`, `credential.detach`, `credential.store`, `credential.status` |
+| Configuration | `configuration.read`, `configuration.write`, `configuration.delete`, `credential.attach`, `credential.rotate`, `credential.detach`, `credential.store`, `credential.status`, `credential.remove` |
+| Connectors | `connectors.read`, `connectors.request` |
+| Intelligence | `intelligence.catalog`, `intelligence.read`, `intelligence.write`, `intelligence.credential.set`, `intelligence.credential.remove`, `intelligence.transcribe`, `intelligence.embed`, `intelligence.usage.read`, `intelligence.resolve`* |
 
 \* Runtime-internal. These are authorized on every delivery, receipt, or
 job run, but cannot be invoked by callers.
@@ -184,6 +186,23 @@ over resource attributes. The service sends attributes such as `owner`,
 `recipient`, `createdBy`, `jobType`, `eventType`, `destination`, and
 `credentialRef`. A request for "all owners" is sent as the attribute value
 `*`.
+
+## The application's service principal
+
+`createServices({ servicePrincipal: { principalId: 'service:<app>' } })` gives
+the application an identity of its own. Jobs and schedules enqueued with
+`runAs: "service"` (capabilities `jobs.create.service` and
+`schedules.create.service`, separate from `jobs.create` so no existing policy
+grants it by accident) run as that principal: subject
+`{ kind: "service", id }`, `verified_by: "service"`, `application_id` the
+application, and `context.enqueued_by` the principal that enqueued the work.
+It is authorized like any principal, for exactly what the application's
+policy grants it; it is not an administrator. Evidence rows of the run and of
+every effect it causes carry `principalType: "service"` and `enqueuedBy`.
+A host cannot assert the configured service principal through `identify()`.
+Creator-scoped jobs (`runAs` absent or `"creator"`) stay the default: they run
+as the enqueuer and stop when the enqueuer loses access. See
+docs/JOB-SECURITY.md.
 
 ## AuthBoundry protocol
 
@@ -210,7 +229,13 @@ URI match the request.
 | `INVALID_REQUEST` | bad input, undeclared capability, forbidden destination, or a migration error | never |
 | `PROVIDER_ERROR` | authorized, but the provider failed | yes, once |
 | `UNAUTHENTICATED` | no verified principal or execution context | never |
-| `CUSTODY_READ_ONLY` | `credential.store`/`credential.status` on a host whose custody cannot store (resolver-only, none, or `writable: false`); HTTP 409 | never |
+| `CUSTODY_READ_ONLY` | `credential.store`/`credential.status`/`credential.remove` on a host whose custody cannot store (resolver-only, none, or `writable: false`, or no `remove`); HTTP 409 | never |
+| `QUOTA_EXCEEDED` | a per-tenant file quota would be exceeded; nothing was written; HTTP 413 | never |
+| `CONFLICT` | the request conflicts with existing state (a job idempotency key reused with different input); HTTP 409 | never |
+
+A `DENIED` from AuthBoundry carries `details.capability`, `details.reason` (the
+decision's reason), `details.decisionId` and `details.principalId`, and its
+message names the reason: `AuthBoundry denied jobs.execute (no_session)`.
 
 Provider failures are never reported as authorization failures.
 

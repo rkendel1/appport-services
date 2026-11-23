@@ -11,6 +11,7 @@ import { createServices, type AppPortServices } from '../../src/index.js';
 import type { ServiceName } from '../../src/contract/services-contract.js';
 import { TestAuthority } from './authority.js';
 import { MemoryCustody } from './custody.js';
+import { mockAi } from './mock-ai.js';
 import { receiver, signInbound } from './stack.js';
 
 export type JsonType = 'string' | 'integer' | 'number' | 'boolean' | 'null' | 'object' | 'array';
@@ -38,8 +39,20 @@ interface Scenario {
 const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
   files: async (s) => {
     const file = await s.invoke('files.write', { name: 'report.pdf', size: 10, storageKey: 'k/1', contentType: 'application/pdf', checksum: 'sha256:abc', metadata: { project: 'p1' } });
-    await s.invoke('files.write', { id: file.id, name: 'renamed.pdf' });
+    await s.invoke('files.write', { id: file.id, name: 'renamed.pdf', retainUntil: new Date(Date.now() - 1000).toISOString() });
     await s.invoke('files.delete', { id: file.id });
+    // Bytes (FeltDB object store), a resumable upload, retention and lifecycle.
+    const stored = await s.invoke('files.write', { operation: 'upload', name: 'logo.png', contentType: 'image/png', dataBase64: Buffer.from('logo bytes').toString('base64'), expiresAt: new Date(Date.now() + 1000).toISOString() });
+    const upload = await s.invoke('files.write', { operation: 'begin-upload', name: 'recording.webm', size: 6, partSize: 4 });
+    await s.invoke('files.write', { operation: 'upload-part', uploadId: upload.uploadId, partNumber: 1, dataBase64: Buffer.from('abcd').toString('base64') });
+    await s.invoke('files.write', { operation: 'upload-part', uploadId: upload.uploadId, partNumber: 2, dataBase64: Buffer.from('ef').toString('base64') });
+    await s.invoke('files.write', { operation: 'complete-upload', uploadId: upload.uploadId });
+    const abandoned = await s.invoke('files.write', { operation: 'begin-upload', name: 'abandoned.webm', size: 3 });
+    await s.invoke('files.write', { operation: 'abort-upload', uploadId: abandoned.uploadId });
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await s.invoke('files.delete', { operation: 'sweep' });
+    await s.invoke('files.read', { operation: 'download', id: upload.fileId });
+    void stored;
   },
   notifications: async (s) => {
     const sent = await s.invoke('notifications.send', { recipient: 'alice', type: 'task.done', title: 'Done', body: 'It is done', data: { task: 't1' }, priority: 'high', idempotencyKey: 'once' });
@@ -51,6 +64,7 @@ const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
       await s.services.notifications!.retryDelivery(TENANT, n.id, delivery.channel, s.principal).catch(() => undefined);
     }
     await s.services.notifications!.recoverDeliveries(TENANT);
+    await s.invoke('notifications.send', { contact: { email: 'guest@example.com', name: 'Guest' }, type: 'meeting.invite', title: 'You are invited' });
     const other = await s.invoke('notifications.send', { recipient: 'alice', type: 'task.done', title: 'Second' });
     await s.invoke('notifications.delete', { id: (other.notification ?? other).id });
     // The transaction context's write path (TransactionContext.queueNotification).
@@ -66,6 +80,7 @@ const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
     await s.invoke('credential.attach', { name: 'OTHER_KEY', credentialRef: 'credential-ref:other', environment: 'production', required: false });
     await s.invoke('credential.rotate', { name: 'OTHER_KEY', credentialRef: 'credential-ref:other2', environment: 'production', required: false });
     await s.invoke('credential.detach', { name: 'OTHER_KEY', environment: 'production' });
+    await s.invoke('credential.remove', { ref: 'credential-ref:stripe', name: 'STRIPE_KEY', environment: 'production', provider: 'stripe' });
     await s.invoke('configuration.delete', { name: 'SUPPORT_EMAIL', environment: 'production' });
   },
   apiKeys: async (s) => {
@@ -115,6 +130,13 @@ const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
     });
     const job = await s.invoke('jobs.create', { type: 'report.build', payload: { week: 1 }, maxAttempts: 1 });
     await s.services.jobs!.executeJob(TENANT, job.id, 'worker-1');
+    const serviceJob = await s.invoke('jobs.create.service', { type: 'report.build', payload: { week: 9 } });
+    await s.services.jobs!.executeJob(TENANT, serviceJob.id, 'worker-1');
+    await s.invoke('jobs.create', { type: 'report.build', payload: { week: 3 }, idempotencyKey: 'week-3' });
+    await s.invoke('jobs.create', { type: 'report.build', payload: { week: 3 }, idempotencyKey: 'week-3' });
+    s.services.jobs!.register('report.refused', async () => { throw Object.assign(new Error('not allowed'), { code: 'FORBIDDEN' }); });
+    const refused = await s.invoke('jobs.create', { type: 'report.refused', payload: {} });
+    await s.services.jobs!.executeJob(TENANT, refused.id, 'worker-1');
     await s.invoke('jobs.retry', { id: job.id });
     await s.services.jobs!.executeJob(TENANT, job.id, 'worker-1');
     // The transaction context's write path (TransactionContext.queueJob).
@@ -126,6 +148,7 @@ const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
   schedules: async (s) => {
     s.services.jobs!.register('digest.send', async () => undefined);
     const schedule = await s.invoke('schedules.create', { type: 'digest.send', payload: { list: 'all' }, interval: '1s' });
+    await s.invoke('schedules.create.service', { type: 'digest.send', payload: { list: 'service' }, interval: '1s' });
     await new Promise((resolve) => setTimeout(resolve, 1100));
     await s.services.jobs!.processRecurringSchedules(TENANT);
     await s.invoke('schedules.cancel', { id: schedule.id });
@@ -136,6 +159,17 @@ const SCENARIOS: Record<ServiceName, (s: Scenario) => Promise<void>> = {
     await s.services.intelligence!.resolveRuntime({ environment: 'production' } as never, s.principal).catch(() => undefined);
     await s.invoke('intelligence.write', { provider: 'ollama', model: 'llama3.2', endpoint: 'http://127.0.0.1:11434/v1', environment: 'production' });
     await s.invoke('intelligence.credential.remove', { environment: 'production' });
+    // Speech to text and embeddings against a local OpenAI-compatible server, metered per tenant.
+    const ai = await mockAi();
+    try {
+      await s.invoke('intelligence.write', { modality: 'transcription', provider: 'custom', model: 'whisper-1', endpoint: ai.url, environment: 'production' });
+      await s.invoke('intelligence.write', { modality: 'embeddings', provider: 'custom', model: 'text-embedding-3-small', endpoint: ai.url, environment: 'production' });
+      await s.invoke('intelligence.transcribe', { audioBase64: Buffer.from('fake audio').toString('base64'), contentType: 'audio/webm' });
+      await s.invoke('intelligence.embed', { input: ['hello world', 'meeting notes'] });
+      await s.invoke('intelligence.usage.read', {});
+    } finally {
+      await ai.close();
+    }
   },
 };
 
@@ -150,6 +184,7 @@ export async function exercise(service: ServiceName): Promise<Observed> {
     authorizer,
     credentials: custody,
     webhookDestinationPolicy: { allowPrivateNetworks: true },
+    servicePrincipal: { principalId: 'service:contract-app' },
   } as never);
   const db = services.db as StateFirstDB;
   const principal = services.identify({ principalId: 'alice', principalType: 'user', tenantId: TENANT })!;
@@ -159,6 +194,8 @@ export async function exercise(service: ServiceName): Promise<Observed> {
     const observed: Observed = new Map();
     for (const op of (await db.exportOperations(start)) as Array<{ collection: string; type: string; value?: Record<string, unknown> }>) {
       if (op.type !== 'put' || !op.value) continue;
+      // FeltDB's own index declarations (a store declaring a lookup index on first use), not a service record.
+      if (op.collection === '__indexes__') continue;
       const fields = observed.get(op.collection) ?? new Map<string, Set<JsonType>>();
       observed.set(op.collection, fields);
       for (const [name, value] of Object.entries(op.value)) {

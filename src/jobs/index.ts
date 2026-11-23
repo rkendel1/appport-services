@@ -8,6 +8,8 @@ export type {
   CreateJobInput,
   ScheduleRecurringInput,
   JobHandlerResult,
+  JobRunAs,
+  JobRefusal,
 } from './models.js';
 export {
   FeltDbJobStore,
@@ -25,4 +27,5 @@ export {
   JobClaimFailedError,
   HandlerNotRegisteredError,
   InvalidIntervalError,
+  JobTerminalError,
 } from './errors.js';

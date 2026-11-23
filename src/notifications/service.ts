@@ -8,6 +8,7 @@ import {
   type NotificationStore,
 } from '../storage/notifications.js';
 import { InAppNotificationChannel, NotificationChannelRegistry, type NotificationChannel, type NotificationDeliveryResult } from './channels.js';
+import { CONTACT_RECIPIENT_PREFIX, type NotificationContact } from './models.js';
 import type {
   CreateNotificationInput, Notification, NotificationAuditType, NotificationDelivery, NotificationInboxOptions, NotificationListOptions,
   NotificationMarkAllReadOptions, NotificationMarkAllReadResult, NotificationPage, NotificationPriority, NotificationResult, NotificationSource,
@@ -41,7 +42,7 @@ const MAX_DATA_BYTES = 64 * 1024;
 const MAX_TEXT_LENGTH = 4_096;
 const PRIORITIES: readonly NotificationPriority[] = ['low', 'normal', 'high', 'urgent'];
 const STATUSES: readonly NotificationStatus[] = ['pending', 'delivered', 'failed', 'read', 'acknowledged', 'expired'];
-const INPUT_FIELDS = new Set(['tenantId', 'recipient', 'type', 'title', 'body', 'data', 'source', 'priority', 'channels', 'channel', 'idempotencyKey', 'expiresAt']);
+const INPUT_FIELDS = new Set(['tenantId', 'recipient', 'contact', 'type', 'title', 'body', 'data', 'source', 'priority', 'channels', 'channel', 'idempotencyKey', 'expiresAt']);
 
 /** The most records `unreadCount` examines before it answers with `complete: false`. */
 export const NOTIFICATION_UNREAD_EXAMINATION_LIMIT = 5_000;
@@ -103,10 +104,13 @@ export class NotificationService {
       rejectCallerActor(input, verified);
       const tenantId = resolveTenant(input, verified);
       const normalizedInput = { ...input, tenantId };
+      const contact = input?.contact !== undefined ? normalizeContact(input.contact) : undefined;
+      const recipient = typeof input?.recipient === 'string' ? input.recipient : contact ? contactRecipient(contact) : input?.recipient;
+      if (!contact && typeof recipient === 'string' && recipient.startsWith(CONTACT_RECIPIENT_PREFIX)) throw new NotificationValidationError(`recipient may not start with "${CONTACT_RECIPIENT_PREFIX}"; pass contact`);
       return this.gateway().execute(
         'notifications.send',
         verified,
-        { type: 'notification', tenantId, attributes: { recipient: input.recipient, channel: firstRequestedChannel(input, this.defaultChannels) } },
+        { type: 'notification', tenantId, attributes: { recipient: String(recipient ?? ''), channel: firstRequestedChannel(input, this.defaultChannels), ...(contact ? { recipientKind: 'contact', contactChannels: [contact.email ? 'email' : '', contact.device ? 'push' : ''].filter(Boolean).join(',') } : {}) } },
         { service: 'notifications', provider: firstRequestedChannel(input, this.defaultChannels) },
         () => this.notifyInternal(normalizedInput, verified.principalId, this.gateway().application),
       );
@@ -609,7 +613,9 @@ export class NotificationService {
     if (!input || typeof input !== 'object') throw new NotificationValidationError('Notification input is required');
     for (const key of Object.keys(input)) if (!INPUT_FIELDS.has(key)) throw new NotificationValidationError(`Unknown field: ${key}`);
     const tenantId = requiredText(input.tenantId, 'tenantId', 256);
-    const recipient = requiredText(input.recipient, 'recipient', 256);
+    const contact = input.contact !== undefined ? normalizeContact(input.contact) : undefined;
+    const recipient = contact && input.recipient === undefined ? contactRecipient(contact) : requiredText(input.recipient, 'recipient', 256);
+    if (!contact && recipient.startsWith(CONTACT_RECIPIENT_PREFIX)) throw new NotificationValidationError(`recipient may not start with "${CONTACT_RECIPIENT_PREFIX}"; pass contact`);
     const type = requiredText(input.type, 'type', 128);
     if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(type)) throw new NotificationValidationError('type must contain only letters, digits, ".", "_", ":", or "-"');
     const title = requiredText(input.title, 'title', MAX_TEXT_LENGTH);
@@ -642,6 +648,7 @@ export class NotificationService {
     return {
       tenantId,
       recipient,
+      ...(contact ? { contact } : {}),
       type,
       title,
       priority,
@@ -775,6 +782,28 @@ function afterCursor(item: Notification, cursor: { createdAt: string; id: string
 function notificationResource(item: Notification): ServiceResource {
   return { type: 'notification', tenantId: item.tenantId, id: item.id, attributes: { recipient: item.recipient } };
 }
+const CONTACT_EMAIL = /^[^\s@<>",;]{1,64}@[^\s@<>",;]+\.[^\s@<>",;]+$/;
+
+/** Validate a contact: an e-mail address and/or a push device; nothing else is kept. */
+export function normalizeContact(value: unknown): NotificationContact {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new NotificationValidationError('contact must be an object');
+  const input = value as Record<string, unknown>;
+  for (const key of Object.keys(input)) if (!['email', 'device', 'name'].includes(key)) throw new NotificationValidationError(`Unknown contact field: ${key}`);
+  const email = input.email === undefined ? undefined : typeof input.email === 'string' && input.email.length <= 254 && CONTACT_EMAIL.test(input.email) ? input.email.trim() : undefined;
+  if (input.email !== undefined && !email) throw new NotificationValidationError('contact.email must be an e-mail address');
+  const device = input.device === undefined ? undefined : typeof input.device === 'string' && input.device.length > 0 && input.device.length <= 8192 && !/[\r\n]/.test(input.device) ? input.device : undefined;
+  if (input.device !== undefined && !device) throw new NotificationValidationError('contact.device must be a non-empty string of at most 8192 characters');
+  if (!email && !device) throw new NotificationValidationError('contact needs an email or a device');
+  if (input.name !== undefined && (typeof input.name !== 'string' || input.name.length > 256 || /[\r\n]/.test(input.name))) throw new NotificationValidationError('contact.name must be a short string');
+  return { ...(email ? { email } : {}), ...(device ? { device } : {}), ...(typeof input.name === 'string' && input.name ? { name: input.name } : {}) };
+}
+
+/** The recipient id of a contact: a digest of its addresses, so the address itself is not an index key. */
+export function contactRecipient(contact: NotificationContact): string {
+  const key = contact.email ? `email:${contact.email.toLowerCase()}` : `device:${contact.device}`;
+  return `${CONTACT_RECIPIENT_PREFIX}${createHash('sha256').update(key).digest('hex').slice(0, 32)}`;
+}
+
 function firstRequestedChannel(input: CreateNotificationInput, defaults: readonly string[]): string {
   const requested = input.channels ?? (input.channel !== undefined ? [input.channel] : defaults);
   return requested[0] ?? defaults[0] ?? 'in-app';

@@ -10,7 +10,7 @@ import { credentialReference, type CredentialRef } from './credentials.js';
 import { ServiceAuthorityError, isServiceAuthorityError } from './errors.js';
 import type { EffectEvidence, EffectEvidenceStore } from './evidence.js';
 import { getServiceCapability, type ServiceCapability } from './manifest.js';
-import { mintVerifiedPrincipal, requireVerifiedPrincipal, type DurablePrincipal, type PrincipalClaims, type VerifiedPrincipal } from './principal.js';
+import { mintServicePrincipal, mintVerifiedPrincipal, requireVerifiedPrincipal, type DurablePrincipal, type PrincipalClaims, type VerifiedPrincipal } from './principal.js';
 
 const DEFAULT_AUTHORIZATION_TIMEOUT_MS = 5_000;
 const CONTEXT_TTL_MS = 60_000;
@@ -35,6 +35,20 @@ export interface ServiceGatewayOptions {
    * may not reuse a manifest name.
    */
   readonly extensionCapabilities?: readonly ServiceCapability[];
+  /**
+   * The application's service principal: the identity jobs and schedules
+   * enqueued with `runAs: "service"` run as (instead of the principal that
+   * enqueued them). Explicit: without it, service-run work is refused. It is
+   * authorized by AuthBoundry like any principal (subject `{ kind: "service",
+   * id: principalId }`, `verified_by: "service"`), so it can do only what the
+   * application's policy grants it; it is not an administrator.
+   */
+  readonly servicePrincipal?: ServicePrincipalOptions;
+}
+
+export interface ServicePrincipalOptions {
+  /** Stable id of the application's service principal, for example `service:meetings`. */
+  readonly principalId: string;
 }
 
 export interface ExecuteOptions {
@@ -55,6 +69,8 @@ export interface EffectTools {
   storeCredential(ref: CredentialRef, value: string, options: CredentialCustodyOptions): Promise<SecretCustodyWriteResult>;
   /** Whether custody holds material for the authorized reference, without revealing it. */
   credentialStatus(ref: CredentialRef, options?: Omit<CredentialCustodyOptions, 'kind'>): Promise<SecretCustodyStatus>;
+  /** Remove the authorized reference's material from the host's custody (`credential.remove`). */
+  removeCredential(ref: CredentialRef, options: CredentialCustodyOptions): Promise<void>;
 }
 
 export interface CredentialCustodyOptions {
@@ -80,6 +96,7 @@ export class ServiceGateway {
   private readonly timeoutMs: number;
   private readonly now: () => Date;
   private readonly extensionCapabilities: ReadonlyMap<string, ServiceCapability>;
+  private readonly servicePrincipalId?: string;
 
   constructor(options: ServiceGatewayOptions) {
     if (!options.application?.trim()) throw new Error('ServiceGateway requires an application');
@@ -102,6 +119,27 @@ export class ServiceGateway {
       extensions.set(capability.name, Object.freeze({ ...capability, authorization: Object.freeze({ ...capability.authorization }) }));
     }
     this.extensionCapabilities = extensions;
+    if (options.servicePrincipal !== undefined) {
+      const id = options.servicePrincipal?.principalId;
+      if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/.test(id)) throw new Error('servicePrincipal.principalId must be a non-empty identifier');
+      this.servicePrincipalId = id;
+    }
+  }
+
+  /** The configured service principal id, or undefined when service-run work is not enabled. */
+  get servicePrincipalConfigured(): string | undefined {
+    return this.servicePrincipalId;
+  }
+
+  /**
+   * Mint the application's service principal for one tenant (a job run).
+   * Refuses (INVALID_REQUEST) when no service principal is configured.
+   */
+  servicePrincipal(tenantId: string, run: { readonly runId?: string; readonly enqueuedBy?: string } = {}): VerifiedPrincipal {
+    if (!this.servicePrincipalId) {
+      throw new ServiceAuthorityError('INVALID_REQUEST', 'No service principal is configured; pass createServices({ servicePrincipal: { principalId } }) to run work as the application', { reason: 'service_principal_unconfigured' });
+    }
+    return mintServicePrincipal({ principalId: this.servicePrincipalId, tenantId, applicationId: this.application, ...run });
   }
 
   /** A capability this gateway enforces: the static manifest's, or one a registered extension declared. */
@@ -121,6 +159,10 @@ export class ServiceGateway {
     // would carry the credential's name without that check.
     if ((claims as { credentialId?: unknown }).credentialId !== undefined) {
       throw new ServiceAuthorityError('DENIED', 'A credential-bound identity must come from API-key authentication', { reason: 'credential_claim_refused' });
+    }
+    // The service principal is minted only for service-run jobs; a host cannot assert it.
+    if (this.servicePrincipalId !== undefined && claims.principalId === this.servicePrincipalId) {
+      throw new ServiceAuthorityError('DENIED', 'The application service principal cannot be asserted by a host', { reason: 'service_principal_claim_refused' });
     }
     return mintVerifiedPrincipal(claims, 'host');
   }
@@ -152,11 +194,12 @@ export class ServiceGateway {
         ...(principal.delegationId ? { delegation_id: principal.delegationId } : {}),
         ...(principal.runId ? { run_id: principal.runId } : {}),
         ...(principal.credentialId ? { credential_id: principal.credentialId } : {}),
+        ...(principal.enqueuedBy ? { enqueued_by: principal.enqueuedBy } : {}),
       },
     };
     const decision = await this.decide(request);
     if (decision.allowed !== true) {
-      throw new ServiceAuthorityError('DENIED', `AuthBoundry denied ${capability.name}`, { capability: capability.name, decisionId: decision.decision_id, reason: decision.reason });
+      throw new ServiceAuthorityError('DENIED', `AuthBoundry denied ${capability.name}${decision.reason ? ` (${decision.reason})` : ''}`, { capability: capability.name, decisionId: decision.decision_id, reason: decision.reason, principalId: principal.principalId });
     }
     return mintExecutionContext({
       application: this.application,
@@ -218,6 +261,10 @@ export class ServiceGateway {
         resolvedRefs.push(ref);
         return this.credentialStatus(context, ref, { purpose: custodyOptions?.purpose ?? context.capability, ...(custodyOptions?.provider ? { provider: custodyOptions.provider } : {}) });
       },
+      removeCredential: (ref, custodyOptions) => {
+        resolvedRefs.push(ref);
+        return this.removeCredential(context, ref, custodyOptions);
+      },
     };
     try {
       const result = await effect(context, tools);
@@ -247,6 +294,7 @@ export class ServiceGateway {
       principalType: context.principal.principalType,
       ...(effectiveDelegation(context) ? { delegationId: effectiveDelegation(context) } : {}),
       ...(context.principal.runId ? { runId: context.principal.runId } : {}),
+      ...(context.principal.enqueuedBy ? { enqueuedBy: context.principal.enqueuedBy } : {}),
       capability: context.capability,
       capabilityVersion: context.capabilityVersion,
       resource: context.resourceUri,
@@ -347,6 +395,31 @@ export class ServiceGateway {
     }
   }
 
+  /**
+   * Remove material for the authorized reference from the host's custody
+   * (`credential.remove`). Refuses (CUSTODY_READ_ONLY) when custody has no
+   * `remove` or reports the reference as not writable.
+   */
+  async removeCredential(contextInput: ServiceExecutionContext, ref: CredentialRef, options: CredentialCustodyOptions): Promise<void> {
+    const context = this.custodyContext(contextInput, ref);
+    const custody = this.requireWritableCustody(context);
+    if (typeof custody.remove !== 'function') throw readOnly(context.capability);
+    const reference = custodyReference(ref, context.tenantId, options);
+    const access = { tenantId: context.tenantId, principalId: context.principal.principalId, purpose: options.purpose, authorizationRef: context.authorization.decisionId };
+    let status: SecretCustodyStatus;
+    try {
+      status = await custody.status({ reference, context: access });
+    } catch (error) {
+      throw mapCredentialFailure(error, context.capability, true);
+    }
+    if (status?.writable !== true) throw readOnly(context.capability, status?.location);
+    try {
+      await custody.remove({ reference, context: access });
+    } catch (error) {
+      throw mapCredentialFailure(error, context.capability, true);
+    }
+  }
+
   private custodyContext(contextInput: ServiceExecutionContext, ref: CredentialRef): ServiceExecutionContext {
     const context = assertExecutionContext(contextInput, contextInput?.capability, undefined, this.now());
     if (context.resource.attributes?.credentialRef !== ref) {
@@ -437,6 +510,7 @@ export class ServiceGateway {
       principalType: principal.principalType,
       ...(principal.delegationId ? { delegationId: principal.delegationId } : {}),
       ...(principal.runId ? { runId: principal.runId } : {}),
+      ...(principal.enqueuedBy ? { enqueuedBy: principal.enqueuedBy } : {}),
       capability,
       capabilityVersion: this.capability(capability)?.version ?? 0,
       resource: resourceUri(this.application, resource),

@@ -30,6 +30,13 @@ export interface ServiceHealthOptions {
    * path is listed in `cappedCounts`.
    */
   readonly countLimit?: number;
+  /**
+   * Which webhook deliveries are counted. `application` (default): deliveries of
+   * this application only (deliveries carry `applicationId` from 0.21.0; ones
+   * created earlier carry none and are not counted). `namespace`: every
+   * delivery in the namespace (and tenant), the behavior before 0.21.0.
+   */
+  readonly webhookDeliveryScope?: 'application' | 'namespace';
 }
 
 interface ServiceHealthBase<C> {
@@ -159,9 +166,10 @@ type Row = Record<string, unknown>;
  * count is an equality query at the storage boundary that stops after
  * `countLimit + 1` rows, so the cost does not grow with history.
  *
- * Records that carry an `applicationId` are counted for this application only.
- * Webhook and notification deliveries carry none; they are counted for every
- * application sharing the namespace (and tenant, when given).
+ * Records that carry an `applicationId` are counted for this application only,
+ * webhook deliveries included (unless `webhookDeliveryScope: "namespace"`).
+ * Notification deliveries carry none; they are counted for every application
+ * sharing the namespace (and tenant, when given).
  */
 export async function collectHealth(sources: HealthSources, options: ServiceHealthOptions = {}): Promise<AppPortServicesHealth> {
   const limit = options.countLimit ?? DEFAULT_HEALTH_COUNT_LIMIT;
@@ -172,6 +180,9 @@ export async function collectHealth(sources: HealthSources, options: ServiceHeal
   const capped = new Set<string>();
   const tenant = options.tenantId ? { tenantId: options.tenantId } : {};
   const owned = { ...tenant, applicationId: application };
+  const deliveryScope = options.webhookDeliveryScope ?? 'application';
+  if (deliveryScope !== 'application' && deliveryScope !== 'namespace') throw new TypeError('webhookDeliveryScope must be "application" or "namespace"');
+  const deliveriesOf = deliveryScope === 'application' ? owned : tenant;
 
   /** One bounded read: at most `limit` rows, plus one to know whether it was capped. */
   const rows = async (collection: string, where: Row, path: string): Promise<Row[]> => {
@@ -186,9 +197,9 @@ export async function collectHealth(sources: HealthSources, options: ServiceHeal
     files, variables, secrets] = await Promise.all([
     rows(COLLECTIONS.apiKeys, owned, 'apiKeys.keys'),
     rows(COLLECTIONS.endpoints, owned, 'webhooks.endpoints'),
-    count(COLLECTIONS.deliveries, { ...tenant, status: 'pending' }, 'webhooks.pendingDeliveries'),
-    count(COLLECTIONS.deliveries, { ...tenant, status: 'retrying' }, 'webhooks.retryingDeliveries'),
-    count(COLLECTIONS.deliveries, { ...tenant, status: 'failed' }, 'webhooks.failedDeliveries'),
+    count(COLLECTIONS.deliveries, { ...deliveriesOf, status: 'pending' }, 'webhooks.pendingDeliveries'),
+    count(COLLECTIONS.deliveries, { ...deliveriesOf, status: 'retrying' }, 'webhooks.retryingDeliveries'),
+    count(COLLECTIONS.deliveries, { ...deliveriesOf, status: 'failed' }, 'webhooks.failedDeliveries'),
     count(COLLECTIONS.jobs, { ...owned, status: 'pending' }, 'jobs.pending'),
     count(COLLECTIONS.jobs, { ...owned, status: 'running' }, 'jobs.running'),
     count(COLLECTIONS.jobs, { ...owned, status: 'retrying' }, 'jobs.retrying'),

@@ -3,6 +3,7 @@ import { consumeExecutionContext, type ServiceExecutionContext } from '../author
 import { ServiceAuthorityError } from '../authority/errors.js';
 import { evidenceCollectionName } from '../authority/evidence.js';
 import type { ServiceGateway } from '../authority/gateway.js';
+import { idempotentJobId } from '../jobs/service.js';
 import { toDurablePrincipal } from '../authority/principal.js';
 import { assertApplicationCollection } from '../authority/reserved.js';
 import { assertNoCredentials } from '../notifications/sensitive.js';
@@ -113,6 +114,7 @@ export class TransactionContextImpl {
       const delivery = {
         id: crypto.randomUUID(),
         tenantId: event.tenantId,
+        applicationId: authorized.application,
         endpointId,
         eventId,
         eventType: event.type,
@@ -156,17 +158,34 @@ export class TransactionContextImpl {
     maxAttempts?: number;
     runAt?: string;
     delegationId?: string;
+    /**
+     * Idempotency key (same scope as `JobService.enqueue`). The job id is derived from it and the
+     * write is conditional (requireAbsent): a repeated key makes the whole transaction fail, so
+     * nothing it queued commits twice. Use `services.jobs.enqueue` for return-the-original semantics.
+     */
+    idempotencyKey?: string;
   }, context: ServiceExecutionContext): string {
-    const authorized = this.authorized(context, 'jobs.create', input.tenantId, 'job');
+    // A context for `jobs.create.service` queues a job that runs as the application's service principal.
+    const serviceRun = (context as { capability?: unknown })?.capability === 'jobs.create.service';
+    if (serviceRun && !this.gateway?.servicePrincipalConfigured) {
+      throw new ServiceAuthorityError('INVALID_REQUEST', 'No service principal is configured; pass createServices({ servicePrincipal: { principalId } }) to run work as the application');
+    }
+    const authorized = this.authorized(context, serviceRun ? 'jobs.create.service' : 'jobs.create', input.tenantId, 'job');
     if (authorized.resource.attributes?.jobType !== input.type) {
       throw new ServiceAuthorityError('DENIED', `Execution context was not issued for job type ${input.type}`);
     }
+    if (serviceRun && (authorized.resource.attributes?.runAs !== 'service' || input.delegationId !== undefined)) {
+      throw new ServiceAuthorityError('DENIED', 'A service-run job is authorized with runAs "service" and no delegation');
+    }
     // The delegation must be the one AuthBoundry authorized, never chosen afterwards.
-    const delegationId = authorized.resource.attributes?.delegationId ?? authorized.principal.delegationId;
+    const delegationId = serviceRun ? undefined : authorized.resource.attributes?.delegationId ?? authorized.principal.delegationId;
     if (input.delegationId !== undefined && input.delegationId !== delegationId) {
       throw new ServiceAuthorityError('DENIED', 'Execution context was not issued for this delegation');
     }
-    const id = crypto.randomUUID();
+    if (input.idempotencyKey !== undefined && (typeof input.idempotencyKey !== 'string' || !input.idempotencyKey || input.idempotencyKey.length > 200)) {
+      throw new ServiceAuthorityError('INVALID_REQUEST', 'idempotencyKey must be 1 to 200 characters');
+    }
+    const id = input.idempotencyKey ? idempotentJobId(input.tenantId, authorized.application, input.type, input.idempotencyKey) : crypto.randomUUID();
     const now = new Date().toISOString();
     const runAt = input.runAt ?? now;
     const status = runAt <= now ? 'pending' : 'scheduled';
@@ -184,6 +203,8 @@ export class TransactionContextImpl {
       createdAt: now,
       applicationId: authorized.application,
       principal: toDurablePrincipal(authorized.principal, delegationId, authorized.authorization.decisionId),
+      ...(serviceRun ? { runAs: 'service' as const } : {}),
+      ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
       __version: 1,
     };
 

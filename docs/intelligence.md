@@ -85,3 +85,31 @@ No new collection. The selection is the configuration variable `INTELLIGENCE_CON
 credential is the configuration secret binding `INTELLIGENCE_CREDENTIAL`, scoped by tenant,
 application and environment (default `production`) like all configuration. Changes are audited
 without secret material.
+
+## Speech to text and embeddings (0.21.0)
+
+Besides `chat` (configuration only, executed by the host's model executor), a tenant configures
+`transcription` and `embeddings`, each with its own provider, model, endpoint and credential-ref:
+`intelligence.write` with `modality: "transcription" | "embeddings"` (variables
+`INTELLIGENCE_TRANSCRIPTION_CONFIG` / `INTELLIGENCE_EMBEDDINGS_CONFIG`, bindings `..._CREDENTIAL`).
+A provider's catalog entry lists the `modalities` it offers (OpenAI and Custom: all three;
+Ollama: chat and embeddings; Anthropic and OpenCode: chat).
+
+These two modalities are executed by Services, through the gateway:
+
+| Capability | Call | Metered as |
+| --- | --- | --- |
+| `intelligence.transcribe` | `services.intelligence.transcribe({ audio \| audioBase64 \| fileId, contentType?, filename?, language?, prompt? }, caller)` → `{ text, language?, durationSeconds?, segments?, provider, model, usage }` | `audio_second` (the provider's reported duration) |
+| `intelligence.embed` | `services.intelligence.embed({ input: string \| string[], dimensions? }, caller)` → `{ vectors, provider, model, usage }` | `token` (reported, else estimated at 4 characters per token) |
+| `intelligence.usage.read` | `services.intelligence.usage({ environment?, modality?, since?, until? }, caller)` → `{ totals: [{ modality, provider, model, unit, units, costMicros, currency, calls, estimated }], complete }` | |
+
+- **Providers are adapters** (`IntelligenceProviderAdapter { id, transcribe?, embed? }`). The built-in
+  `OpenAICompatibleProvider` calls `POST {endpoint}/audio/transcriptions` and `POST {endpoint}/embeddings`;
+  `createServices({ intelligenceProviders: [adapter] })` adds or replaces one by provider id or protocol.
+- **Credentials** are resolved from custody by reference for one call; the call is effect evidence
+  (`provider`, `credentialRef`); provider HTTP goes through the outbound client (destination policy,
+  pinned address, no redirects). A provider failure is `PROVIDER_ERROR`; its message is not echoed.
+- **Metering:** each call writes an `intelligence_usage` record (tenant, application, environment, modality,
+  provider, model, unit, units, `costMicros`, currency, `requestId` = the evidence request id). Prices come
+  from `createServices({ intelligencePrices: [{ provider, model?, modality, unit, microsPerUnit, currency? }] })`;
+  an unpriced call is recorded with `priced: false`, cost 0.

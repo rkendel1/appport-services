@@ -64,8 +64,13 @@ export const SERVICE_NAMES: readonly ServiceName[] = Object.freeze(['files', 'no
  * 4: `notifications_by_recipient` on `notifications.[tenantId, recipient, createdAt]` and
  * `notifications_by_recipient_type` on `notifications.[tenantId, recipient, type, createdAt]`,
  * which `NotificationService.inbox`, `unreadCount` and `markAllRead` read (newest first).
+ * 5: file bytes (`file_objects`, `file_object_chunks`), resumable uploads (`file_uploads`, with
+ * `file_uploads_by_status`), per-tenant file usage (`file_usage`), intelligence metering
+ * (`intelligence_usage`); new fields `files.[objectStore, status, uploadId, retainUntil, expiresAt]`,
+ * `jobs.runAs`, `job_schedules.runAs`, `notifications.contact`, `webhook_deliveries.[applicationId,
+ * replayedBy, replayedAt]`, `service_effect_evidence.enqueuedBy`, `jobs.[idempotencyKey, inputHash, refusal]`.
  */
-export const SERVICES_CONTRACT_VERSION = 4;
+export const SERVICES_CONTRACT_VERSION = 5;
 
 const collection = (name: string, spec: string): ServicesContractCollection => Object.freeze({
   name,
@@ -79,12 +84,20 @@ const collection = (name: string, spec: string): ServicesContractCollection => O
 export const SERVICE_COLLECTIONS: Readonly<Record<string, ServicesContractCollection>> = Object.freeze(Object.fromEntries([
   // The gateway's evidence for every effect, whichever service runs it.
   collection('service_effect_evidence', `id:text application:text tenantId:text principalId:text principalType:text delegationId:text
-    runId:text capability:text capabilityVersion:integer resource:text decision:text decisionId:text credentialRef:text
+    runId:text enqueuedBy:text capability:text capabilityVersion:integer resource:text decision:text decisionId:text credentialRef:text
     credentialVersion:integer service:text provider:text requestId:text startedAt:text completedAt:text outcome:text failureCode:text`),
   collection('files', `id:text tenantId:text applicationId:text owner:text name:text contentType:text size:integer checksum:text
-    storageKey:text metadata:json createdAt:text updatedAt:text deletedAt:text`),
+    storageKey:text metadata:json createdAt:text updatedAt:text deletedAt:text objectStore:text status:text uploadId:text retainUntil:text
+    expiresAt:text`),
+  collection('file_objects', 'id:text tenantId:text storageKey:text size:integer checksum:text contentType:text chunks:json createdAt:text'),
+  collection('file_object_chunks', 'id:text tenantId:text objectId:text index:integer size:integer data:text'),
+  collection('file_uploads', `id:text tenantId:text applicationId:text fileId:text owner:text storageKey:text objectStore:text providerUploadId:text
+    size:integer partSize:integer partCount:integer parts:json status:text createdAt:text updatedAt:text expiresAt:text createdBy:text`),
+  collection('file_usage', 'id:text tenantId:text applicationId:text bytes:integer files:integer updatedAt:text'),
+  collection('intelligence_usage', `id:text tenantId:text applicationId:text environment:text modality:text provider:text model:text unit:text
+    units:number estimated:boolean costMicros:integer currency:text priced:boolean requests:integer principalId:text requestId:text createdAt:text`),
   collection('file_audit_events', 'id:text type:text fileId:text tenantId:text owner:text principalId:text timestamp:text result:text'),
-  collection('notifications', `id:text tenantId:text applicationId:text recipient:text type:text title:text body:text data:json source:json
+  collection('notifications', `id:text tenantId:text applicationId:text recipient:text contact:json type:text title:text body:text data:json source:json
     priority:text channels:json status:text idempotencyKey:text createdAt:text createdBy:text expiresAt:text deliveredAt:text
     failedAt:text expiredAt:text readAt:text acknowledgedAt:text dismissedAt:text`),
   collection('notification_deliveries', `id:text tenantId:text notificationId:text recipient:text channel:text status:text
@@ -112,9 +125,9 @@ export const SERVICE_COLLECTIONS: Readonly<Record<string, ServicesContractCollec
     changes:json relatedCredentialId:text`),
   collection('webhook_endpoints', `id:text tenantId:text applicationId:text url:text events:json signingCredentialRef:text createdAt:text
     createdBy:text disabledAt:text`),
-  collection('webhook_deliveries', `id:text tenantId:text endpointId:text eventId:text eventType:text payload:json status:text
+  collection('webhook_deliveries', `id:text tenantId:text applicationId:text endpointId:text eventId:text eventType:text payload:json status:text
     attemptCount:integer nextAttemptAt:text createdAt:text lastAttemptAt:text deliveredAt:text lastStatusCode:integer lastError:text
-    principal:json`),
+    principal:json replayedBy:text replayedAt:text`),
   collection('webhook_audit_events', `id:text type:text endpointId:text deliveryId:text integrationId:text tenantId:text principalId:text
     timestamp:text result:text reason:text eventType:text`),
   collection('webhook_integrations', `id:text tenantId:text applicationId:text provider:text principalId:text signingCredentialRef:text
@@ -123,9 +136,9 @@ export const SERVICE_COLLECTIONS: Readonly<Record<string, ServicesContractCollec
     state:text attempts:integer leaseUntil:text lastAttemptAt:text processedAt:text deadAt:text failures:json`),
   collection('jobs', `id:text tenantId:text applicationId:text type:text payload:json status:text runAt:text attemptCount:integer
     maxAttempts:integer createdAt:text startedAt:text completedAt:text nextAttemptAt:text leaseOwner:text leaseExpiresAt:text
-    lastError:text principal:json`),
+    lastError:text principal:json runAs:text idempotencyKey:text inputHash:text refusal:json`),
   collection('job_schedules', `id:text tenantId:text applicationId:text type:text payload:json interval:text nextRunAt:text enabled:boolean
-    createdAt:text createdBy:text principal:json`),
+    createdAt:text createdBy:text principal:json runAs:text`),
   collection('job_audit_events', 'id:text type:text jobId:text scheduleId:text tenantId:text principalId:text timestamp:text result:text details:json jobType:text'),
 ].map((c) => [c.name, c])));
 
@@ -141,6 +154,7 @@ export const SERVICE_INDEXES: Readonly<Record<string, ServicesContractIndex>> = 
  */
 export const SERVICE_LOOKUP_INDEXES: Readonly<Record<string, readonly ServicesContractIndex[]>> = Object.freeze({
   files: Object.freeze([Object.freeze({ name: 'files_by_storage_key', collection: 'files', fields: Object.freeze(['storageKey']) })]),
+  file_uploads: Object.freeze([Object.freeze({ name: 'file_uploads_by_status', collection: 'file_uploads', fields: Object.freeze(['tenantId', 'status']) })]),
   notifications: Object.freeze([
     Object.freeze({ name: 'notifications_by_recipient', collection: 'notifications', fields: Object.freeze(['tenantId', 'recipient', 'createdAt']) }),
     Object.freeze({ name: 'notifications_by_recipient_type', collection: 'notifications', fields: Object.freeze(['tenantId', 'recipient', 'type', 'createdAt']) }),
@@ -156,14 +170,14 @@ const SHARED = ['service_effect_evidence'] as const;
  * schedules create jobs.
  */
 export const SERVICE_REQUIREMENTS: Readonly<Record<ServiceName, { readonly collections: readonly string[]; readonly requires: readonly ServiceName[] }>> = Object.freeze({
-  files: { collections: ['files', 'file_audit_events'], requires: [] },
+  files: { collections: ['files', 'file_audit_events', 'file_objects', 'file_object_chunks', 'file_uploads', 'file_usage'], requires: [] },
   notifications: { collections: ['notifications', 'notification_deliveries', 'notification_audit_events'], requires: [] },
   configuration: { collections: ['ConfigurationVariables', 'ConfigurationSecrets', 'ConfigurationAuditEvents', 'Secrets', 'SecretVersions', 'SecretAuditEvents'], requires: [] },
   apiKeys: { collections: ['api_keys', 'api_key_prefixes', 'api_key_audit_events'], requires: [] },
   webhooks: { collections: ['webhook_endpoints', 'webhook_deliveries', 'webhook_audit_events', 'webhook_integrations', 'inbound_webhook_events'], requires: [] },
   jobs: { collections: ['jobs', 'job_audit_events'], requires: [] },
   schedules: { collections: ['job_schedules'], requires: ['jobs'] },
-  intelligence: { collections: ['ConfigurationVariables', 'ConfigurationSecrets', 'ConfigurationAuditEvents'], requires: [] },
+  intelligence: { collections: ['ConfigurationVariables', 'ConfigurationSecrets', 'ConfigurationAuditEvents', 'intelligence_usage'], requires: [] },
 });
 
 /**
