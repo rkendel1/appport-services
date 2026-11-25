@@ -48,6 +48,15 @@ export interface JobExecution {
   /** The jobs.execute authorization for this run. */
   readonly context: ServiceExecutionContext;
   readonly runId: string;
+  /**
+   * Keep this run's hold on the job: extends its lease to the service's lease duration from now. Call it before the lease
+   * runs out (every lease duration / 3 is safe) for work that may outlast one lease. Resolves `false` when this run no
+   * longer holds the job (its lease expired and another worker took it over, or the job changed): stop, because this
+   * run's result will not be recorded and another attempt may be running.
+   */
+  renewLease(): Promise<boolean>;
+  /** When this run's current lease ends (ISO 8601). */
+  readonly leaseExpiresAt: string;
 }
 
 type JobHandler = (job: Job, execution: JobExecution) => Promise<void>;
@@ -255,6 +264,29 @@ export class JobService {
       return false;
     }
 
+    // The run's hold on the job: every settle uses the version of the latest renewal, and a renewal never races a settle.
+    let current = claimed;
+    let lost = false;
+    let serial: Promise<unknown> = Promise.resolve();
+    const renewLease = (): Promise<boolean> => {
+      const next = serial.then(async () => {
+        if (lost) return false;
+        const leaseExpiresAt = new Date(this.now().getTime() + this.leaseDurationMs).toISOString();
+        const renewed = current.status === 'running' ? await this.jobStore.updateJob(tenantId, jobId, current.__version, { leaseExpiresAt }) : null;
+        if (!renewed) {
+          lost = true;
+          return false;
+        }
+        current = renewed;
+        return true;
+      });
+      serial = next.catch(() => undefined);
+      return next;
+    };
+    const settled = async (): Promise<Job> => {
+      await serial;
+      return current;
+    };
     const runId = `${claimed.id}:${claimed.attemptCount + 1}`;
     let principal: VerifiedPrincipal;
     try {
@@ -270,28 +302,32 @@ export class JobService {
       await this.gateway().execute('jobs.execute', principal,
         { type: 'job', tenantId, id: claimed.id, attributes: { jobType: claimed.type, ...(runAs === 'service' ? { runAs, enqueuedBy: claimed.principal.principalId } : {}) } },
         { service: 'jobs', requestId: runId },
-        (context) => handler(claimed, { principal, context, runId, runAs, enqueuedBy: claimed.principal!.principalId }));
-      // Completed only if this worker still holds the job (its claim's version); otherwise not a success.
-      return await this.completeJob(claimed, principal.principalId, runId);
+        (context) => handler(claimed, {
+          principal, context, runId, runAs, enqueuedBy: claimed.principal!.principalId, renewLease,
+          get leaseExpiresAt() { return current.leaseExpiresAt ?? ''; },
+        }));
+      // Completed only if this worker still holds the job (the version of its claim, or of its latest renewal); otherwise not a success.
+      return await this.completeJob(await settled(), principal.principalId, runId);
     } catch (error) {
+      const held = await settled();
       if (isServiceAuthorityError(error) && (error.code === 'DENIED' || error.code === 'UNAUTHENTICATED')) {
         // The authorizer's reason is part of the message ("AuthBoundry denied jobs.execute (no_session)") and the audit.
-        await this.deny(claimed, `DENIED: ${error.message}`, error, principal.principalId);
+        await this.deny(held, `DENIED: ${error.message}`, error, principal.principalId);
         return false;
       }
       if (isTerminalHandlerError(error)) {
-        await this.deny(claimed, `${terminalCode(error)}: ${error instanceof Error ? error.message : String(error)}`, error, principal.principalId);
+        await this.deny(held, `${terminalCode(error)}: ${error instanceof Error ? error.message : String(error)}`, error, principal.principalId);
         return false;
       }
       if (isServiceAuthorityError(error) && (error.code === 'AUTHORITY_UNAVAILABLE' || error.code === 'AUTHORIZATION_TIMEOUT')) {
-        await this.jobStore.updateJob(tenantId, jobId, claimed.__version, {
+        await this.jobStore.updateJob(tenantId, jobId, held.__version, {
           status: 'retrying',
           nextAttemptAt: new Date(this.now().getTime() + INITIAL_RETRY_DELAY_MS).toISOString(),
           lastError: `${error.code}: ${error.message}`,
         });
         return false;
       }
-      await this.recordExecutionFailure(claimed, principal.principalId, error);
+      await this.recordExecutionFailure(held, principal.principalId, error);
       return false;
     }
   }
