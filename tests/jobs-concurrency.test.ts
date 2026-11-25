@@ -83,3 +83,90 @@ test("an update naming another tenant's job does not change it", async () => {
     await runtime.db.close();
   }
 });
+
+async function leased(leaseDurationMs: number) {
+  const path = await mkdtemp(join(tmpdir(), 'appport-jobs-lease-'));
+  const runtime = createFeltDbRuntime({ mode: 'local', namespace: 'jobs-lease-' + Math.random().toString(16).slice(2), path });
+  const service = () => new JobService({ jobStore: new FeltDbJobStore(runtime.db), scheduleStore: new FeltDbJobScheduleStore(runtime.db), auditSink: new FeltDbJobAuditSink(runtime.db), authority: testGateway(runtime.db), leaseDurationMs });
+  return { runtime, service };
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test('a run that renews its lease outlasts it and is never taken over', async () => {
+  const { runtime, service } = await leased(300);
+  try {
+    const first = service();
+    const second = service();
+    let runs = 0;
+    const handler = async (_job: unknown, execution: { renewLease(): Promise<boolean> }) => {
+      runs += 1;
+      for (let i = 0; i < 6; i++) {
+        await sleep(100);
+        assert.equal(await execution.renewLease(), true, 'this run still holds the job');
+      }
+    };
+    first.register('test.long', handler as never);
+    second.register('test.long', handler as never);
+    const job = await first.enqueue({ tenantId: 'tenant-a', type: 'test.long', payload: {} }, caller('tenant-a'));
+    const running = first.executeJob('tenant-a', job.id, 'worker-1');
+    // Past the first lease: another worker looks for abandoned work and finds none.
+    await sleep(450);
+    assert.equal(await second.executeJob('tenant-a', job.id, 'worker-2'), false, 'a renewed lease is not abandoned');
+    assert.equal(await running, true, 'the run completes, with the version of its latest renewal');
+    assert.equal(runs, 1, 'the work ran once');
+    assert.equal((await first.getJob('tenant-a', job.id))?.status, 'completed');
+  } finally {
+    await runtime.db.close();
+  }
+});
+
+test('a run that lets its lease lapse is taken over; it learns so on renewal, and its completion is not recorded', async () => {
+  const { runtime, service } = await leased(200);
+  try {
+    const first = service();
+    const second = service();
+    let firstRenewal: boolean | null = null;
+    first.register('test.long', (async (_job: unknown, execution: { renewLease(): Promise<boolean> }) => {
+      await sleep(350);
+      await sleep(300); // the second worker takes the job over meanwhile
+      firstRenewal = await execution.renewLease();
+    }) as never);
+    second.register('test.long', (async () => undefined) as never);
+    const job = await first.enqueue({ tenantId: 'tenant-a', type: 'test.long', payload: {} }, caller('tenant-a'));
+    const running = first.executeJob('tenant-a', job.id, 'worker-1');
+    await sleep(300);
+    assert.equal(await second.executeJob('tenant-a', job.id, 'worker-2'), true, 'the abandoned attempt is taken over');
+    assert.equal(await running, false, 'the lapsed run does not record a completion');
+    assert.equal(firstRenewal, false, 'its renewal says it no longer holds the job');
+    const after = await first.getJob('tenant-a', job.id);
+    assert.equal(after?.status, 'completed');
+    assert.equal(after?.attemptCount, 1, 'the abandoned attempt is counted');
+  } finally {
+    await runtime.db.close();
+  }
+});
+
+test('a renewal still in flight when the handler returns does not cost the run its completion', async () => {
+  const { runtime } = await leased(5_000);
+  try {
+    // A renewal is still on its way when the handler returns, and lands before the (slower) completion: the completion
+    // must carry the renewal's version, not the claim's.
+    class SlowCompletion extends FeltDbJobStore {
+      override async updateJob(tenantId: string, jobId: string, expectedVersion: number, updates: Parameters<FeltDbJobStore['updateJob']>[3]) {
+        if (updates.status === 'completed') await sleep(150);
+        else if (updates.leaseExpiresAt && Object.keys(updates).length === 1) await sleep(50);
+        return super.updateJob(tenantId, jobId, expectedVersion, updates);
+      }
+    }
+    const svc = new JobService({ jobStore: new SlowCompletion(runtime.db), scheduleStore: new FeltDbJobScheduleStore(runtime.db), auditSink: new FeltDbJobAuditSink(runtime.db), authority: testGateway(runtime.db), leaseDurationMs: 5_000 });
+    svc.register('test.quick', (async (_job: unknown, execution: { renewLease(): Promise<boolean> }) => {
+      void execution.renewLease();
+      void execution.renewLease();
+    }) as never);
+    const job = await svc.enqueue({ tenantId: 'tenant-a', type: 'test.quick', payload: {} }, caller('tenant-a'));
+    assert.equal(await svc.executeJob('tenant-a', job.id, 'worker-1'), true);
+    assert.equal((await svc.getJob('tenant-a', job.id))?.status, 'completed');
+  } finally {
+    await runtime.db.close();
+  }
+});

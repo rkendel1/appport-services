@@ -671,6 +671,20 @@ const schedule = await service.scheduleRecurring({
 
 Jobs are **durable and idempotent**. Job state survives process restarts; workers claim jobs via version-based optimistic locking.
 
+A run holds its job for one lease (`leaseDurationMs`, default 30 s). Work that may take longer keeps it with
+`execution.renewLease()` (every lease duration / 3 is safe), which extends the lease from now. It resolves `false` once
+the run no longer holds the job (the lease lapsed and another worker took it over, or the job changed): stop then, because
+the run's result will not be recorded. A completion is recorded only by the run that still holds the job.
+
+```typescript
+jobs.register('report.build', async (job, execution) => {
+  for (const part of job.payload.parts) {
+    if (!(await execution.renewLease())) return; // taken over: another attempt owns the job now
+    await build(part);
+  }
+});
+```
+
 ## How do I send notifications?
 
 Notifications are durable application events routed through one or more delivery channels.

@@ -2,6 +2,17 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.22.0
+
+Additive. Released with `@appport/runtime` 0.21.0 and `create-appport` 0.1.34.
+
+- **Renewable job leases.** `JobExecution.renewLease()` extends a running job's lease from now, so work that waits on
+  other systems (a model, a provider, an AppBoundry action) can outlast one lease without being taken over and run a
+  second time. It resolves `false` once the run no longer holds the job; `JobExecution.leaseExpiresAt` says when the
+  current lease ends. A run settles (completed, retrying, failed, refused) with the version of its latest renewal, and a
+  renewal still in flight when the handler returns is waited for, so it cannot turn a completion into a conflict.
+  Tests: `tests/jobs-concurrency.test.ts` (outlasting a lease, a lapsed run taken over, a renewal racing the completion).
+
 ## 0.21.0
 
 Additive (one behavior change in webhook replay, below). Released with `@appport/runtime` 0.20.0 (depends on
