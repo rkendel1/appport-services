@@ -2,6 +2,20 @@
 
 All notable changes to `@appport/services`. Releases before 0.6.0 are described in the git history.
 
+## 0.23.0
+
+Additive. Released with `@appport/runtime` 0.22.0 and `create-appport` 0.1.35.
+
+- **Model generation.** `streamGeneration(protocol, connection, request)` runs one generation over a resolved
+  connection (provider, model, endpoint, credential): OpenAI chat completions (OpenAI and OpenAI-compatible servers) and
+  Anthropic Messages, both streamed, with text deltas, tool calls returned as data, usage, cancellation by the caller's
+  `AbortSignal` (a `"cancelled"` result with the text so far), a timeout, and failures as `IntelligenceGenerationError`
+  with a `problem` code (`unavailable`, `credential_refused`, `provider_error`, `malformed`, `timeout`,
+  `unknown_protocol`, `unsupported`) and any partial text. Secrets are scrubbed from error messages. It has no provider
+  SDK and holds no state; Intelligence still only configures the selection, and the caller resolves the credential.
+  The code moved here from FeltKit so that a standalone application runtime and a host that runs generations for its
+  guests (AppBoundry `model@1`) use one implementation. Tests: `tests/generation.test.ts`.
+
 ## 0.22.0
 
 Additive. Released with `@appport/runtime` 0.21.0 and `create-appport` 0.1.34.
