@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { ServiceAuthorityError } from '../authority/errors.js';
 import type { OutboundHttpRequest, OutboundHttpResponse } from '../authority/outbound.js';
 
-/** What an application runs through intelligence beyond configuration. `chat` is configuration only (FeltKit's ModelHost executes it). */
+/** What an application runs through intelligence beyond configuration. `chat` is configuration only: an executor (FeltKit's ModelHost, the AppBoundry host) runs it with `streamGeneration`. */
 export type IntelligenceModality = 'chat' | 'transcription' | 'embeddings';
 export const INTELLIGENCE_MODALITIES: readonly IntelligenceModality[] = Object.freeze(['chat', 'transcription', 'embeddings']);
 

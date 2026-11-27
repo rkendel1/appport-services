@@ -76,6 +76,12 @@ export type { ResolvedDeployment } from './runtime/deployment.js';
 
 // Intelligence (provider/model/endpoint/credential configuration)
 export { IntelligenceService, IntelligenceValidationError, INTELLIGENCE_CATALOG, CUSTOM_PROVIDER_ID, getIntelligenceProvider } from './intelligence/index.js';
+export {
+  streamGeneration, supportsGeneration, generationDigest, toolName, capabilityName, sseEvents, scrubSecret, IntelligenceGenerationError,
+  DEFAULT_GENERATION_TIMEOUT_MS, DEFAULT_MAX_TOKENS,
+  type GenerationConnection, type GenerationMessage, type GenerationRequest, type GenerationResult, type GenerationRole, type GenerationProblem,
+  type ToolCall, type ToolDefinition, type FinishReason,
+} from './intelligence/index.js';
 export type {
   IntelligenceProvider, IntelligenceModel, IntelligenceEndpoint, IntelligenceProtocol, CredentialRequirement,
   IntelligenceConfigurationView, IntelligenceRuntimeConfiguration, IntelligenceSelection, IntelligenceWriteInput, IntelligenceCredentialInput,

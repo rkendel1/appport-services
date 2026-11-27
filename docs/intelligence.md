@@ -23,10 +23,11 @@ configuration through AppPort. None of them keeps its own copy.
 
 | Owner | Responsibility |
 | --- | --- |
-| `@appport/services` | owns and validates provider/model configuration; holds credential references, never runs a model |
+| `@appport/services` | owns and validates provider/model configuration; holds credential references; provides the chat generation code (`streamGeneration`) that executors call, but never runs a chat generation itself |
 | FeltDB | owns durable state, including the records of every model decision and generation |
 | AppPort | owns capability transport; a model's tool calls are AppPort capability invocations |
 | FeltKit (`ModelHost`) | executes configured model/provider calls and orchestrates agent work in an application (proposals, approvals, execution as the owner) |
+| AppBoundry host (`model@1`) | executes generations for the Wasm guests it hosts, from model bindings the host's deployment owns; the guest never sees a credential |
 | Resolver | owns runtime references: when an application names `ref://…`, the model and its credential come from Resolver, validated against this catalog |
 | AuthBoundry | owns authority: every Services capability call is authorized there |
 
@@ -85,6 +86,20 @@ No new collection. The selection is the configuration variable `INTELLIGENCE_CON
 credential is the configuration secret binding `INTELLIGENCE_CREDENTIAL`, scoped by tenant,
 application and environment (default `production`) like all configuration. Changes are audited
 without secret material.
+
+## Generation (0.23.0)
+
+`streamGeneration(protocol, connection, request)` runs one chat generation over a connection the
+caller has already resolved (provider, model, endpoint and the secret, held only for the call):
+OpenAI chat completions (OpenAI and OpenAI-compatible servers) and Anthropic Messages, both
+streamed. It returns the text, tool calls as data (capability names and input; nothing here runs
+them), the finish reason and usage. The caller's `AbortSignal` cancels it into a `"cancelled"`
+result with the text so far; a failure is an `IntelligenceGenerationError` with a `problem` code and
+any partial text, and never contains the credential.
+
+It is a function, not a service: it holds no state, resolves no credential and meters nothing. The
+executor owns those: FeltKit's `ModelHost` in a standalone application, the AppBoundry host for the
+guests it runs. Both use this one implementation.
 
 ## Speech to text and embeddings (0.21.0)
 

@@ -50,7 +50,7 @@ export interface AppPortServices {
   readonly webhooks: WebhookService;
   readonly jobs: JobService;
   readonly configuration: ConfigurationService;
-  /** Canonical provider/model/endpoint/credential configuration. Configuration only; never executes a model. */
+  /** Canonical provider/model/endpoint/credential configuration. Configuration only: chat generation runs in the executor (`streamGeneration`), not here. */
   readonly intelligence: IntelligenceService;
   readonly notifications: NotificationService;
   readonly files: FileService;
